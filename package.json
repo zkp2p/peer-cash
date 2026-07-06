@@ -1,0 +1,89 @@
+{
+  "name": "@zkp2p/cash",
+  "version": "0.1.0",
+  "description": "Peer Cash — offramp-only SDK for the ZKP2P protocol: six verbs to cash out Base USDC to fiat at the live oracle market rate.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zkp2p/peer-cash.git"
+  },
+  "homepage": "https://github.com/zkp2p/peer-cash#readme",
+  "bugs": "https://github.com/zkp2p/peer-cash/issues",
+  "keywords": [
+    "zkp2p",
+    "offramp",
+    "usdc",
+    "base",
+    "crypto-to-fiat",
+    "escrow",
+    "sdk"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js",
+      "require": "./dist/tools.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "AGENTS.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test examples",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "ci": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run build"
+  },
+  "dependencies": {
+    "@zkp2p/sdk": "^0.8.0",
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "viem": "^2.21.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "react": "^19.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "viem": "^2.21.0",
+    "vitest": "^2.1.8"
+  }
+}
