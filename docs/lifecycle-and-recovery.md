@@ -7,7 +7,7 @@ ETA, how unwinding works, and why every order survives a crash.
 
 A Peer Cash order is a **deposit** in the ZKP2P EscrowV2 contract. When you
 `cashout()`, your USDC moves into escrow at the live Chainlink oracle rate
-with zero spread. A buyer (a standard protocol taker) *signals an intent*
+with zero spread. A buyer (a standard protocol taker) _signals an intent_
 against your deposit, pays you fiat off-chain (Venmo, Revolut, Wise, …), and
 proves the payment via TEE-TLS. The escrow then releases your USDC to them.
 The protocol runs in its normal direction — nothing here is inverted or
@@ -20,13 +20,13 @@ on the book by construction. That is the fill incentive.
 
 Every state derives from on-chain events. There are no synthetic states.
 
-| State | On-chain meaning | `nextActions` |
-|---|---|---|
-| `awaiting-buyer` | Deposit live, no active intent | `['wait', 'withdraw']` |
-| `matched` | A buyer signaled; funds locked | `['wait']` (or `['wait','withdraw']` once the intent expires) |
-| `delivering` | Partial fill in progress: some delivered, more live | `['wait']` / `['wait','withdraw']` |
-| `delivered` | Fully paid and proven; escrow released | `[]` |
-| `returned` | Funds back in your wallet (withdrawn) | `[]` |
+| State            | On-chain meaning                                    | `nextActions`                                                 |
+| ---------------- | --------------------------------------------------- | ------------------------------------------------------------- |
+| `awaiting-buyer` | Deposit live, no active intent                      | `['wait', 'withdraw']`                                        |
+| `matched`        | A buyer signaled; funds locked                      | `['wait']` (or `['wait','withdraw']` once the intent expires) |
+| `delivering`     | Partial fill in progress: some delivered, more live | `['wait']` / `['wait','withdraw']`                            |
+| `delivered`      | Fully paid and proven; escrow released              | `[]`                                                          |
+| `returned`       | Funds back in your wallet (withdrawn)               | `[]`                                                          |
 
 Intent statuses underneath: `SIGNALED → FULFILLED` (paid + proven),
 `PRUNED` (expired unpaid), `MANUALLY_RELEASED` (support path, counts as
@@ -96,18 +96,18 @@ transaction receipt you already hold is the source of truth.
 
 ## Failure table
 
-| Code | Retryable | What happened / what to do |
-|---|---|---|
-| `ORACLE_UNSUPPORTED_CURRENCY` | no | Currency has no Chainlink feed. Pick from `capabilities()`. |
-| `UNSUPPORTED_PLATFORM` | no | Platform not in this environment's catalog. Pick from `capabilities()`. |
-| `AMOUNT_BELOW_MINIMUM` | no | Below the $0.01 hard floor. Recommended minimum is 1 USDC. |
-| `PAYEE_REGISTRATION_FAILED` | yes | Curator rejected or was unreachable. Check the handle format hint, retry. |
-| `TRANSACTION_FAILED` | no | The deposit tx reverted. Funds unchanged; inspect on Basescan. |
-| `DEPOSIT_RESOLUTION_FAILED` | no | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually. |
-| `ORDER_NOT_FOUND` | yes | Unknown id or indexer lag. Verify the id; retry within seconds of creation. |
-| `INDEXER_LAG` | yes | Indexer behind the chain. Retry shortly. |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes | A buyer may still deliver. Wait for fill or expiry, withdraw again. |
-| `NOTHING_TO_WITHDRAW` | no | Order is terminal. Check `order(depositId).state`. |
-| `SIGNER_REQUIRED` | no | Pass `{ signer }` or use the `prepare*` path. |
-| `WATCH_TIMEOUT` | yes | Order still live; resume `watch()`/`order()` any time. |
-| `ESCROW_PAUSED` | yes | Protocol paused deposits. Existing funds stay withdrawable. |
+| Code                              | Retryable | What happened / what to do                                                                 |
+| --------------------------------- | --------- | ------------------------------------------------------------------------------------------ |
+| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                |
+| `UNSUPPORTED_PLATFORM`            | no        | Platform not in this environment's catalog. Pick from `capabilities()`.                    |
+| `AMOUNT_BELOW_MINIMUM`            | no        | Below the $0.01 hard floor. Recommended minimum is 1 USDC.                                 |
+| `PAYEE_REGISTRATION_FAILED`       | yes       | Curator rejected or was unreachable. Check the handle format hint, retry.                  |
+| `TRANSACTION_FAILED`              | no        | The deposit tx reverted. Funds unchanged; inspect on Basescan.                             |
+| `DEPOSIT_RESOLUTION_FAILED`       | no        | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually. |
+| `ORDER_NOT_FOUND`                 | yes       | Unknown id or indexer lag. Verify the id; retry within seconds of creation.                |
+| `INDEXER_LAG`                     | yes       | Indexer behind the chain. Retry shortly.                                                   |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | A buyer may still deliver. Wait for fill or expiry, withdraw again.                        |
+| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal. Check `order(depositId).state`.                                         |
+| `SIGNER_REQUIRED`                 | no        | Pass `{ signer }` or use the `prepare*` path.                                              |
+| `WATCH_TIMEOUT`                   | yes       | Order still live; resume `watch()`/`order()` any time.                                     |
+| `ESCROW_PAUSED`                   | yes       | Protocol paused deposits. Existing funds stay withdrawable.                                |

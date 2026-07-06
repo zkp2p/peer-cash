@@ -45,7 +45,10 @@ export const cashTools: CashToolDefinition[] = [
       type: 'object',
       properties: {
         amount: bigintString,
-        currency: { type: 'string', description: 'Fiat currency code from cash_capabilities, e.g. "USD"' },
+        currency: {
+          type: 'string',
+          description: 'Fiat currency code from cash_capabilities, e.g. "USD"',
+        },
       },
       required: ['amount', 'currency'],
       additionalProperties: false,
@@ -63,7 +66,10 @@ export const cashTools: CashToolDefinition[] = [
           type: 'object',
           description: 'Where the fiat should arrive',
           properties: {
-            platform: { type: 'string', description: 'Platform id from cash_capabilities, e.g. "venmo"' },
+            platform: {
+              type: 'string',
+              description: 'Platform id from cash_capabilities, e.g. "venmo"',
+            },
             currency: { type: 'string', description: 'Fiat currency code, e.g. "USD"' },
             payee: {
               type: 'object',
@@ -71,7 +77,8 @@ export const cashTools: CashToolDefinition[] = [
               properties: {
                 offchainId: {
                   type: 'string',
-                  description: 'The handle, e.g. "@andrew" for Venmo — see payeeHint in cash_capabilities',
+                  description:
+                    'The handle, e.g. "@andrew" for Venmo — see payeeHint in cash_capabilities',
                 },
               },
               required: ['offchainId'],

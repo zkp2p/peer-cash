@@ -8,12 +8,7 @@
  * Run: bun examples/agent-tool-use.ts   (read-only tools run against staging)
  */
 import { createCashClient, usdc, isCashError } from '@zkp2p/cash';
-import {
-  capabilitiesToJson,
-  estimateToJson,
-  orderToJson,
-  prepareResultToJson,
-} from '@zkp2p/cash';
+import { capabilitiesToJson, estimateToJson, orderToJson, prepareResultToJson } from '@zkp2p/cash';
 import { cashToolManifest } from '@zkp2p/cash/tools';
 
 const cash = createCashClient({ environment: 'staging' });

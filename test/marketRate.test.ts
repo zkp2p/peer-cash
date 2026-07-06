@@ -5,10 +5,7 @@ import {
   isMarketRateSupported,
   prepareCashDepositParams,
 } from '../src/engine/marketRate';
-import {
-  BASE_USDC_ADDRESS,
-  ORACLE_MIN_CONVERSION_RATE_SENTINEL,
-} from '../src/engine/constants';
+import { BASE_USDC_ADDRESS, ORACLE_MIN_CONVERSION_RATE_SENTINEL } from '../src/engine/constants';
 import type { Zkp2pClient } from '../src/sdk-types';
 
 describe('isMarketRateSupported', () => {

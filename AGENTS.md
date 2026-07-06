@@ -33,7 +33,10 @@ const est = await cash.estimate({ amount: usdc(500), currency: 'EUR' });
 
 // 3. Execute.
 const { depositId } = await cash.cashout(
-  { amount: usdc(500), receive: { platform: 'revolut', currency: 'EUR', payee: { offchainId: 'revtag' } } },
+  {
+    amount: usdc(500),
+    receive: { platform: 'revolut', currency: 'EUR', payee: { offchainId: 'revtag' } },
+  },
   { signer },
 );
 
@@ -68,21 +71,21 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
 
 Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 
-| Code | Retryable | Agent action |
-|---|---|---|
-| `ORACLE_UNSUPPORTED_CURRENCY` | no | Re-pick currency from `capabilities()` |
-| `UNSUPPORTED_PLATFORM` | no | Re-pick platform from `capabilities()` |
-| `AMOUNT_BELOW_MINIMUM` | no | Raise amount (hard floor $0.01, recommended ≥ 1 USDC) |
-| `PAYEE_REGISTRATION_FAILED` | yes | Validate handle against `payeeHint`, retry with backoff |
-| `TRANSACTION_FAILED` | no | Surface to operator; funds unchanged |
-| `DEPOSIT_RESOLUTION_FAILED` | no | Extract depositId from the `DepositReceived` log in the receipt |
-| `ORDER_NOT_FOUND` | yes | Retry (indexer lag) unless the id is provably wrong |
-| `INDEXER_LAG` | yes | Retry after a few seconds |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes | Wait; retry `withdraw()` after intent expiry |
-| `NOTHING_TO_WITHDRAW` | no | Order is terminal; reconcile your records |
-| `SIGNER_REQUIRED` | no | Provide `{ signer }` or switch to the prepare path |
-| `WATCH_TIMEOUT` | yes | Resume `watch(depositId)` whenever convenient |
-| `ESCROW_PAUSED` | yes | Back off; existing funds remain withdrawable |
+| Code                              | Retryable | Agent action                                                    |
+| --------------------------------- | --------- | --------------------------------------------------------------- |
+| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Re-pick currency from `capabilities()`                          |
+| `UNSUPPORTED_PLATFORM`            | no        | Re-pick platform from `capabilities()`                          |
+| `AMOUNT_BELOW_MINIMUM`            | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)           |
+| `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff         |
+| `TRANSACTION_FAILED`              | no        | Surface to operator; funds unchanged                            |
+| `DEPOSIT_RESOLUTION_FAILED`       | no        | Extract depositId from the `DepositReceived` log in the receipt |
+| `ORDER_NOT_FOUND`                 | yes       | Retry (indexer lag) unless the id is provably wrong             |
+| `INDEXER_LAG`                     | yes       | Retry after a few seconds                                       |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | Wait; retry `withdraw()` after intent expiry                    |
+| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal; reconcile your records                       |
+| `SIGNER_REQUIRED`                 | no        | Provide `{ signer }` or switch to the prepare path              |
+| `WATCH_TIMEOUT`                   | yes       | Resume `watch(depositId)` whenever convenient                   |
+| `ESCROW_PAUSED`                   | yes       | Back off; existing funds remain withdrawable                    |
 
 `isCashError(err)` narrows unknown errors; `err.toJSON()` is safe for logs
 and tool results.

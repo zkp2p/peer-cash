@@ -32,15 +32,15 @@ for await (const order of cash.watch(depositId)) {
 
 ## The six verbs
 
-| Verb | What it does |
-|---|---|
-| `capabilities()` | Sync discovery: platforms × currencies × payee format hints × amount bounds |
-| `estimate({ amount, currency })` | Live oracle rate — no payee, no side effects, idempotent |
-| `cashout(input, { signer })` | Registers your payee, creates the escrow deposit, returns the `depositId` |
-| `prepare(input)` | Same as cashout but returns unsigned `txs[]` — agent wallets, AA, server keys |
-| `order(depositId)` / `orders(owner)` | Resume any order from its id alone; list all orders for a wallet |
-| `watch(depositId)` | Async iterator: yields on every state change until terminal, abort, or timeout |
-| `withdraw(depositId, { signer })` | The ONE unwind verb — prunes expired intents first when needed |
+| Verb                                 | What it does                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------ |
+| `capabilities()`                     | Sync discovery: platforms × currencies × payee format hints × amount bounds    |
+| `estimate({ amount, currency })`     | Live oracle rate — no payee, no side effects, idempotent                       |
+| `cashout(input, { signer })`         | Registers your payee, creates the escrow deposit, returns the `depositId`      |
+| `prepare(input)`                     | Same as cashout but returns unsigned `txs[]` — agent wallets, AA, server keys  |
+| `order(depositId)` / `orders(owner)` | Resume any order from its id alone; list all orders for a wallet               |
+| `watch(depositId)`                   | Async iterator: yields on every state change until terminal, abort, or timeout |
+| `withdraw(depositId, { signer })`    | The ONE unwind verb — prunes expired intents first when needed                 |
 
 ## Lifecycle
 

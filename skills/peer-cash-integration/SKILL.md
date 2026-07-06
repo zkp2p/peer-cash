@@ -11,7 +11,7 @@ non-custodially, over the ZKP2P protocol.
 
 ## 1. Mental model (read before writing code)
 
-- **Maker inversion.** The cashing-out user is the *maker*: their USDC goes
+- **Maker inversion.** The cashing-out user is the _maker_: their USDC goes
   into escrow as a deposit. A buyer (taker) pays them fiat and proves it
   (TEE-TLS); escrow releases the USDC. The protocol runs in its normal
   direction — Peer Cash is a lens on it, not a fork of it.
@@ -26,11 +26,11 @@ non-custodially, over the ZKP2P protocol.
 
 ## 2. Decision tree — entry point by runtime
 
-| Runtime | Entry | Signer pattern |
-|---|---|---|
-| React app | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider | wagmi/viem `WalletClient` from the connected wallet |
-| Node service | `createCashClient` + `cashout()`/`withdraw()` | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
-| Agent host / policy layer | `prepare()` / `prepareWithdraw()` → unsigned `txs[]` | Host signs; see `@zkp2p/cash/tools` for the six-verb JSON-schema manifest |
+| Runtime                   | Entry                                                            | Signer pattern                                                                      |
+| ------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| React app                 | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider | wagmi/viem `WalletClient` from the connected wallet                                 |
+| Node service              | `createCashClient` + `cashout()`/`withdraw()`                    | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
+| Agent host / policy layer | `prepare()` / `prepareWithdraw()` → unsigned `txs[]`             | Host signs; see `@zkp2p/cash/tools` for the six-verb JSON-schema manifest           |
 
 ## 3. Recipes — the six verbs
 
@@ -43,25 +43,30 @@ import { createCashClient, usdc } from '@zkp2p/cash';
 // env: 'production' | 'preproduction' | 'staging'
 const cash = createCashClient({ environment: 'staging' });
 
-const caps = cash.capabilities();                                  // 0 discover (sync)
+const caps = cash.capabilities(); // 0 discover (sync)
 const est = await cash.estimate({ amount: usdc(100), currency: 'USD' }); // 1 estimate
-const res = await cash.cashout({                                   // 2 execute
-  amount: usdc(100),
-  receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@handle' } },
-}, { signer });
-const { txs } = await cash.prepare({ /* same input */ });          // 2b unsigned
-const order = await cash.order(res.depositId);                     // 3 observe
-const mine = await cash.orders(ownerAddress, { inFlight: true });  // 4 list
-for await (const o of cash.watch(res.depositId)) {                 // 5 watch
+const res = await cash.cashout(
+  {
+    // 2 execute
+    amount: usdc(100),
+    receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@handle' } },
+  },
+  { signer },
+);
+const { txs } = await cash.prepare({/* same input */}); // 2b unsigned
+const order = await cash.order(res.depositId); // 3 observe
+const mine = await cash.orders(ownerAddress, { inFlight: true }); // 4 list
+for await (const o of cash.watch(res.depositId)) {
+  // 5 watch
   if (!o.isInFlight) break;
 }
-await cash.withdraw(res.depositId, { signer });                    // 6 unwind
+await cash.withdraw(res.depositId, { signer }); // 6 unwind
 ```
 
 ## 4. Order management — indexer-native
 
 - A cash order IS a deposit; the chain is the database. No storage layer.
-- Bind orders to your users with one column in *your* system:
+- Bind orders to your users with one column in _your_ system:
   `userId → depositId`, populated from `cashout()`'s return value.
 - `order(depositId)` cold-hydrates from the id alone — resumable across
   processes, devices, and crashes.

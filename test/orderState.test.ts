@@ -245,7 +245,11 @@ describe('deriveCashOrder — dust and fallbacks', () => {
 describe('explainOrder', () => {
   it('every state produces one non-empty sentence with no countdown language', () => {
     const cases = [
-      deriveCashOrder('esc_1', [], { remainingAmount: 5_000_000n, status: 'ACTIVE', nowSeconds: NOW }),
+      deriveCashOrder('esc_1', [], {
+        remainingAmount: 5_000_000n,
+        status: 'ACTIVE',
+        nowSeconds: NOW,
+      }),
       deriveCashOrder('esc_1', [intent({ intentHash: '0xa', status: 'SIGNALED' })], {
         remainingAmount: 4_000_000n,
         outstandingAmount: 1_000_000n,

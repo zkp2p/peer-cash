@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { encodeAbiParameters, encodeEventTopics, type Abi, type Log, type WalletClient } from 'viem';
+import {
+  encodeAbiParameters,
+  encodeEventTopics,
+  type Abi,
+  type Log,
+  type WalletClient,
+} from 'viem';
 
 // --- Zkp2pClient mock (pure helpers stay real) ---
 
@@ -101,6 +107,7 @@ beforeEach(() => {
     depositDetails: [{}],
     hashedOnchainIds: ['0xpayeehash'],
   });
+  mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: true });
 });
 
 describe('order()', () => {

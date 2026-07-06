@@ -35,8 +35,20 @@ import { readEstimate, type CashEstimate, type EstimateInput } from './estimate'
 import { CashError, errors, isCashError } from './errors';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
+
+/**
+ * The SDK selects the indexer from `runtimeEnv` but defaults the curator to
+ * production; staging has its own curator deployment (same convention as the
+ * first-party clients).
+ */
+const DEFAULT_CURATOR_URLS: Partial<Record<string, string>> = {
+  staging: 'https://api-staging.zkp2p.xyz',
+};
 const ERC20_APPROVE_ABI = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
+]);
+const ERC20_ALLOWANCE_ABI = parseAbi([
+  'function allowance(address owner, address spender) view returns (uint256)',
 ]);
 
 export interface CashClientOptions {
@@ -188,7 +200,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
       rpcTransport: transport,
       ...(options.rpcUrl ? { rpcUrl: options.rpcUrl } : {}),
       ...(options.indexerUrl ? { indexerUrl: options.indexerUrl } : {}),
-      ...(options.curatorUrl ? { baseApiUrl: options.curatorUrl } : {}),
+      ...((options.curatorUrl ?? DEFAULT_CURATOR_URLS[environment])
+        ? { baseApiUrl: options.curatorUrl ?? DEFAULT_CURATOR_URLS[environment] }
+        : {}),
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
     });
   }
@@ -311,12 +325,41 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
       const params = await buildDepositParams(client, depositInput);
 
-      await client.ensureAllowance({
+      // Spender must be the escrow createDeposit will target — the default can
+      // point at the legacy escrow while deposits go to EscrowV2. ensureAllowance
+      // returns without waiting for the approve to mine, so wait for the receipt
+      // AND for the allowance to be visible on the read path (load-balanced RPC
+      // replicas can serve stale eth_call state right after the receipt lands).
+      const escrow = client.escrowV2Address ?? client.escrowAddress;
+      const owner = opts.signer.account!.address;
+      const allowance = await client.ensureAllowance({
         token: params.token,
         amount: depositInput.amount,
+        spender: escrow,
       });
+      if (!allowance.hadAllowance && allowance.hash) {
+        await client.publicClient.waitForTransactionReceipt({ hash: allowance.hash });
+        for (let attempt = 0; attempt < 15; attempt++) {
+          const visible = (await client.publicClient.readContract({
+            address: params.token,
+            abi: ERC20_ALLOWANCE_ABI,
+            functionName: 'allowance',
+            args: [owner, escrow],
+          })) as bigint;
+          if (visible >= depositInput.amount) break;
+          await sleep(1_000);
+        }
+      }
 
-      const { hash } = await client.createDeposit(params);
+      let hash: Hash;
+      try {
+        ({ hash } = await client.createDeposit(params));
+      } catch (err) {
+        // One retry for the replica-lag case the visibility loop cannot fully rule out.
+        if (!(err instanceof Error) || !/exceeds allowance/i.test(err.message)) throw err;
+        await sleep(2_000);
+        ({ hash } = await client.createDeposit(params));
+      }
       const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
 
@@ -355,9 +398,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         chainId: BASE_CHAIN_ID,
       };
 
-      const hashedOnchainIds = (params.paymentMethodDataOverride ?? []).map(
-        (d) => d.payeeDetails,
-      );
+      const hashedOnchainIds = (params.paymentMethodDataOverride ?? []).map((d) => d.payeeDetails);
 
       return { txs: [approve, prepared], register: { hashedOnchainIds } };
     },

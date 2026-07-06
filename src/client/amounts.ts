@@ -16,7 +16,9 @@ export function usdc(amount: number | string): bigint {
   if (frac.length > USDC_DECIMALS) {
     throw new Error(`USDC has ${USDC_DECIMALS} decimals; '${amount}' has too many`);
   }
-  return BigInt(whole) * 10n ** BigInt(USDC_DECIMALS) + BigInt(frac.padEnd(USDC_DECIMALS, '0') || '0');
+  return (
+    BigInt(whole) * 10n ** BigInt(USDC_DECIMALS) + BigInt(frac.padEnd(USDC_DECIMALS, '0') || '0')
+  );
 }
 
 /** Format USDC base units back to a decimal string (no trailing zeros). */

@@ -122,7 +122,11 @@ describe('prepared tx + result codecs', () => {
   });
 
   it('withdrawResult round-trips with and without prune hash', () => {
-    const withPrune = { depositId: 'd', pruneTxHash: '0xp' as const, withdrawTxHash: '0xw' as const };
+    const withPrune = {
+      depositId: 'd',
+      pruneTxHash: '0xp' as const,
+      withdrawTxHash: '0xw' as const,
+    };
     const withoutPrune = { depositId: 'd', withdrawTxHash: '0xw' as const };
     expect(
       withdrawResultFromJson(JSON.parse(JSON.stringify(withdrawResultToJson(withPrune)))),
