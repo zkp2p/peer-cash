@@ -1,0 +1,37 @@
+# @zkp2p/cash — Peer Cash
+
+> Offramp-only SDK for the ZKP2P protocol: cash out Base USDC to fiat (Venmo,
+> Revolut, Wise, Zelle, …) at the live Chainlink oracle market rate with zero
+> spread, non-custodially. Six verbs; every operation available as pure
+> serializable data; a React app, a Node service, and an AI agent are equal
+> consumers.
+
+Key facts:
+- The cashing-out user is the MAKER: their USDC becomes an escrow deposit; a
+  buyer pays fiat and proves it (TEE-TLS); escrow releases the USDC.
+- There is NO quote. estimate() reads the oracle; the binding rate resolves
+  at fill time. Never present a locked price or an ETA.
+- Resume any order from its depositId alone (composite escrow_onchainId).
+- One unwind verb: withdraw(depositId) — prunes expired intents automatically.
+- Mutating verbs have unsigned counterparts (prepare, prepareWithdraw) for
+  host-side signing; @zkp2p/cash/tools ships a JSON-schema tool manifest.
+- Errors are typed: { code, retryable, remediation }.
+- v1 is same-chain only: Base USDC in.
+
+## Docs
+
+- [README](README.md): quickstart, verb table, lifecycle diagram
+- [AGENTS.md](AGENTS.md): agent integration manual — decision tree,
+  prepare-path patterns, error → remediation table
+- [Lifecycle and recovery](docs/lifecycle-and-recovery.md): states, partial
+  fills, honest-ETA principle, unwind, resumability, failure table
+- [Integration skill](skills/peer-cash-integration/SKILL.md): step-by-step
+  onboarding for coding agents, with the staging verification checklist
+
+## Source
+
+- [Engine](src/engine/): pure order-state derivation and deposit-param
+  construction (no I/O)
+- [Client](src/client/createCashClient.ts): the six-verb facade
+- [Tools manifest](src/tools/index.ts): JSON-schema definitions of the verbs
+- [Codecs](src/codecs/): zod schemas + lossless JSON round-trips

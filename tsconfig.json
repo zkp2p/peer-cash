@@ -12,7 +12,12 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "paths": {
+      "@zkp2p/cash": ["./src/index.ts"],
+      "@zkp2p/cash/react": ["./src/react/index.ts"],
+      "@zkp2p/cash/tools": ["./src/tools/index.ts"]
+    }
   },
   "include": ["src", "test", "examples", "tsup.config.ts", "vitest.config.ts"]
 }
