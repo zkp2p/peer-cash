@@ -136,6 +136,12 @@ export interface CashClient {
   watch(depositId: string, opts?: WatchOptions): AsyncGenerator<CashOrder, void, void>;
   /** 6 — Withdraw: ONE unwind verb; prunes expired intents first when needed. */
   withdraw(depositId: string, opts: SignerOptions): Promise<WithdrawResult>;
+  /**
+   * 6b — Unsigned path for the unwind verb (agent surface): the same state
+   * checks as `withdraw()`, returning `txs[]` (`[prune?, withdraw]`) for
+   * host-side signing.
+   */
+  prepareWithdraw(depositId: string): Promise<{ txs: PreparedTransaction[] }>;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -265,6 +271,29 @@ export function createCashClient(options: CashClientOptions): CashClient {
       ...(deposit.totalIntents != null ? { intentCount: deposit.totalIntents } : {}),
       ...(updatedAt !== undefined && Number.isFinite(updatedAt) ? { updatedAt } : {}),
     });
+  }
+
+  /**
+   * Shared state gate for both withdraw paths. Returns whether an expired
+   * intent must be pruned before withdrawal can succeed.
+   */
+  async function assertWithdrawable(depositId: string): Promise<{ expiredIntent: boolean }> {
+    const order = await fetchOrder(depositId);
+
+    const remaining =
+      order.totalAmount - order.filledAmount - order.pendingAmount - order.returnedAmount;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const signaled = order.fills.filter((f) => f.status === 'SIGNALED');
+    const liveIntent = signaled.some((f) => f.expiresAt === undefined || f.expiresAt > nowSeconds);
+    const expiredIntent = signaled.length > 0 && !liveIntent;
+
+    if (order.pendingAmount > 0n && liveIntent) {
+      throw errors.activeIntentBlocksWithdrawal(depositId);
+    }
+    if (remaining <= 0n && order.pendingAmount === 0n) {
+      throw errors.nothingToWithdraw(depositId);
+    }
+    return { expiredIntent };
   }
 
   return {
@@ -403,23 +432,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     async withdraw(depositId: string, opts: SignerOptions): Promise<WithdrawResult> {
       const client = signingClient('withdraw', opts);
-      const order = await fetchOrder(depositId);
-
-      const remaining =
-        order.totalAmount - order.filledAmount - order.pendingAmount - order.returnedAmount;
-      const nowSeconds = Math.floor(Date.now() / 1000);
-      const signaled = order.fills.filter((f) => f.status === 'SIGNALED');
-      const liveIntent = signaled.some(
-        (f) => f.expiresAt === undefined || f.expiresAt > nowSeconds,
-      );
-      const expiredIntent = signaled.length > 0 && !liveIntent;
-
-      if (order.pendingAmount > 0n && liveIntent) {
-        throw errors.activeIntentBlocksWithdrawal(depositId);
-      }
-      if (remaining <= 0n && order.pendingAmount === 0n) {
-        throw errors.nothingToWithdraw(depositId);
-      }
+      const { expiredIntent } = await assertWithdrawable(depositId);
 
       const { escrowAddress, onchainDepositId } = parseCompositeDepositId(depositId);
       const escrowArg = escrowAddress ? { escrowAddress: escrowAddress as Address } : {};
@@ -446,6 +459,27 @@ export function createCashClient(options: CashClientOptions): CashClient {
         ...(pruneTxHash !== undefined ? { pruneTxHash } : {}),
         withdrawTxHash,
       };
+    },
+
+    async prepareWithdraw(depositId: string): Promise<{ txs: PreparedTransaction[] }> {
+      const { expiredIntent } = await assertWithdrawable(depositId);
+
+      const { escrowAddress, onchainDepositId } = parseCompositeDepositId(depositId);
+      const escrowArg = escrowAddress ? { escrowAddress: escrowAddress as Address } : {};
+
+      const txs: PreparedTransaction[] = [];
+      if (expiredIntent) {
+        txs.push(
+          await readClient.pruneExpiredIntents.prepare({
+            depositId: onchainDepositId,
+            ...escrowArg,
+          }),
+        );
+      }
+      txs.push(
+        await readClient.withdrawDeposit.prepare({ depositId: onchainDepositId, ...escrowArg }),
+      );
+      return { txs };
     },
   };
 }
