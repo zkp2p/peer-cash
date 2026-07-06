@@ -1,0 +1,197 @@
+/**
+ * JSON codecs — lossless (de)serialization for every wire type. bigints encode
+ * as decimal strings; `parse*` validates with the zod schema and re-attaches
+ * derived behavior (`order.explain()`).
+ */
+import type { CurrencyType, PreparedTransaction } from '../sdk-types';
+import type { CashFill, CashOrder } from '../engine/types';
+import { withExplain, type CashOrderData } from '../engine/orderState';
+import type { CashEstimate } from '../client/estimate';
+import type { CashCapabilities } from '../client/capabilities';
+import type { CashoutResult, PrepareResult, WithdrawResult } from '../client/createCashClient';
+import {
+  cashCapabilitiesJsonSchema,
+  cashEstimateJsonSchema,
+  cashOrderJsonSchema,
+  cashoutResultJsonSchema,
+  prepareResultJsonSchema,
+  preparedTransactionJsonSchema,
+  withdrawResultJsonSchema,
+  type CashCapabilitiesJson,
+  type CashEstimateJson,
+  type CashFillJson,
+  type CashOrderJson,
+  type CashoutResultJson,
+  type PrepareResultJson,
+  type PreparedTransactionJson,
+  type WithdrawResultJson,
+} from './schemas';
+
+function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T;
+}
+
+// --- CashFill ---
+
+export function fillToJson(fill: CashFill): CashFillJson {
+  return omitUndefined({
+    intentHash: fill.intentHash,
+    status: fill.status,
+    amount: fill.amount.toString(),
+    buyer: fill.buyer,
+    fiatCurrency: fill.fiatCurrency,
+    signaledAt: fill.signaledAt,
+    expiresAt: fill.expiresAt,
+    fulfilledAt: fill.fulfilledAt,
+    prunedAt: fill.prunedAt,
+  }) as CashFillJson;
+}
+
+export function fillFromJson(json: CashFillJson): CashFill {
+  return omitUndefined({ ...json, amount: BigInt(json.amount) }) as unknown as CashFill;
+}
+
+// --- CashOrder ---
+
+export function orderToJson(order: CashOrder): CashOrderJson {
+  return omitUndefined({
+    depositId: order.depositId,
+    state: order.state,
+    fills: order.fills.map(fillToJson),
+    totalAmount: order.totalAmount.toString(),
+    filledAmount: order.filledAmount.toString(),
+    pendingAmount: order.pendingAmount.toString(),
+    returnedAmount: order.returnedAmount.toString(),
+    nextActions: order.nextActions,
+    primaryIntentHash: order.primaryIntentHash,
+    matchedAt: order.matchedAt,
+    deliveredAt: order.deliveredAt,
+    updatedAt: order.updatedAt,
+    intentCount: order.intentCount,
+    isInFlight: order.isInFlight,
+    withdrawn: order.withdrawn,
+  }) as CashOrderJson;
+}
+
+export function orderFromJson(json: unknown): CashOrder {
+  const parsed = cashOrderJsonSchema.parse(json);
+  const data = omitUndefined({
+    ...parsed,
+    fills: parsed.fills.map(fillFromJson),
+    totalAmount: BigInt(parsed.totalAmount),
+    filledAmount: BigInt(parsed.filledAmount),
+    pendingAmount: BigInt(parsed.pendingAmount),
+    returnedAmount: BigInt(parsed.returnedAmount),
+  }) as unknown as CashOrderData;
+  return withExplain(data);
+}
+
+// --- CashEstimate ---
+
+export function estimateToJson(estimate: CashEstimate): CashEstimateJson {
+  return { ...estimate, amount: estimate.amount.toString() };
+}
+
+export function estimateFromJson(json: unknown): CashEstimate {
+  const parsed = cashEstimateJsonSchema.parse(json);
+  return { ...parsed, currency: parsed.currency as CurrencyType, amount: BigInt(parsed.amount) };
+}
+
+// --- PreparedTransaction ---
+
+export function preparedTxToJson(tx: PreparedTransaction): PreparedTransactionJson {
+  return { to: tx.to, data: tx.data, value: tx.value.toString(), chainId: tx.chainId };
+}
+
+export function preparedTxFromJson(json: unknown): PreparedTransaction {
+  const parsed = preparedTransactionJsonSchema.parse(json);
+  return {
+    to: parsed.to as PreparedTransaction['to'],
+    data: parsed.data as PreparedTransaction['data'],
+    value: BigInt(parsed.value),
+    chainId: parsed.chainId,
+  };
+}
+
+// --- CashoutResult ---
+
+export function cashoutResultToJson(result: CashoutResult): CashoutResultJson {
+  return {
+    depositId: result.depositId,
+    txHash: result.txHash,
+    escrowAddress: result.escrowAddress,
+    onchainDepositId: result.onchainDepositId.toString(),
+    order: orderToJson(result.order),
+  };
+}
+
+export function cashoutResultFromJson(json: unknown): CashoutResult {
+  const parsed = cashoutResultJsonSchema.parse(json);
+  return {
+    depositId: parsed.depositId,
+    txHash: parsed.txHash as CashoutResult['txHash'],
+    escrowAddress: parsed.escrowAddress,
+    onchainDepositId: BigInt(parsed.onchainDepositId),
+    order: orderFromJson(parsed.order),
+  };
+}
+
+// --- PrepareResult ---
+
+export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
+  return { txs: result.txs.map(preparedTxToJson), register: result.register };
+}
+
+export function prepareResultFromJson(json: unknown): PrepareResult {
+  const parsed = prepareResultJsonSchema.parse(json);
+  return { txs: parsed.txs.map(preparedTxFromJson), register: parsed.register };
+}
+
+// --- WithdrawResult ---
+
+export function withdrawResultToJson(result: WithdrawResult): WithdrawResultJson {
+  return omitUndefined({
+    depositId: result.depositId,
+    pruneTxHash: result.pruneTxHash,
+    withdrawTxHash: result.withdrawTxHash,
+  }) as WithdrawResultJson;
+}
+
+export function withdrawResultFromJson(json: unknown): WithdrawResult {
+  const parsed = withdrawResultJsonSchema.parse(json);
+  return omitUndefined({
+    depositId: parsed.depositId,
+    pruneTxHash: parsed.pruneTxHash,
+    withdrawTxHash: parsed.withdrawTxHash,
+  }) as unknown as WithdrawResult;
+}
+
+// --- CashCapabilities ---
+
+export function capabilitiesToJson(caps: CashCapabilities): CashCapabilitiesJson {
+  return {
+    ...caps,
+    amount: {
+      min: caps.amount.min.toString(),
+      recommendedMin: caps.amount.recommendedMin.toString(),
+      max: null,
+    },
+  };
+}
+
+export function capabilitiesFromJson(json: unknown): CashCapabilities {
+  const parsed = cashCapabilitiesJsonSchema.parse(json);
+  return {
+    ...parsed,
+    platforms: parsed.platforms.map((p) => ({
+      ...p,
+      currencies: p.currencies as CurrencyType[],
+    })),
+    currencies: parsed.currencies as CurrencyType[],
+    amount: {
+      min: BigInt(parsed.amount.min),
+      recommendedMin: BigInt(parsed.amount.recommendedMin),
+      max: null,
+    },
+  };
+}

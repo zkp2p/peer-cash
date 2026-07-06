@@ -139,7 +139,7 @@ describe('deriveCashOrder — state transitions', () => {
   it('returned: pruned intent then withdrawn (non-delivery unwind)', () => {
     const order = deriveCashOrder(
       'esc_1',
-      [intent({ intentHash: '0xa', status: 'PRUNED', prunedTimestamp: String(NOW - 10) })],
+      [intent({ intentHash: '0xa', status: 'PRUNED', pruneTimestamp: String(NOW - 10) })],
       {
         remainingAmount: 0n,
         withdrawnAmount: 5_000_000n,
