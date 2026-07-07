@@ -121,7 +121,7 @@ export interface DeriveCashOrderOptions {
   takenAmount?: bigint;
   /** `totalWithdrawn` — cumulative amount returned to the maker. */
   withdrawnAmount?: bigint;
-  /** Deposit status: `ACTIVE` | `WITHDRAWN` | `CLOSED`. */
+  /** Deposit status from the indexer: `ACTIVE` | `CLOSED`. */
   status?: string;
   /** Total intent count from the indexer aggregate. */
   intentCount?: number;
@@ -131,6 +131,13 @@ export interface DeriveCashOrderOptions {
   payouts?: CashPayoutInfo[];
   /** Deposit quality signal (basis points) from the indexer aggregate. */
   successRateBps?: number;
+  /**
+   * Whether per-fill intent detail is present. Defaults to `intents.length > 0`.
+   * Pass `false` on list rows (deposits fetched without their intents) so
+   * `nextActions` treats a positive outstanding amount as a live lock rather
+   * than offering a withdraw that would revert.
+   */
+  fillsIncluded?: boolean;
   /** Unix seconds "now" for expiry-sensitive `nextActions` (defaults to wall clock). */
   nowSeconds?: number;
 }
@@ -179,18 +186,17 @@ export function withExplain(data: CashOrderData): CashOrder {
  * SIGNALED intent locks the funds — `withdraw()` prunes expired intents first
  * when needed, so an order whose only active intents have expired is
  * withdrawable again.
+ *
+ * `hasLiveIntent` is resolved by the caller: from per-fill liveness when the
+ * intents were fetched, or conservatively from the outstanding aggregate on a
+ * list row where fills weren't loaded (assume live → do not tempt a withdraw
+ * that would revert).
  */
-function deriveNextActions(
-  state: CashOrderState,
-  fills: CashFill[],
-  nowSeconds: number,
-): CashNextAction[] {
+function deriveNextActions(state: CashOrderState, hasLiveIntent: boolean): CashNextAction[] {
   if (state === 'delivered' || state === 'returned') return [];
   if (state === 'awaiting-buyer') return ['wait', 'withdraw'];
-
   // matched | delivering — funds are locked while a signaled intent is live.
-  const anyLive = fills.some((f) => isFillLive(f, nowSeconds));
-  return anyLive ? ['wait'] : ['wait', 'withdraw'];
+  return hasLiveIntent ? ['wait'] : ['wait', 'withdraw'];
 }
 
 /**
@@ -217,7 +223,10 @@ export function deriveCashOrder(
   const total = options.totalAmount ?? remaining + outstanding + taken + withdrawn;
 
   const status = options.status;
-  const isTerminal = status === 'WITHDRAWN' || status === 'CLOSED';
+  // The indexer's DepositStatus is ACTIVE | CLOSED; a fully-withdrawn deposit
+  // is CLOSED (never a 'WITHDRAWN' status — that value exists only on the
+  // fund-activity log). 'WITHDRAWN' is tolerated here purely for forward-compat.
+  const isTerminal = status === 'CLOSED' || status === 'WITHDRAWN';
   const hasLiveFunds = remaining > DUST_THRESHOLD || outstanding > 0n;
 
   let state: CashOrderState;
@@ -253,6 +262,15 @@ export function deriveCashOrder(
   const isInFlight = state === 'awaiting-buyer' || state === 'matched' || state === 'delivering';
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
 
+  // Was fill-level intent detail available? Explicitly signalled by the caller,
+  // else inferred from whether any intents were passed. When absent (list rows),
+  // a positive `outstanding` is assumed to be a live lock — the conservative,
+  // money-safe default for `nextActions`.
+  const fillsIncluded = options.fillsIncluded ?? fills.length > 0;
+  const hasLiveIntent = fillsIncluded
+    ? fills.some((f) => isFillLive(f, nowSeconds))
+    : outstanding > 0n;
+
   return withExplain({
     depositId,
     state,
@@ -261,7 +279,7 @@ export function deriveCashOrder(
     filledAmount: taken,
     pendingAmount: outstanding,
     returnedAmount: withdrawn,
-    nextActions: deriveNextActions(state, fills, nowSeconds),
+    nextActions: deriveNextActions(state, hasLiveIntent),
     ...(primary?.intentHash !== undefined ? { primaryIntentHash: primary.intentHash } : {}),
     ...(matchedAt !== undefined ? { matchedAt } : {}),
     ...(deliveredAt !== undefined ? { deliveredAt } : {}),

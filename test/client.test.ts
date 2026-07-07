@@ -681,6 +681,130 @@ describe('withdraw() — partial', () => {
   });
 });
 
+describe('withdraw() — receipt safety and error mapping', () => {
+  it('throws TRANSACTION_FAILED when the full withdraw reverts (never false success)', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.withdrawDeposit.mockResolvedValue('0xw');
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'reverted' });
+
+    await expect(client().withdraw(DEPOSIT_ID, { signer })).rejects.toMatchObject({
+      code: 'TRANSACTION_FAILED',
+    });
+  });
+
+  it('throws TRANSACTION_FAILED when a partial withdraw reverts', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.removeFunds.mockResolvedValue('0xpartial');
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'reverted' });
+
+    await expect(
+      client().withdraw(DEPOSIT_ID, { signer, amount: 2_000_000n }),
+    ).rejects.toMatchObject({ code: 'TRANSACTION_FAILED' });
+  });
+
+  it('maps a raw "paused" revert on withdrawDeposit to ESCROW_PAUSED', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.withdrawDeposit.mockRejectedValue(
+      new Error('execution reverted: Pausable: paused'),
+    );
+    await expect(client().withdraw(DEPOSIT_ID, { signer })).rejects.toMatchObject({
+      code: 'ESCROW_PAUSED',
+      retryable: true,
+    });
+  });
+
+  it('maps any other raw revert to a wrapped TRANSACTION_FAILED (no raw leak)', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.withdrawDeposit.mockRejectedValue(new Error('nonce too low'));
+    const err = await client()
+      .withdraw(DEPOSIT_ID, { signer })
+      .catch((e) => e);
+    expect(isCashError(err)).toBe(true);
+    expect(err.code).toBe('TRANSACTION_FAILED');
+  });
+});
+
+describe('cashout() — allowance visibility', () => {
+  it('throws retryable ALLOWANCE_NOT_VISIBLE when the approve never surfaces', async () => {
+    vi.useFakeTimers();
+    try {
+      mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: false, hash: '0xapprove' });
+      // approve receipt is fine, but the read path never shows the allowance
+      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+      mockInstance.publicClient.readContract.mockResolvedValue(0n);
+
+      const promise = client()
+        .cashout(
+          {
+            amount: 5_000_000n,
+            receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          },
+          { signer },
+        )
+        .catch((e) => e);
+      await vi.runAllTimersAsync();
+      const err = await promise;
+      expect(isCashError(err)).toBe(true);
+      expect(err.code).toBe('ALLOWANCE_NOT_VISIBLE');
+      expect(err.retryable).toBe(true);
+      expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('orders() — list-row nextActions honesty', () => {
+  it('does NOT offer withdraw on a matched row (outstanding lock, no fill detail)', async () => {
+    mockInstance.indexer.getDeposits.mockResolvedValue([
+      depositRow({
+        id: 'a_1',
+        remainingDeposits: '4000000',
+        outstandingIntentAmount: '1000000',
+        // list query returns no intents
+      }),
+    ]);
+    const orders = await client().orders('0xmaker');
+    expect(orders[0]?.state).toBe('matched');
+    expect(orders[0]?.nextActions).toEqual(['wait']);
+  });
+});
+
+describe('cashout() — verified platforms', () => {
+  it('rejects wise with PAYEE_VERIFICATION_REQUIRED before any network call', async () => {
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'wise', currency: 'USD', payee: { offchainId: 'wisetag' } },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'PAYEE_VERIFICATION_REQUIRED', retryable: false });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('allows wise when an identity attestation is supplied', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+    await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: {
+          platform: 'wise',
+          currency: 'USD',
+          payee: { offchainId: 'wisetag', identityAttestation: { sig: '0x' } } as never,
+        },
+      },
+      { signer },
+    );
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledOnce();
+  });
+});
+
 describe('typed errors', () => {
   it('CashError serializes for tool results', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([]);

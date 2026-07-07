@@ -3,6 +3,7 @@ import { CASH_ORDER_POLL_INTERVAL_MS } from '../engine/constants';
 import type { CashOrder } from '../engine/types';
 import type { CashClient } from '../client/createCashClient';
 import { usePoll } from './usePoll';
+import { useMountedRef } from './useMountedRef';
 
 export interface UseOrdersOptions {
   client: CashClient | null;
@@ -30,6 +31,7 @@ export function useOrders({
   const [orders, setOrders] = useState<CashOrder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const mounted = useMountedRef();
 
   const fetchOrders = useCallback(
     async (isActive: () => boolean = () => true): Promise<CashOrder[]> => {
@@ -63,7 +65,7 @@ export function useOrders({
     ),
   );
 
-  const refresh = useCallback(() => fetchOrders(), [fetchOrders]);
+  const refresh = useCallback(() => fetchOrders(() => mounted.current), [fetchOrders, mounted]);
 
   const inFlightCount = orders.filter((o) => o.isInFlight).length;
   /** Lifetime cashed-out total (USDC base units) across the feed. */

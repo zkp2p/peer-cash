@@ -39,6 +39,14 @@ export interface EstimateInput {
   currency: CurrencyType;
 }
 
+/**
+ * Chainlink feeds should update at least daily; a reading older than this is
+ * flagged `stale` so a consumer can warn rather than quote a frozen rate. The
+ * on-chain fill enforces the deposit's own `maxStaleness` regardless — this is
+ * a display-side signal only.
+ */
+const DEFAULT_MAX_STALENESS_SECONDS = 86_400;
+
 export interface CashEstimate {
   /** Always `'oracle-estimate'` — there is no committed quote in Peer Cash. */
   kind: 'oracle-estimate';
@@ -51,6 +59,10 @@ export interface CashEstimate {
   receiveAmount: number;
   /** Unix seconds when the oracle was read. */
   asOf: number;
+  /** Unix seconds the Chainlink feed last updated (absent for the USD passthrough). */
+  oracleUpdatedAt?: number;
+  /** True when the feed reading is older than a day — treat the rate with caution. */
+  stale?: boolean;
 }
 
 export async function readEstimate(
@@ -66,8 +78,10 @@ export async function readEstimate(
   }
 
   const feedConfig = CHAINLINK_ORACLE_FEEDS[currency];
+  const asOf = Math.floor(Date.now() / 1000);
 
   let rate: number;
+  let oracleUpdatedAt: number | undefined;
   if (!feedConfig || feedConfig.feed.toLowerCase() === ZERO_ADDRESS) {
     // USD passthrough — USDC ≈ USD.
     rate = 1;
@@ -83,10 +97,15 @@ export async function readEstimate(
     if (!Number.isFinite(price) || price <= 0) {
       throw errors.oracleUnsupportedCurrency(currency);
     }
+    const updatedAt = Number(result[3]);
+    if (Number.isFinite(updatedAt) && updatedAt > 0) oracleUpdatedAt = updatedAt;
     // invert: feed is CCY/USD (USD per CCY) → target per USDC = 1/price.
     // else:   feed is USD/CCY (CCY per USD) → target per USDC = price.
     rate = feedConfig.invert ? 1 / price : price;
   }
+
+  const stale =
+    oracleUpdatedAt !== undefined && asOf - oracleUpdatedAt > DEFAULT_MAX_STALENESS_SECONDS;
 
   return {
     kind: 'oracle-estimate',
@@ -94,6 +113,8 @@ export async function readEstimate(
     amount,
     rate,
     receiveAmount: (Number(amount) / 10 ** USDC_DECIMALS) * rate,
-    asOf: Math.floor(Date.now() / 1000),
+    asOf,
+    ...(oracleUpdatedAt !== undefined ? { oracleUpdatedAt } : {}),
+    ...(stale ? { stale: true } : {}),
   };
 }

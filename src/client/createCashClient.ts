@@ -35,9 +35,14 @@ import { deriveBuyerProfile } from '../engine/buyerProfile';
 import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
 import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
-import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
+import {
+  buildCapabilities,
+  platformRequiresIdentityAttestation,
+  MIN_CASHOUT_AMOUNT,
+  type CashCapabilities,
+} from './capabilities';
 import { readEstimate, type CashEstimate, type EstimateInput } from './estimate';
-import { CashError, errors, isCashError } from './errors';
+import { CashError, errors, isCashError, mapChainError } from './errors';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
 
@@ -227,6 +232,28 @@ function orderFingerprint(order: CashOrder): string {
   ].join('|');
 }
 
+/**
+ * Send a mutating on-chain call, then wait for and verify its receipt.
+ * Submission errors are mapped to typed `CashError`s; a reverted receipt
+ * throws `TRANSACTION_FAILED` — a mutating verb never reports success for a
+ * transaction that did not land, and never leaks a raw RPC error to the caller.
+ */
+async function submitAndConfirm(
+  client: Zkp2pClient,
+  verb: string,
+  send: () => Promise<`0x${string}`>,
+): Promise<Hash> {
+  let hash: Hash;
+  try {
+    hash = (await send()) as Hash;
+  } catch (err) {
+    throw mapChainError(verb, err);
+  }
+  const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
+  return hash;
+}
+
 /** The indexer aggregate fields both deposit queries share. */
 type DepositAggregates = {
   remainingDeposits?: string | number | null;
@@ -317,6 +344,14 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (!isMarketRateSupported(receive.currency)) {
       throw errors.oracleUnsupportedCurrency(receive.currency);
     }
+    // Wise/PayPal require a signed maker identity attestation the SDK can't
+    // mint. Reject early unless the caller supplied one on the payee.
+    if (
+      platformRequiresIdentityAttestation(receive.platform) &&
+      !(receive.payee as { identityAttestation?: unknown }).identityAttestation
+    ) {
+      throw errors.payeeVerificationRequired(receive.platform);
+    }
     return {
       amount,
       payouts: [
@@ -335,6 +370,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
       return await prepareCashDepositParams(client, depositInput);
     } catch (err) {
       if (isCashError(err)) throw err;
+      // The curator rejects Wise/PayPal payees that lack a signed attestation.
+      const message = err instanceof Error ? err.message : String(err);
+      if (/identityAttestation is required|identity attestation/i.test(message)) {
+        const platform = depositInput.payouts[0]?.processorName ?? 'this platform';
+        throw errors.payeeVerificationRequired(platform, err);
+      }
       throw errors.payeeRegistrationFailed(err);
     }
   }
@@ -456,15 +497,22 @@ export function createCashClient(options: CashClientOptions): CashClient {
     escrow: Address,
     amount: bigint,
   ): Promise<void> {
-    const allowance = await client.ensureAllowance({
-      token,
-      amount,
-      spender: escrow,
-      txOverrides: attribution,
-    });
+    let allowance: { hadAllowance: boolean; hash?: Hash };
+    try {
+      allowance = await client.ensureAllowance({
+        token,
+        amount,
+        spender: escrow,
+        txOverrides: attribution,
+      });
+    } catch (err) {
+      throw mapChainError('approve', err);
+    }
     if (allowance.hadAllowance || !allowance.hash) return;
 
-    await client.publicClient.waitForTransactionReceipt({ hash: allowance.hash });
+    const receipt = await client.publicClient.waitForTransactionReceipt({ hash: allowance.hash });
+    if (receipt.status === 'reverted') throw errors.transactionFailed(allowance.hash);
+
     for (let attempt = 0; attempt < 15; attempt++) {
       const visible = (await client.publicClient.readContract({
         address: token,
@@ -475,6 +523,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
       if (visible >= amount) return;
       await sleep(1_000);
     }
+    // The approve mined but the allowance never surfaced on the read path —
+    // surface it as retryable rather than blindly submitting a doomed deposit.
+    throw errors.allowanceNotVisible(amount);
   }
 
   return {
@@ -499,14 +550,26 @@ export function createCashClient(options: CashClientOptions): CashClient {
       await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
 
       const attributedParams = { ...params, txOverrides: attribution };
+      // Submit the deposit; one retry for the replica-lag case the allowance
+      // visibility loop cannot fully rule out. All other failures map to typed
+      // errors and a reverted receipt throws — no raw errors, no false success.
+      const send = async (): Promise<`0x${string}`> => {
+        try {
+          return (await client.createDeposit(attributedParams)).hash;
+        } catch (err) {
+          if (err instanceof Error && /exceeds allowance/i.test(err.message)) {
+            await sleep(2_000);
+            return (await client.createDeposit(attributedParams)).hash;
+          }
+          throw err;
+        }
+      };
+
       let hash: Hash;
       try {
-        ({ hash } = await client.createDeposit(attributedParams));
+        hash = (await send()) as Hash;
       } catch (err) {
-        // One retry for the replica-lag case the visibility loop cannot fully rule out.
-        if (!(err instanceof Error) || !/exceeds allowance/i.test(err.message)) throw err;
-        await sleep(2_000);
-        ({ hash } = await client.createDeposit(attributedParams));
+        throw mapChainError('createDeposit', err);
       }
       const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
@@ -571,7 +634,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const deposits = await readClient.indexer.getDeposits({ depositor: owner }, { limit });
 
       const derived = deposits
-        .map((d) => deriveCashOrder(d.id, [], depositOrderOptions(d)))
+        // List rows carry no intent detail — flag it so `nextActions` treats a
+        // live outstanding amount conservatively (no false "withdraw" offer).
+        .map((d) => deriveCashOrder(d.id, [], { ...depositOrderOptions(d), fillsIncluded: false }))
         // Drop dust/empty deposits that never represented a real cash-out.
         .filter((o) => o.totalAmount > 10_000n)
         .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
@@ -622,13 +687,14 @@ export function createCashClient(options: CashClientOptions): CashClient {
           depositId,
           opts.amount,
         );
-        const withdrawTxHash = (await client.removeFunds({
-          depositId: onchainDepositId,
-          amount: opts.amount,
-          ...escrowArg,
-          txOverrides: attribution,
-        })) as Hash;
-        await client.publicClient.waitForTransactionReceipt({ hash: withdrawTxHash });
+        const withdrawTxHash = await submitAndConfirm(client, 'removeFunds', () =>
+          client.removeFunds({
+            depositId: onchainDepositId,
+            amount: opts.amount!,
+            ...escrowArg,
+            txOverrides: attribution,
+          }),
+        );
         return { depositId, withdrawTxHash };
       }
 
@@ -638,20 +704,22 @@ export function createCashClient(options: CashClientOptions): CashClient {
       if (expiredIntent) {
         // Free the expired intent's locked amount back to the deposit first —
         // withdrawDeposit reverts while any intent is still recorded as active.
-        pruneTxHash = (await client.pruneExpiredIntents({
+        pruneTxHash = await submitAndConfirm(client, 'pruneExpiredIntents', () =>
+          client.pruneExpiredIntents({
+            depositId: onchainDepositId,
+            ...escrowArg,
+            txOverrides: attribution,
+          }),
+        );
+      }
+
+      const withdrawTxHash = await submitAndConfirm(client, 'withdrawDeposit', () =>
+        client.withdrawDeposit({
           depositId: onchainDepositId,
           ...escrowArg,
           txOverrides: attribution,
-        })) as Hash;
-        await client.publicClient.waitForTransactionReceipt({ hash: pruneTxHash });
-      }
-
-      const withdrawTxHash = (await client.withdrawDeposit({
-        depositId: onchainDepositId,
-        ...escrowArg,
-        txOverrides: attribution,
-      })) as Hash;
-      await client.publicClient.waitForTransactionReceipt({ hash: withdrawTxHash });
+        }),
+      );
 
       return {
         depositId,
@@ -712,14 +780,14 @@ export function createCashClient(options: CashClientOptions): CashClient {
         client.escrowAddress) as Address;
       await settleAllowance(client, BASE_USDC_ADDRESS as Address, owner, escrow, amount);
 
-      const txHash = (await client.addFunds({
-        depositId: onchainDepositId,
-        amount,
-        ...escrowArg,
-        txOverrides: attribution,
-      })) as Hash;
-      const receipt = await client.publicClient.waitForTransactionReceipt({ hash: txHash });
-      if (receipt.status === 'reverted') throw errors.transactionFailed(txHash);
+      const txHash = await submitAndConfirm(client, 'addFunds', () =>
+        client.addFunds({
+          depositId: onchainDepositId,
+          amount,
+          ...escrowArg,
+          txOverrides: attribution,
+        }),
+      );
 
       return { depositId, txHash };
     },

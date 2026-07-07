@@ -4,6 +4,7 @@ import type { CashOrder } from '../engine/types';
 import type { CashClient } from '../client/createCashClient';
 import { isCashError } from '../client/errors';
 import { usePoll } from './usePoll';
+import { useMountedRef } from './useMountedRef';
 
 export interface UseOrderOptions {
   client: CashClient | null;
@@ -32,6 +33,7 @@ export function useOrder({
   const [order, setOrder] = useState<CashOrder | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const mounted = useMountedRef();
 
   const fetchOrder = useCallback(
     async (isActive: () => boolean = () => true): Promise<CashOrder | null> => {
@@ -70,7 +72,7 @@ export function useOrder({
     ),
   );
 
-  const refresh = useCallback(() => fetchOrder(), [fetchOrder]);
+  const refresh = useCallback(() => fetchOrder(() => mounted.current), [fetchOrder, mounted]);
 
   return { order, isLoading, error, refresh };
 }

@@ -99,6 +99,8 @@ export const cashEstimateJsonSchema = z.object({
   rate: z.number(),
   receiveAmount: z.number(),
   asOf: z.number(),
+  oracleUpdatedAt: z.number().optional(),
+  stale: z.boolean().optional(),
 });
 
 export const preparedTransactionJsonSchema = z.object({
@@ -141,6 +143,7 @@ export const cashCapabilitiesJsonSchema = z.object({
       platform: z.string(),
       currencies: z.array(z.string()),
       payeeHint: z.string(),
+      requiresIdentityAttestation: z.boolean(),
     }),
   ),
   currencies: z.array(z.string()),

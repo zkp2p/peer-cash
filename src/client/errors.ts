@@ -14,7 +14,9 @@ export type CashErrorCode =
   | 'INDEXER_LAG'
   | 'ORDER_NOT_FOUND'
   | 'PAYEE_REGISTRATION_FAILED'
+  | 'PAYEE_VERIFICATION_REQUIRED'
   | 'DEPOSIT_RESOLUTION_FAILED'
+  | 'ALLOWANCE_NOT_VISIBLE'
   | 'SIGNER_REQUIRED'
   | 'WATCH_TIMEOUT'
   | 'TRANSACTION_FAILED';
@@ -129,6 +131,23 @@ export const errors = {
       },
       { cause },
     ),
+  payeeVerificationRequired: (platform: string, cause?: unknown) =>
+    new CashError(
+      {
+        code: 'PAYEE_VERIFICATION_REQUIRED',
+        message: `${platform} requires a verified maker identity attestation to register a payee; a bare handle is not accepted.`,
+        retryable: false,
+        remediation: `Register this ${platform} payee through the ZKP2P app / extension (which produces the signed identity attestation) before cashing out. capabilities() flags such platforms with requiresIdentityAttestation: true.`,
+      },
+      { cause },
+    ),
+  allowanceNotVisible: (amount: bigint) =>
+    new CashError({
+      code: 'ALLOWANCE_NOT_VISIBLE',
+      message: `USDC approval for ${amount} base units did not become visible on the read path in time.`,
+      retryable: true,
+      remediation: `The approve transaction mined but a load-balanced RPC is serving stale state. Retry the same call in a few seconds.`,
+    }),
   depositResolutionFailed: (txHash: string) =>
     new CashError({
       code: 'DEPOSIT_RESOLUTION_FAILED',
@@ -167,4 +186,31 @@ export const errors = {
       retryable: true,
       remediation: `Wait for the protocol to unpause and retry. Existing funds remain withdrawable.`,
     }),
+  /** Generic fallback for an on-chain call that failed for an unrecognized reason. */
+  chainCallFailed: (verb: string, cause?: unknown) =>
+    new CashError(
+      {
+        code: 'TRANSACTION_FAILED',
+        message: `The on-chain ${verb} call failed.`,
+        retryable: false,
+        remediation: `Inspect the error cause and the wallet on Basescan. Deposit state is unchanged if the call reverted before escrow accepted funds.`,
+      },
+      { cause },
+    ),
 };
+
+/**
+ * Map a raw SDK/RPC/viem error from a mutating on-chain call to a typed
+ * `CashError`, so the package's error contract holds even when the underlying
+ * call reverts. Recognized reverts get specific codes; everything else falls
+ * back to a wrapped `TRANSACTION_FAILED` (never a raw error to the consumer).
+ */
+export function mapChainError(verb: string, err: unknown): CashError {
+  if (isCashError(err)) return err;
+  const message = err instanceof Error ? err.message : String(err);
+  if (/\bpaused\b/i.test(message)) return errors.escrowPaused();
+  if (/exceeds allowance|insufficient allowance|transfer amount exceeds/i.test(message)) {
+    return errors.allowanceNotVisible(0n);
+  }
+  return errors.chainCallFailed(verb, err);
+}

@@ -36,7 +36,9 @@ export function resolveCashDepositId(params: {
   const rawId = event.args.depositId;
   if (rawId === undefined || rawId === null) return null;
   const onchainDepositId = BigInt(rawId as string | number | bigint);
-  const escrowAddress = event.address;
+  // Normalize to the indexer's canonical lowercase form so the escrow address,
+  // the composite id, and every subsequent indexer query agree exactly.
+  const escrowAddress = event.address.toLowerCase();
 
   return {
     onchainDepositId,

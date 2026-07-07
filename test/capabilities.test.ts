@@ -34,6 +34,17 @@ describe('buildCapabilities', () => {
     expect(venmo?.currencies).toContain('USD');
   });
 
+  it('flags Wise and PayPal as requiring an identity attestation; others do not', () => {
+    const caps = buildCapabilities('production');
+    for (const platform of caps.platforms) {
+      const expected = platform.platform === 'wise' || platform.platform === 'paypal';
+      expect(platform.requiresIdentityAttestation).toBe(expected);
+    }
+    // both must be present so the flag is observable
+    expect(caps.platforms.some((p) => p.platform === 'wise')).toBe(true);
+    expect(caps.platforms.some((p) => p.platform === 'paypal')).toBe(true);
+  });
+
   it('is synchronous and deterministic', () => {
     const a = buildCapabilities('production');
     const b = buildCapabilities('production');

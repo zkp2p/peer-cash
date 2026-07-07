@@ -123,7 +123,11 @@ export function estimateToJson(estimate: CashEstimate): CashEstimateJson {
 
 export function estimateFromJson(json: unknown): CashEstimate {
   const parsed = cashEstimateJsonSchema.parse(json);
-  return { ...parsed, currency: parsed.currency as CurrencyType, amount: BigInt(parsed.amount) };
+  return omitUndefined({
+    ...parsed,
+    currency: parsed.currency as CurrencyType,
+    amount: BigInt(parsed.amount),
+  }) as unknown as CashEstimate;
 }
 
 // --- PreparedTransaction ---

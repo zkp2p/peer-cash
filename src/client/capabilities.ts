@@ -30,6 +30,19 @@ const PAYEE_HINTS: Record<string, string> = {
   n26: 'MoneyBeam email or phone number',
 };
 
+/**
+ * Platforms whose curator payee registration requires a signed maker identity
+ * attestation — a bare handle is rejected. The attestation is produced by the
+ * ZKP2P app / extension, not this SDK, so a cash-out to these platforms needs
+ * the payee registered there first (see `PAYEE_VERIFICATION_REQUIRED`).
+ */
+const IDENTITY_ATTESTATION_PLATFORMS = new Set(['wise', 'paypal']);
+
+/** Whether a platform's curator registration needs a signed identity attestation. */
+export function platformRequiresIdentityAttestation(platform: string): boolean {
+  return IDENTITY_ATTESTATION_PLATFORMS.has(platform);
+}
+
 export interface CashPlatformCapability {
   /** Platform id, e.g. `'venmo'` — the value `receive.platform` accepts. */
   platform: string;
@@ -37,6 +50,13 @@ export interface CashPlatformCapability {
   currencies: CurrencyType[];
   /** Human hint for the payee handle format. */
   payeeHint: string;
+  /**
+   * When true, registering a payee for this platform requires a signed maker
+   * identity attestation the SDK cannot produce — register the payee via the
+   * ZKP2P app/extension first. A bare-handle `cashout()` throws
+   * `PAYEE_VERIFICATION_REQUIRED`.
+   */
+  requiresIdentityAttestation: boolean;
 }
 
 export interface CashCapabilities {
@@ -68,6 +88,7 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
         platform,
         currencies: [...new Set(currencies)],
         payeeHint: PAYEE_HINTS[platform] ?? 'Your payment handle for this platform',
+        requiresIdentityAttestation: IDENTITY_ATTESTATION_PLATFORMS.has(platform),
       };
     })
     .filter((p) => p.currencies.length > 0)

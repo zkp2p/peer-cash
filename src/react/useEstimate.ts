@@ -31,7 +31,7 @@ export function useEstimate({
 
   const refresh = useCallback(async () => {
     if (!client || !currency || !amount || amount <= 0n) {
-      setEstimate(null);
+      if (mountedRef.current) setEstimate(null);
       return;
     }
     setIsLoading(true);
