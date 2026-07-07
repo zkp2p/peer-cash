@@ -69,6 +69,12 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
   this automatically.
 - **Unwind with `withdraw()` only.** It is state-aware (prunes expired
   intents first). Do not call escrow functions directly.
+- **Read fills as receipts.** `fiatOwed` is the buyer's obligation at the
+  locked rate; after the proof, `fiatPaid`/`paymentId`/`releasedAmount` are
+  the verified outcome. Reconcile against those, not your own math.
+- **Check the buyer during `matched`.** `buyer(address)` (tool: `cash_buyer`)
+  returns their fulfilled/pruned history and success rate — surface it
+  instead of a raw address.
 - **Serialize with the codecs.** `orderToJson`/`orderFromJson` etc. round-trip
   bigints losslessly and re-attach `explain()`. Plain `JSON.stringify` on a
   live object throws on bigints.

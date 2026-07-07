@@ -9,6 +9,7 @@ describe('tools manifest', () => {
       'cash_cashout',
       'cash_order',
       'cash_orders',
+      'cash_buyer',
       'cash_withdraw',
       'cash_topup',
     ]);
@@ -32,7 +33,7 @@ describe('tools manifest', () => {
   it('is JSON-serializable as-is', () => {
     expect(() => JSON.stringify(cashToolManifest)).not.toThrow();
     const parsed = JSON.parse(JSON.stringify(cashToolManifest));
-    expect(parsed.tools).toHaveLength(7);
+    expect(parsed.tools).toHaveLength(8);
     expect(parsed.name).toBe('@zkp2p/cash');
   });
 });

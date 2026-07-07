@@ -29,10 +29,12 @@ import type {
 } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, CASH_ORDER_STATUSES } from '../engine/constants';
 import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
-import { deriveCashOrder, type DeriveCashOrderOptions } from '../engine/orderState';
+import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
+import { derivePayouts } from '../engine/payouts';
+import { deriveBuyerProfile } from '../engine/buyerProfile';
 import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
-import type { CashDepositInput, CashOrder } from '../engine/types';
+import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
 import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
 import { readEstimate, type CashEstimate, type EstimateInput } from './estimate';
 import { CashError, errors, isCashError } from './errors';
@@ -172,6 +174,11 @@ export interface CashClient {
   prepare(input: CashoutInput): Promise<PrepareResult>;
   /** 3 — Observe: resumable from `depositId` alone; no session state anywhere. */
   order(depositId: string): Promise<CashOrder>;
+  /**
+   * 3b — Observe helper: a buyer's protocol track record from their full
+   * intent history. Answers "who just matched my order?" during `matched`.
+   */
+  buyer(address: string): Promise<CashBuyerProfile>;
   /** 4 — List: indexer-native. A cash order IS a deposit; the chain is the database. */
   orders(owner: string, opts?: OrdersOptions): Promise<CashOrder[]>;
   /** 5 — Watch: yields on change; ends at a terminal state, abort, or timeout. */
@@ -231,8 +238,13 @@ type DepositAggregates = {
   updatedAt?: string | number | null;
 };
 
+/** The indexer aggregate fields both deposit queries share. */
+type DepositAggregatesWithQuality = DepositAggregates & {
+  successRateBps?: number | null;
+};
+
 /** Map raw indexer deposit aggregates to `deriveCashOrder` options. */
-function depositOrderOptions(deposit: DepositAggregates): DeriveCashOrderOptions {
+function depositOrderOptions(deposit: DepositAggregatesWithQuality): DeriveCashOrderOptions {
   const remaining = toBigIntOrUndefined(deposit.remainingDeposits);
   const outstanding = toBigIntOrUndefined(deposit.outstandingIntentAmount);
   const taken = toBigIntOrUndefined(deposit.totalAmountTaken);
@@ -245,6 +257,7 @@ function depositOrderOptions(deposit: DepositAggregates): DeriveCashOrderOptions
     ...(withdrawn !== undefined ? { withdrawnAmount: withdrawn } : {}),
     ...(deposit.status != null ? { status: deposit.status } : {}),
     ...(deposit.totalIntents != null ? { intentCount: deposit.totalIntents } : {}),
+    ...(deposit.successRateBps != null ? { successRateBps: deposit.successRateBps } : {}),
     ...(updatedAt !== undefined && Number.isFinite(updatedAt) ? { updatedAt } : {}),
   };
 }
@@ -343,7 +356,18 @@ export function createCashClient(options: CashClientOptions): CashClient {
       return deriveCashOrder(depositId, intents);
     }
 
-    return deriveCashOrder(depositId, deposit.intents ?? [], depositOrderOptions(deposit));
+    // Reconstruct the payout legs (platform, currency, payee hash, pricing
+    // proof) from the relations the same query already returned.
+    const payouts = derivePayouts(
+      deposit.paymentMethods ?? [],
+      deposit.currencies ?? [],
+      getPaymentMethodsCatalog(BASE_CHAIN_ID, environment),
+    );
+
+    return deriveCashOrder(depositId, deposit.intents ?? [], {
+      ...depositOrderOptions(deposit),
+      ...(payouts.length > 0 ? { payouts } : {}),
+    });
   }
 
   /** Parse the composite id into the on-chain id + optional escrow override. */
@@ -377,7 +401,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     const nowSeconds = Math.floor(Date.now() / 1000);
     const signaled = order.fills.filter((f) => f.status === 'SIGNALED');
-    const liveIntent = signaled.some((f) => f.expiresAt === undefined || f.expiresAt > nowSeconds);
+    const liveIntent = signaled.some((f) => isFillLive(f, nowSeconds));
     const expiredIntent = signaled.length > 0 && !liveIntent;
 
     if (order.pendingAmount > 0n && liveIntent) {
@@ -535,6 +559,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     async order(depositId: string): Promise<CashOrder> {
       return fetchOrder(depositId);
+    },
+
+    async buyer(address: string): Promise<CashBuyerProfile> {
+      const intents = await readClient.indexer.getOwnerIntents(address, CASH_ORDER_STATUSES);
+      return deriveBuyerProfile(address, intents);
     },
 
     async orders(owner: string, opts: OrdersOptions = {}): Promise<CashOrder[]> {

@@ -15,10 +15,26 @@ export type {
   CashFill,
   CashOrder,
   CashPayout,
+  CashPayoutInfo,
+  CashPayoutPricing,
+  CashBuyerProfile,
   CashDepositInput,
 } from './types';
 
-export { usdc, formatUsdc } from './amounts';
+export {
+  usdc,
+  formatUsdc,
+  fiatFromUsdc,
+  rateToNumber,
+  fiatToNumber,
+  centsToNumber,
+  RATE_PRECISION,
+} from './amounts';
+
+export { derivePayouts } from './payouts';
+export type { PaymentMethodLike, MethodCurrencyLike } from './payouts';
+
+export { deriveBuyerProfile } from './buyerProfile';
 
 export {
   isMarketRateSupported,
@@ -27,7 +43,7 @@ export {
   prepareCashDepositParams,
 } from './marketRate';
 
-export { deriveCashOrder, explainOrder, withExplain } from './orderState';
+export { deriveCashOrder, explainOrder, withExplain, isFillLive } from './orderState';
 export type { DeriveCashOrderOptions, CashOrderData } from './orderState';
 
 export { resolveCashDepositId, parseCompositeDepositId } from './resolveDeposit';

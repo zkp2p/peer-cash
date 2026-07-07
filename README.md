@@ -42,6 +42,7 @@ for await (const order of cash.watch(depositId)) {
 | `watch(depositId)`                         | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })` | The ONE unwind verb — partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
 | `topUp(depositId, amount, { signer })`     | Add USDC to a live order — same payee, same market rate                                                                         |
+| `buyer(address)`                           | A buyer's track record from their intent history — who just matched your order?                                                 |
 
 Every mutating verb has an unsigned counterpart (`prepare`, `prepareWithdraw`,
 `prepareTopUp`), and every transaction — including approves — carries ERC-8021
@@ -81,6 +82,11 @@ Deep dive: [docs/lifecycle-and-recovery.md](docs/lifecycle-and-recovery.md).
 - Every order carries `nextActions: ('wait' | 'withdraw')[]` — no heuristics.
 - Every wire type has a zod schema + JSON codec — state crosses process
   boundaries losslessly.
+- Everything arrives decoded: platform ids and currency codes instead of
+  bytes32 hashes, plain-number rates instead of 1e18 bigints.
+- Fills are receipts: the locked rate and fiat owed at signal, then the
+  verified fiat paid, currency, platform payment id, released USDC, and
+  fill latency once the proof lands.
 - `@zkp2p/cash/tools` exports a JSON-schema tool manifest of the verbs.
 
 Start at [AGENTS.md](AGENTS.md), or load the

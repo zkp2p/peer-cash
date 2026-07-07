@@ -22,6 +22,7 @@ const mockInstance = {
     getDeposits: vi.fn(),
     getDepositsByIdsWithRelations: vi.fn(),
     getIntentsForDeposits: vi.fn(),
+    getOwnerIntents: vi.fn(),
   },
   registerPayeeDetails: vi.fn(),
   createDeposit: vi.fn(),
@@ -437,6 +438,69 @@ describe('watch()', () => {
       controller.abort();
     }
     expect(seen).toEqual(['awaiting-buyer']);
+  });
+});
+
+describe('order() enrichment', () => {
+  it('reconstructs decoded payout legs from deposit relations', async () => {
+    const { getPaymentMethodsCatalog, currencyInfo } =
+      // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+      await vi.importActual<typeof import('@zkp2p/sdk')>('@zkp2p/sdk');
+    const catalog = getPaymentMethodsCatalog(8453, 'staging');
+    const zelleHash = catalog['zelle']!.paymentMethodHash;
+
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        successRateBps: 10_000,
+        paymentMethods: [
+          { paymentMethodHash: zelleHash, payeeDetailsHash: '0xpayee', active: true },
+        ],
+        currencies: [
+          {
+            paymentMethodHash: zelleHash,
+            currencyCode: currencyInfo['USD']!.currencyCodeHash,
+            spreadBps: 0,
+            kind: 'oracle_chainlink',
+            rateSource: 'ORACLE',
+          },
+        ],
+      }),
+    ]);
+
+    const order = await client().order(DEPOSIT_ID);
+    expect(order.successRateBps).toBe(10_000);
+    expect(order.payouts).toHaveLength(1);
+    expect(order.payouts?.[0]).toMatchObject({
+      platform: 'zelle',
+      currency: 'USD',
+      payeeHash: '0xpayee',
+      pricing: expect.objectContaining({ marketRate: true, spreadBps: 0 }),
+    });
+  });
+});
+
+describe('buyer()', () => {
+  it('aggregates the buyer profile from their intent history', async () => {
+    mockInstance.indexer.getOwnerIntents.mockResolvedValue([
+      { intentHash: '0x1', status: 'FULFILLED', signalTimestamp: String(NOW - 500) },
+      { intentHash: '0x2', status: 'PRUNED', signalTimestamp: String(NOW - 400) },
+      { intentHash: '0x3', status: 'SIGNALED', signalTimestamp: String(NOW - 10) },
+    ]);
+    const profile = await client().buyer('0xBuyer');
+    expect(mockInstance.indexer.getOwnerIntents).toHaveBeenCalledWith('0xBuyer', [
+      'SIGNALED',
+      'FULFILLED',
+      'PRUNED',
+      'MANUALLY_RELEASED',
+    ]);
+    expect(profile).toMatchObject({
+      address: '0xbuyer',
+      totalIntents: 3,
+      fulfilled: 1,
+      pruned: 1,
+      signaled: 1,
+      successRateBps: 5000,
+    });
   });
 });
 

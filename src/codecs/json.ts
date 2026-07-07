@@ -4,7 +4,7 @@
  * derived behavior (`order.explain()`).
  */
 import type { CurrencyType, PreparedTransaction } from '../sdk-types';
-import type { CashFill, CashOrder } from '../engine/types';
+import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
 import type { CashCapabilities } from '../client/capabilities';
@@ -23,6 +23,8 @@ import {
   preparedTransactionJsonSchema,
   withdrawResultJsonSchema,
   topUpResultJsonSchema,
+  cashBuyerProfileJsonSchema,
+  type CashBuyerProfileJson,
   type CashCapabilitiesJson,
   type CashEstimateJson,
   type CashFillJson,
@@ -46,7 +48,18 @@ export function fillToJson(fill: CashFill): CashFillJson {
     status: fill.status,
     amount: fill.amount.toString(),
     buyer: fill.buyer,
-    fiatCurrency: fill.fiatCurrency,
+    currency: fill.currency,
+    currencyHash: fill.currencyHash,
+    rate: fill.rate,
+    conversionRate: fill.conversionRate?.toString(),
+    fiatOwed: fill.fiatOwed,
+    fiatPaid: fill.fiatPaid,
+    paidCurrency: fill.paidCurrency,
+    paymentId: fill.paymentId,
+    paidAt: fill.paidAt,
+    releasedAmount: fill.releasedAmount?.toString(),
+    fillLatencySeconds: fill.fillLatencySeconds,
+    isExpired: fill.isExpired,
     signaledAt: fill.signaledAt,
     expiresAt: fill.expiresAt,
     fulfilledAt: fill.fulfilledAt,
@@ -55,7 +68,12 @@ export function fillToJson(fill: CashFill): CashFillJson {
 }
 
 export function fillFromJson(json: CashFillJson): CashFill {
-  return omitUndefined({ ...json, amount: BigInt(json.amount) }) as unknown as CashFill;
+  return omitUndefined({
+    ...json,
+    amount: BigInt(json.amount),
+    conversionRate: json.conversionRate !== undefined ? BigInt(json.conversionRate) : undefined,
+    releasedAmount: json.releasedAmount !== undefined ? BigInt(json.releasedAmount) : undefined,
+  }) as unknown as CashFill;
 }
 
 // --- CashOrder ---
@@ -75,6 +93,10 @@ export function orderToJson(order: CashOrder): CashOrderJson {
     deliveredAt: order.deliveredAt,
     updatedAt: order.updatedAt,
     intentCount: order.intentCount,
+    payouts: order.payouts?.map((p) =>
+      omitUndefined({ ...p, pricing: omitUndefined({ ...p.pricing }) }),
+    ),
+    successRateBps: order.successRateBps,
     isInFlight: order.isInFlight,
     withdrawn: order.withdrawn,
   }) as CashOrderJson;
@@ -171,6 +193,16 @@ export function withdrawResultFromJson(json: unknown): WithdrawResult {
     pruneTxHash: parsed.pruneTxHash,
     withdrawTxHash: parsed.withdrawTxHash,
   }) as unknown as WithdrawResult;
+}
+
+// --- CashBuyerProfile ---
+
+export function buyerProfileToJson(profile: CashBuyerProfile): CashBuyerProfileJson {
+  return omitUndefined({ ...profile }) as CashBuyerProfileJson;
+}
+
+export function buyerProfileFromJson(json: unknown): CashBuyerProfile {
+  return omitUndefined(cashBuyerProfileJsonSchema.parse(json)) as unknown as CashBuyerProfile;
 }
 
 // --- TopUpResult ---

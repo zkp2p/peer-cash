@@ -8,10 +8,11 @@
  * signal-backed state from those aggregates, using the fetched intents (when
  * present) for buyer/fill detail. Every state maps to a real on-chain signal.
  */
+import { getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { IntentEntity, IntentStatus } from '../sdk-types';
-import { toBigInt } from '../internal/convert';
-import { formatUsdc } from './amounts';
-import type { CashFill, CashNextAction, CashOrder, CashOrderState } from './types';
+import { toBigInt, toBigIntOrUndefined } from '../internal/convert';
+import { centsToNumber, fiatFromUsdc, fiatToNumber, formatUsdc, rateToNumber } from './amounts';
+import type { CashFill, CashNextAction, CashOrder, CashOrderState, CashPayoutInfo } from './types';
 
 /** Below this (USDC base units) a leftover balance is treated as dust, not "available". */
 const DUST_THRESHOLD = 10_000n; // $0.01
@@ -22,6 +23,13 @@ interface IntentLike {
   amount?: string | number | bigint | null;
   owner?: string | null;
   fiatCurrency?: string | null;
+  conversionRate?: string | number | bigint | null;
+  isExpired?: boolean | null;
+  paymentAmount?: string | number | bigint | null;
+  paymentCurrency?: string | null;
+  paymentTimestamp?: string | number | null;
+  paymentId?: string | null;
+  releasedAmount?: string | number | bigint | null;
   signalTimestamp?: string | number | null;
   expiryTime?: string | number | null;
   fulfillTimestamp?: string | number | null;
@@ -45,17 +53,61 @@ function toFill(intent: IntentLike): CashFill {
   const expiresAt = toUnixSeconds(intent.expiryTime);
   const fulfilledAt = toUnixSeconds(intent.fulfillTimestamp);
   const prunedAt = toUnixSeconds(intent.prunedTimestamp ?? intent.pruneTimestamp);
+  const paidAt = toUnixSeconds(intent.paymentTimestamp);
+
+  const amount = toBigInt(intent.amount);
+  const conversionRate = toBigIntOrUndefined(intent.conversionRate);
+  const currency =
+    intent.fiatCurrency != null ? getCurrencyCodeFromHash(intent.fiatCurrency) : undefined;
+  const paidCurrency =
+    intent.paymentCurrency != null ? getCurrencyCodeFromHash(intent.paymentCurrency) : undefined;
+  // Verified fiat paid arrives in cents from the payment proof.
+  const paymentCents = toBigIntOrUndefined(intent.paymentAmount);
+  const releasedAmount = toBigIntOrUndefined(intent.releasedAmount);
+  const fillLatencySeconds =
+    signaledAt !== undefined && fulfilledAt !== undefined && fulfilledAt >= signaledAt
+      ? fulfilledAt - signaledAt
+      : undefined;
+
   return {
     intentHash: intent.intentHash,
     status: intent.status,
-    amount: toBigInt(intent.amount),
+    amount,
     buyer: (intent.owner ?? '').toLowerCase(),
-    ...(intent.fiatCurrency != null ? { fiatCurrency: intent.fiatCurrency } : {}),
+    ...(currency !== undefined ? { currency } : {}),
+    ...(intent.fiatCurrency != null ? { currencyHash: intent.fiatCurrency } : {}),
+    ...(conversionRate !== undefined && conversionRate > 0n
+      ? {
+          conversionRate,
+          rate: rateToNumber(conversionRate),
+          fiatOwed: fiatToNumber(fiatFromUsdc(amount, conversionRate)),
+        }
+      : {}),
+    ...(paymentCents !== undefined && paymentCents > 0n
+      ? { fiatPaid: centsToNumber(paymentCents) }
+      : {}),
+    ...(paidCurrency !== undefined ? { paidCurrency } : {}),
+    ...(intent.paymentId != null && intent.paymentId !== '' ? { paymentId: intent.paymentId } : {}),
+    ...(paidAt !== undefined ? { paidAt } : {}),
+    ...(releasedAmount !== undefined && releasedAmount > 0n ? { releasedAmount } : {}),
+    ...(fillLatencySeconds !== undefined ? { fillLatencySeconds } : {}),
+    ...(intent.isExpired != null ? { isExpired: intent.isExpired } : {}),
     ...(signaledAt !== undefined ? { signaledAt } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(fulfilledAt !== undefined ? { fulfilledAt } : {}),
     ...(prunedAt !== undefined ? { prunedAt } : {}),
   };
+}
+
+/**
+ * Whether a signaled fill can still be completed by its buyer. Uses the
+ * indexer's reconciler flag when present, belt-and-braces with the local
+ * clock (the reconciler can lag; the clock can skew — either signal counts).
+ */
+export function isFillLive(fill: CashFill, nowSeconds: number): boolean {
+  if (fill.status !== 'SIGNALED') return false;
+  if (fill.isExpired === true) return false;
+  return fill.expiresAt === undefined || fill.expiresAt > nowSeconds;
 }
 
 export interface DeriveCashOrderOptions {
@@ -75,6 +127,10 @@ export interface DeriveCashOrderOptions {
   intentCount?: number;
   /** Unix seconds of the deposit's last on-chain change. */
   updatedAt?: number;
+  /** Payout legs reconstructed from the deposit relations (see `derivePayouts`). */
+  payouts?: CashPayoutInfo[];
+  /** Deposit quality signal (basis points) from the indexer aggregate. */
+  successRateBps?: number;
   /** Unix seconds "now" for expiry-sensitive `nextActions` (defaults to wall clock). */
   nowSeconds?: number;
 }
@@ -133,8 +189,7 @@ function deriveNextActions(
   if (state === 'awaiting-buyer') return ['wait', 'withdraw'];
 
   // matched | delivering — funds are locked while a signaled intent is live.
-  const signaled = fills.filter((f) => f.status === 'SIGNALED');
-  const anyLive = signaled.some((f) => f.expiresAt === undefined || f.expiresAt > nowSeconds);
+  const anyLive = fills.some((f) => isFillLive(f, nowSeconds));
   return anyLive ? ['wait'] : ['wait', 'withdraw'];
 }
 
@@ -212,6 +267,8 @@ export function deriveCashOrder(
     ...(deliveredAt !== undefined ? { deliveredAt } : {}),
     ...(options.updatedAt !== undefined ? { updatedAt: options.updatedAt } : {}),
     intentCount: options.intentCount ?? fills.length,
+    ...(options.payouts !== undefined ? { payouts: options.payouts } : {}),
+    ...(options.successRateBps !== undefined ? { successRateBps: options.successRateBps } : {}),
     isInFlight,
     withdrawn: isTerminal,
   });

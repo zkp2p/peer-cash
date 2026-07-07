@@ -141,6 +141,20 @@ ok(
 );
 ok(`explain(): "${live.explain()}"`);
 
+const payout = live.payouts?.[0];
+if (!payout) fail('order() returned no decoded payout legs');
+if (payout.platform !== RECEIVE.platform || payout.currency !== RECEIVE.currency) {
+  fail(
+    `payout decoded as ${payout.platform}/${payout.currency}, expected ${RECEIVE.platform}/${RECEIVE.currency}`,
+  );
+}
+if (!payout.pricing.marketRate || payout.pricing.spreadBps !== 0) {
+  fail(`zero-spread invariant not visible: ${JSON.stringify(payout.pricing)}`);
+}
+ok(
+  `payout leg decoded: ${payout.platform}/${payout.currency}, spreadBps=${payout.pricing.spreadBps}, marketRate=${payout.pricing.marketRate}`,
+);
+
 const mine = await cash.orders(account.address, { inFlight: true });
 if (!mine.some((o) => o.depositId === result.depositId)) {
   fail('orders(owner, { inFlight: true }) does not contain the new deposit');

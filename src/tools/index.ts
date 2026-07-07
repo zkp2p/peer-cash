@@ -123,6 +123,19 @@ export const cashTools: CashToolDefinition[] = [
     },
   },
   {
+    name: 'cash_buyer',
+    description:
+      'Look up a buyer\'s protocol track record from their full intent history: lifetime intents, fulfilled vs pruned counts, success rate (bps), first/last seen. Use during the matched state to answer "who just committed to my order?".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'The buyer (taker) wallet address (0x…)' },
+      },
+      required: ['address'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'cash_withdraw',
     description:
       'Unwind a cash-out: returns UNSIGNED transaction(s) (prepare path — signing stays host-side). With amount: partial withdrawal of the unlocked balance (a live buyer intent does not block it). Without amount: closes the order fully, state-aware — when the only live intents have expired it includes a pruneExpiredIntents transaction first; while a live buyer intent locks funds it fails with ACTIVE_INTENT_BLOCKS_WITHDRAWAL (retryable — wait for expiry).',

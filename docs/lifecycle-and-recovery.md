@@ -68,6 +68,35 @@ on this SDK is a bug in that UI.
 - There is no retain-on-empty or rate knob to manage — a cash order cleans
   itself up when fully filled, and the market rate is not configurable.
 
+## Receipts, decoded
+
+Everything an order serves is decoded to human units: platform ids and
+currency codes instead of bytes32 hashes, plain-number rates instead of 1e18
+bigints (raw values stay available as `*Hash` / `conversionRate` fields).
+
+Each fill is a receipt that sharpens over its life:
+
+- **At signal**: `rate` (the oracle rate locked for THIS fill — the moment
+  "approximately" becomes exact) and `fiatOwed` (`amount × rate`, rounded up
+  to the cent, matching what the buyer's client tells them to pay).
+- **After the proof**: `fiatPaid` (the verified amount actually sent),
+  `paidCurrency`, `paymentId` (the platform's own payment reference),
+  `paidAt`, `releasedAmount` (USDC actually released), and
+  `fillLatencySeconds` (signal → proven delivery).
+
+Orders also carry their `payouts` legs reconstructed from the chain —
+platform, currency, payee hash, and a pricing proof (`spreadBps: 0`,
+`kind: 'oracle_chainlink'`, `marketRate: true`): the zero-spread claim is a
+queryable fact, not marketing copy.
+
+## Who is this buyer?
+
+`buyer(address)` aggregates the matched buyer's full intent history into a
+track record: lifetime intents, fulfilled vs pruned counts, a success rate in
+basis points, first/last seen. Use it during `matched` — the moment a
+stranger's address is holding your order is exactly when a 95%-success,
+200-order counterparty reads very differently from a fresh wallet.
+
 ## Unwinding: one verb
 
 `withdraw(depositId, { signer })` handles every recovery case:

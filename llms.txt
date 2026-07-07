@@ -20,6 +20,14 @@ Key facts:
   tool manifest. Every transaction carries ERC-8021 attribution ('peer-cash'
   plus integrator referrer codes).
 - Errors are typed: { code, retryable, remediation }.
+- Everything is decoded to human units: platform ids and currency codes from
+  their on-chain hashes, plain-number rates from 1e18 precision.
+- Fills are receipts: locked rate + fiat owed at signal; verified fiat paid,
+  payment id, released USDC, and fill latency after the proof.
+- Orders carry their payout legs (platform, currency, payee hash) plus a
+  verifiable pricing proof (spreadBps: 0, oracle kind) from indexed data.
+- buyer(address) aggregates a buyer's track record (fulfilled/pruned/success
+  rate) from their full intent history.
 - v1 is same-chain only: Base USDC in.
 
 ## Docs
