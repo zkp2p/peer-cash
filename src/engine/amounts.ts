@@ -1,4 +1,4 @@
-import { USDC_DECIMALS } from '../engine/constants';
+import { USDC_DECIMALS } from './constants';
 
 /**
  * Convert a human USDC amount to base units (6 decimals).

@@ -27,7 +27,8 @@ import type {
 } from '../sdk-types';
 import { BASE_CHAIN_ID, CASH_ORDER_STATUSES } from '../engine/constants';
 import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
-import { deriveCashOrder } from '../engine/orderState';
+import { deriveCashOrder, type DeriveCashOrderOptions } from '../engine/orderState';
+import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
 import type { CashDepositInput, CashOrder } from '../engine/types';
 import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
@@ -41,7 +42,7 @@ const DEFAULT_RPC_URL = 'https://mainnet.base.org';
  * production; staging has its own curator deployment (same convention as the
  * first-party clients).
  */
-const DEFAULT_CURATOR_URLS: Partial<Record<string, string>> = {
+const DEFAULT_CURATOR_URLS: Partial<Record<RuntimeEnv, string>> = {
   staging: 'https://api-staging.zkp2p.xyz',
 };
 const ERC20_APPROVE_ABI = parseAbi([
@@ -179,13 +180,33 @@ function orderFingerprint(order: CashOrder): string {
   ].join('|');
 }
 
-function toBigIntOrUndefined(value: unknown): bigint | undefined {
-  if (value === null || value === undefined || value === '') return undefined;
-  try {
-    return BigInt(typeof value === 'number' ? Math.trunc(value) : String(value));
-  } catch {
-    return undefined;
-  }
+/** The indexer aggregate fields both deposit queries share. */
+type DepositAggregates = {
+  remainingDeposits?: string | number | null;
+  outstandingIntentAmount?: string | number | null;
+  totalAmountTaken?: string | number | null;
+  totalWithdrawn?: string | number | null;
+  status?: string | null;
+  totalIntents?: number | null;
+  updatedAt?: string | number | null;
+};
+
+/** Map raw indexer deposit aggregates to `deriveCashOrder` options. */
+function depositOrderOptions(deposit: DepositAggregates): DeriveCashOrderOptions {
+  const remaining = toBigIntOrUndefined(deposit.remainingDeposits);
+  const outstanding = toBigIntOrUndefined(deposit.outstandingIntentAmount);
+  const taken = toBigIntOrUndefined(deposit.totalAmountTaken);
+  const withdrawn = toBigIntOrUndefined(deposit.totalWithdrawn);
+  const updatedAt = deposit.updatedAt != null ? Number(deposit.updatedAt) : undefined;
+  return {
+    ...(remaining !== undefined ? { remainingAmount: remaining } : {}),
+    ...(outstanding !== undefined ? { outstandingAmount: outstanding } : {}),
+    ...(taken !== undefined ? { takenAmount: taken } : {}),
+    ...(withdrawn !== undefined ? { withdrawnAmount: withdrawn } : {}),
+    ...(deposit.status != null ? { status: deposit.status } : {}),
+    ...(deposit.totalIntents != null ? { intentCount: deposit.totalIntents } : {}),
+    ...(updatedAt !== undefined && Number.isFinite(updatedAt) ? { updatedAt } : {}),
+  };
 }
 
 export function createCashClient(options: CashClientOptions): CashClient {
@@ -270,28 +291,20 @@ export function createCashClient(options: CashClientOptions): CashClient {
       return deriveCashOrder(depositId, intents);
     }
 
-    const remaining = toBigIntOrUndefined(deposit.remainingDeposits);
-    const outstanding = toBigIntOrUndefined(deposit.outstandingIntentAmount);
-    const taken = toBigIntOrUndefined(deposit.totalAmountTaken);
-    const withdrawn = toBigIntOrUndefined(deposit.totalWithdrawn);
-    const updatedAt = deposit.updatedAt != null ? Number(deposit.updatedAt) : undefined;
-
-    return deriveCashOrder(depositId, deposit.intents ?? [], {
-      ...(remaining !== undefined ? { remainingAmount: remaining } : {}),
-      ...(outstanding !== undefined ? { outstandingAmount: outstanding } : {}),
-      ...(taken !== undefined ? { takenAmount: taken } : {}),
-      ...(withdrawn !== undefined ? { withdrawnAmount: withdrawn } : {}),
-      ...(deposit.status != null ? { status: deposit.status } : {}),
-      ...(deposit.totalIntents != null ? { intentCount: deposit.totalIntents } : {}),
-      ...(updatedAt !== undefined && Number.isFinite(updatedAt) ? { updatedAt } : {}),
-    });
+    return deriveCashOrder(depositId, deposit.intents ?? [], depositOrderOptions(deposit));
   }
 
   /**
-   * Shared state gate for both withdraw paths. Returns whether an expired
-   * intent must be pruned before withdrawal can succeed.
+   * Shared state gate for both withdraw paths: throws when withdrawal is
+   * blocked or pointless, and returns everything the transactions need —
+   * whether an expired intent must be pruned first, plus the parsed escrow
+   * context for the composite id.
    */
-  async function assertWithdrawable(depositId: string): Promise<{ expiredIntent: boolean }> {
+  async function withdrawContext(depositId: string): Promise<{
+    expiredIntent: boolean;
+    onchainDepositId: bigint;
+    escrowArg: { escrowAddress?: Address };
+  }> {
     const order = await fetchOrder(depositId);
 
     const remaining =
@@ -307,7 +320,43 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (remaining <= 0n && order.pendingAmount === 0n) {
       throw errors.nothingToWithdraw(depositId);
     }
-    return { expiredIntent };
+
+    const { escrowAddress, onchainDepositId } = parseCompositeDepositId(depositId);
+    return {
+      expiredIntent,
+      onchainDepositId,
+      escrowArg: escrowAddress ? { escrowAddress: escrowAddress as Address } : {},
+    };
+  }
+
+  /**
+   * Ensure the escrow can pull the deposit amount, and make the allowance
+   * durable before returning: `ensureAllowance` sends the approve without
+   * waiting for it to mine, and load-balanced RPC replicas can serve stale
+   * `eth_call` state even after the receipt lands — so wait for the receipt,
+   * then poll until the allowance is visible on the read path.
+   */
+  async function settleAllowance(
+    client: Zkp2pClient,
+    token: Address,
+    owner: Address,
+    escrow: Address,
+    amount: bigint,
+  ): Promise<void> {
+    const allowance = await client.ensureAllowance({ token, amount, spender: escrow });
+    if (allowance.hadAllowance || !allowance.hash) return;
+
+    await client.publicClient.waitForTransactionReceipt({ hash: allowance.hash });
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const visible = (await client.publicClient.readContract({
+        address: token,
+        abi: ERC20_ALLOWANCE_ABI,
+        functionName: 'allowance',
+        args: [owner, escrow],
+      })) as bigint;
+      if (visible >= amount) return;
+      await sleep(1_000);
+    }
   }
 
   return {
@@ -326,30 +375,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const params = await buildDepositParams(client, depositInput);
 
       // Spender must be the escrow createDeposit will target — the default can
-      // point at the legacy escrow while deposits go to EscrowV2. ensureAllowance
-      // returns without waiting for the approve to mine, so wait for the receipt
-      // AND for the allowance to be visible on the read path (load-balanced RPC
-      // replicas can serve stale eth_call state right after the receipt lands).
+      // point at the legacy escrow while deposits go to EscrowV2.
       const escrow = client.escrowV2Address ?? client.escrowAddress;
       const owner = opts.signer.account!.address;
-      const allowance = await client.ensureAllowance({
-        token: params.token,
-        amount: depositInput.amount,
-        spender: escrow,
-      });
-      if (!allowance.hadAllowance && allowance.hash) {
-        await client.publicClient.waitForTransactionReceipt({ hash: allowance.hash });
-        for (let attempt = 0; attempt < 15; attempt++) {
-          const visible = (await client.publicClient.readContract({
-            address: params.token,
-            abi: ERC20_ALLOWANCE_ABI,
-            functionName: 'allowance',
-            args: [owner, escrow],
-          })) as bigint;
-          if (visible >= depositInput.amount) break;
-          await sleep(1_000);
-        }
-      }
+      await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
 
       let hash: Hash;
       try {
@@ -412,23 +441,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const deposits = await readClient.indexer.getDeposits({ depositor: owner }, { limit });
 
       const derived = deposits
-        .map((d) => {
-          const remaining = toBigIntOrUndefined(d.remainingDeposits) ?? 0n;
-          const outstanding = toBigIntOrUndefined(d.outstandingIntentAmount) ?? 0n;
-          const taken = toBigIntOrUndefined(d.totalAmountTaken) ?? 0n;
-          const withdrawn = toBigIntOrUndefined(d.totalWithdrawn) ?? 0n;
-          const updatedAt = d.updatedAt != null ? Number(d.updatedAt) : undefined;
-          return deriveCashOrder(d.id, [], {
-            totalAmount: remaining + outstanding + taken + withdrawn,
-            remainingAmount: remaining,
-            outstandingAmount: outstanding,
-            takenAmount: taken,
-            withdrawnAmount: withdrawn,
-            ...(d.status != null ? { status: d.status } : {}),
-            intentCount: d.totalIntents ?? 0,
-            ...(updatedAt !== undefined && Number.isFinite(updatedAt) ? { updatedAt } : {}),
-          });
-        })
+        .map((d) => deriveCashOrder(d.id, [], depositOrderOptions(d)))
         // Drop dust/empty deposits that never represented a real cash-out.
         .filter((o) => o.totalAmount > 10_000n)
         .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
@@ -473,10 +486,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     async withdraw(depositId: string, opts: SignerOptions): Promise<WithdrawResult> {
       const client = signingClient('withdraw', opts);
-      const { expiredIntent } = await assertWithdrawable(depositId);
-
-      const { escrowAddress, onchainDepositId } = parseCompositeDepositId(depositId);
-      const escrowArg = escrowAddress ? { escrowAddress: escrowAddress as Address } : {};
+      const { expiredIntent, onchainDepositId, escrowArg } = await withdrawContext(depositId);
 
       let pruneTxHash: Hash | undefined;
       if (expiredIntent) {
@@ -503,10 +513,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async prepareWithdraw(depositId: string): Promise<{ txs: PreparedTransaction[] }> {
-      const { expiredIntent } = await assertWithdrawable(depositId);
-
-      const { escrowAddress, onchainDepositId } = parseCompositeDepositId(depositId);
-      const escrowArg = escrowAddress ? { escrowAddress: escrowAddress as Address } : {};
+      const { expiredIntent, onchainDepositId, escrowArg } = await withdrawContext(depositId);
 
       const txs: PreparedTransaction[] = [];
       if (expiredIntent) {

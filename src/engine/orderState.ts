@@ -9,7 +9,8 @@
  * present) for buyer/fill detail. Every state maps to a real on-chain signal.
  */
 import type { IntentEntity, IntentStatus } from '../sdk-types';
-import { USDC_DECIMALS } from './constants';
+import { toBigInt } from '../internal/convert';
+import { formatUsdc } from './amounts';
 import type { CashFill, CashNextAction, CashOrder, CashOrderState } from './types';
 
 /** Below this (USDC base units) a leftover balance is treated as dust, not "available". */
@@ -26,15 +27,6 @@ interface IntentLike {
   fulfillTimestamp?: string | number | null;
   prunedTimestamp?: string | number | null;
   pruneTimestamp?: string | number | null;
-}
-
-function toBigInt(value: unknown): bigint {
-  if (value === null || value === undefined || value === '') return 0n;
-  try {
-    return BigInt(typeof value === 'number' ? Math.trunc(value) : String(value));
-  } catch {
-    return 0n;
-  }
 }
 
 function toUnixSeconds(value: unknown): number | undefined {
@@ -87,12 +79,9 @@ export interface DeriveCashOrderOptions {
   nowSeconds?: number;
 }
 
-/** Format USDC base units as a human dollar string for `explain()`. */
+/** Human dollar string for `explain()` sentences. */
 function fmtUsdc(amount: bigint): string {
-  const whole = amount / 10n ** BigInt(USDC_DECIMALS);
-  const frac = amount % 10n ** BigInt(USDC_DECIMALS);
-  const cents = (frac / 10_000n).toString().padStart(2, '0');
-  return `${whole}.${cents} USDC`;
+  return `${formatUsdc(amount)} USDC`;
 }
 
 /** Plain-data view of {@link CashOrder} (everything except the `explain` method). */

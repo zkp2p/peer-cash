@@ -37,7 +37,7 @@ export { CashError, isCashError, errors } from './client/errors';
 export type { CashErrorCode, CashErrorShape } from './client/errors';
 
 // Amount helpers
-export { usdc, formatUsdc } from './client/amounts';
+export { usdc, formatUsdc } from './engine/amounts';
 
 // The pure engine
 export * from './engine';

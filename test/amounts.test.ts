@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUsdc, usdc } from '../src/client/amounts';
+import { formatUsdc, usdc } from '../src/engine/amounts';
 
 describe('usdc()', () => {
   it('converts whole and fractional amounts', () => {

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { CASH_ORDER_POLL_INTERVAL_MS } from '../engine/constants';
 import type { CashOrder } from '../engine/types';
 import type { CashClient } from '../client/createCashClient';
+import { usePoll } from './usePoll';
 
 export interface UseOrdersOptions {
   client: CashClient | null;
@@ -29,57 +30,44 @@ export function useOrders({
   const [orders, setOrders] = useState<CashOrder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const mountedRef = useRef(true);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchOrders = useCallback(async (): Promise<CashOrder[]> => {
-    if (!client || !owner) return [];
-    setIsLoading(true);
-    setError(null);
-    try {
-      const derived = await client.orders(owner, { limit });
-      if (mountedRef.current) setOrders(derived);
-      return derived;
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      if (mountedRef.current) setError(e);
-      return [];
-    } finally {
-      if (mountedRef.current) setIsLoading(false);
-    }
-  }, [client, owner, limit]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    if (timerRef.current) clearTimeout(timerRef.current);
-
-    if (!client || !owner || paused) {
-      return () => {
-        mountedRef.current = false;
-        if (timerRef.current) clearTimeout(timerRef.current);
-      };
-    }
-
-    let cancelled = false;
-    const tick = async () => {
-      const result = await fetchOrders();
-      if (cancelled || !mountedRef.current) return;
-      if (result.some((o) => o.isInFlight)) {
-        timerRef.current = setTimeout(tick, pollIntervalMs);
+  const fetchOrders = useCallback(
+    async (isActive: () => boolean = () => true): Promise<CashOrder[]> => {
+      if (!client || !owner) return [];
+      setIsLoading(true);
+      setError(null);
+      try {
+        const derived = await client.orders(owner, { limit });
+        if (isActive()) setOrders(derived);
+        return derived;
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        if (isActive()) setError(e);
+        return [];
+      } finally {
+        if (isActive()) setIsLoading(false);
       }
-    };
-    void tick();
+    },
+    [client, owner, limit],
+  );
 
-    return () => {
-      cancelled = true;
-      mountedRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [client, owner, paused, pollIntervalMs, fetchOrders]);
+  usePoll(
+    Boolean(client && owner && !paused),
+    pollIntervalMs,
+    useCallback(
+      async (isActive: () => boolean) => {
+        const result = await fetchOrders(isActive);
+        return result.some((o) => o.isInFlight);
+      },
+      [fetchOrders],
+    ),
+  );
+
+  const refresh = useCallback(() => fetchOrders(), [fetchOrders]);
 
   const inFlightCount = orders.filter((o) => o.isInFlight).length;
   /** Lifetime cashed-out total (USDC base units) across the feed. */
   const totalCashedOut = orders.reduce((sum, o) => sum + o.filledAmount, 0n);
 
-  return { orders, inFlightCount, totalCashedOut, isLoading, error, refresh: fetchOrders };
+  return { orders, inFlightCount, totalCashedOut, isLoading, error, refresh };
 }

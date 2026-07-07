@@ -65,9 +65,7 @@ export async function readEstimate(
     throw errors.oracleUnsupportedCurrency(currency);
   }
 
-  const feedConfig = (
-    CHAINLINK_ORACLE_FEEDS as Record<string, { feed: string; decimals: number; invert: boolean }>
-  )[currency];
+  const feedConfig = CHAINLINK_ORACLE_FEEDS[currency];
 
   let rate: number;
   if (!feedConfig || feedConfig.feed.toLowerCase() === ZERO_ADDRESS) {

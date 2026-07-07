@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { CASH_ORDER_POLL_INTERVAL_MS } from '../engine/constants';
 import type { CashOrder } from '../engine/types';
 import type { CashClient } from '../client/createCashClient';
 import { isCashError } from '../client/errors';
+import { usePoll } from './usePoll';
 
 export interface UseOrderOptions {
   client: CashClient | null;
@@ -32,58 +33,44 @@ export function useOrder({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
-
-  const fetchOrder = useCallback(async (): Promise<CashOrder | null> => {
-    if (!client || !depositId) return null;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const derived = await client.order(depositId);
-      if (mountedRef.current) setOrder(derived);
-      return derived;
-    } catch (err) {
-      if (isCashError(err) && err.code === 'ORDER_NOT_FOUND') {
-        // Indexer lag right after creation — not an error, keep polling.
+  const fetchOrder = useCallback(
+    async (isActive: () => boolean = () => true): Promise<CashOrder | null> => {
+      if (!client || !depositId) return null;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const derived = await client.order(depositId);
+        if (isActive()) setOrder(derived);
+        return derived;
+      } catch (err) {
+        if (isCashError(err) && err.code === 'ORDER_NOT_FOUND') {
+          // Indexer lag right after creation — not an error, keep polling.
+          return null;
+        }
+        const e = err instanceof Error ? err : new Error(String(err));
+        if (isActive()) setError(e);
         return null;
+      } finally {
+        if (isActive()) setIsLoading(false);
       }
-      const e = err instanceof Error ? err : new Error(String(err));
-      if (mountedRef.current) setError(e);
-      return null;
-    } finally {
-      if (mountedRef.current) setIsLoading(false);
-    }
-  }, [client, depositId]);
+    },
+    [client, depositId],
+  );
 
-  useEffect(() => {
-    mountedRef.current = true;
-    if (timerRef.current) clearTimeout(timerRef.current);
+  usePoll(
+    Boolean(client && depositId && !paused),
+    pollIntervalMs,
+    useCallback(
+      async (isActive: () => boolean) => {
+        const result = await fetchOrder(isActive);
+        // Keep polling while in flight (or while state is still unknown).
+        return !result || result.isInFlight;
+      },
+      [fetchOrder],
+    ),
+  );
 
-    if (!client || !depositId || paused) {
-      return () => {
-        mountedRef.current = false;
-        if (timerRef.current) clearTimeout(timerRef.current);
-      };
-    }
+  const refresh = useCallback(() => fetchOrder(), [fetchOrder]);
 
-    let cancelled = false;
-    const tick = async () => {
-      const result = await fetchOrder();
-      if (cancelled || !mountedRef.current) return;
-      // Keep polling only while in flight (or while state is still unknown).
-      if (!result || result.isInFlight) {
-        timerRef.current = setTimeout(tick, pollIntervalMs);
-      }
-    };
-    void tick();
-
-    return () => {
-      cancelled = true;
-      mountedRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [client, depositId, paused, pollIntervalMs, fetchOrder]);
-
-  return { order, isLoading, error, refresh: fetchOrder };
+  return { order, isLoading, error, refresh };
 }

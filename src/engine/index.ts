@@ -18,6 +18,8 @@ export type {
   CashDepositInput,
 } from './types';
 
+export { usdc, formatUsdc } from './amounts';
+
 export {
   isMarketRateSupported,
   buildMarketRateCurrencyOverride,

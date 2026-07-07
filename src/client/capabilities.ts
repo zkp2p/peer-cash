@@ -2,11 +2,7 @@
  * Discovery — sync, static. Platforms × currencies × oracle support × amount
  * bounds × payee format hints, all derivable without a network call.
  */
-import {
-  getPaymentMethodsCatalog,
-  getCurrencyCodeFromHash,
-  CHAINLINK_ORACLE_FEEDS,
-} from '@zkp2p/sdk';
+import { getPaymentMethodsCatalog, getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
@@ -79,21 +75,12 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
 
   const currencies = [...new Set(platforms.flatMap((p) => p.currencies))].sort();
 
-  // Sanity: every advertised currency must resolve an oracle feed config.
-  const oracleCurrencies = new Set(
-    Object.keys(CHAINLINK_ORACLE_FEEDS).concat('USD'), // USD is the zero-address passthrough
-  );
-  const verified = currencies.filter((c) => oracleCurrencies.has(c));
-
   return {
     chainId: BASE_CHAIN_ID,
     token: { address: BASE_USDC_ADDRESS, symbol: 'USDC', decimals: USDC_DECIMALS },
     environment,
-    platforms: platforms.map((p) => ({
-      ...p,
-      currencies: p.currencies.filter((c) => oracleCurrencies.has(c)),
-    })),
-    currencies: verified,
+    platforms,
+    currencies,
     amount: { min: MIN_CASHOUT_AMOUNT, recommendedMin: RECOMMENDED_MIN_CASHOUT_AMOUNT, max: null },
     pricing: { kind: 'oracle-market-rate', spreadBps: 0 },
   };
