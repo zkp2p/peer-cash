@@ -13,6 +13,17 @@ Peer Cash is a productized crypto→fiat **offramp**: one npm package that turns
 
 The protocol did not change. Peer Cash is a **framing plus an SDK that enforces the framing** — the cashing-out user becomes a standard maker; a standard taker pays them fiat and proves it via TEE-TLS; escrow releases. No new contracts, no proof inversion, no curator changes.
 
+## Who it's for
+
+Directionally, this is infrastructure for **app integrators who need to offboard their users to fiat without standing up a centralized off-ramp**. The target consumers are:
+
+- **Wallets** that want an in-app "cash out to my bank / payment app" button without integrating a MoonPay/Ramp/Transak-style custodial provider, its KYC funnel, and its per-transaction economics.
+- **Crypto apps and consumer products** that hold user USDC and want a native exit to fiat as a feature, not a redirect to a third party.
+- **DeFi protocols and on-chain products** that need a programmatic, non-custodial withdrawal-to-fiat path — including agent- and policy-driven flows where no human clicks a widget.
+- **AI agents** holding USDC that need to cash out through typed tools with host-side signing.
+
+The wedge against centralized off-ramps (MoonPay, Ramp, Transak, Coinbase off-ramp) is structural, not just pricing: **non-custodial** (funds sit in an audited escrow contract, never a provider's balance sheet), **no KYC funnel** the integrator has to embed or the user has to clear, **market rate at zero spread** instead of a marked-up quote, and an **API/agent-native surface** rather than a hosted iframe widget. The integrator ships a few function calls; their users never leave the app or hand custody to a middleman.
+
 ## 2. Problem
 
 - **Offramping is the underserved half.** Onramps are everywhere; "get my USDC into my Venmo" with no KYC funnel and no custodian is rare. The protocol already supports it — nothing packaged it.
