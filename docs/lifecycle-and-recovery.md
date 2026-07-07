@@ -5,11 +5,12 @@ ETA, how unwinding works, and why every order survives a crash.
 
 ## The model: you are the maker
 
-A Peer Cash order is a **deposit** in the ZKP2P EscrowV2 contract. When you
-`cashout()`, your USDC moves into escrow at the live Chainlink oracle rate
-with zero spread. A buyer (a standard protocol taker) _signals an intent_
-against your deposit, pays you fiat off-chain (Venmo, Revolut, Wise, …), and
-proves the payment via TEE-TLS. The escrow then releases your USDC to them.
+A Peer Cash order is a **deposit** in the ZKP2P protocol. When you
+`cashout()`, your USDC becomes protocol-held funds priced at the live Chainlink
+oracle rate with zero spread. A buyer (a standard protocol taker) _signals an
+intent_ against your deposit, pays you fiat offchain (Venmo, Revolut, Wise,
+...), and proves the payment via TEE-TLS. The protocol then releases your USDC
+to them.
 The protocol runs in its normal direction — nothing here is inverted or
 special-cased.
 
@@ -25,7 +26,7 @@ Every state derives from on-chain events. There are no synthetic states.
 | `awaiting-buyer` | Deposit live, no active intent                      | `['wait', 'withdraw']`                                        |
 | `matched`        | A buyer signaled; funds locked                      | `['wait']` (or `['wait','withdraw']` once the intent expires) |
 | `delivering`     | Partial fill in progress: some delivered, more live | `['wait']` / `['wait','withdraw']`                            |
-| `delivered`      | Fully paid and proven; escrow released              | `[]`                                                          |
+| `delivered`      | Fully paid and proven; protocol released funds      | `[]`                                                          |
 | `returned`       | Funds back in your wallet (withdrawn)               | `[]`                                                          |
 
 Intent statuses underneath: `SIGNALED → FULFILLED` (paid + proven),

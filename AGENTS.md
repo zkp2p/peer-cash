@@ -1,10 +1,10 @@
 # @zkp2p/cash — agent integration manual
 
 You are integrating Peer Cash: an offramp that converts Base USDC to fiat
-(Venmo, Revolut, Wise, Zelle, …) at the live Chainlink market rate. The user
-whose USDC you manage is the **maker**; a buyer pays them fiat and the escrow
-releases the USDC. Non-custodial: funds sit in the escrow contract, and only
-the maker can withdraw an unmatched deposit.
+(Venmo, Revolut, Wise, Zelle, ...) at the live Chainlink market rate. The user
+whose USDC you manage is the **maker**; a buyer pays them fiat and proves it
+with TEE-TLS; the protocol releases the USDC. Funds are held by the protocol,
+and only the maker can withdraw an unmatched deposit.
 
 ## Decision tree: pick your entry point
 
@@ -41,7 +41,7 @@ import { createCashClient, usdc, isCashError } from '@zkp2p/cash';
 
 const cash = createCashClient({ environment: 'production' });
 
-// 1. Discover — static, instant, do this once.
+// 1. Discover - static and side-effect free, do this once.
 const caps = cash.capabilities();
 
 // 2. Estimate — idempotent, cacheable, no side effects.

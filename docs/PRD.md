@@ -1,35 +1,35 @@
-# Peer Cash (`@zkp2p/cash`) — Product Requirements & Build Report
+# Peer Cash (`@zkp2p/cash`) - Product Requirements & Build Report
 
 **Status:** Built, verified against staging and live production data, ready for private review. Awaiting the go for public flip + npm publish.
 **Owner:** Andrew
-**Package:** `@zkp2p/cash` — standalone repo `zkp2p/peer-cash`
+**Package:** `@zkp2p/cash` - standalone repo `zkp2p/peer-cash`
 **Depends on:** published `@zkp2p/sdk@^0.8.0` (facade, not fork)
 
 ---
 
 ## 1. Summary
 
-Peer Cash is a productized crypto→fiat **offramp**: one npm package that turns a user's Base USDC into fiat on Venmo, Revolut, Wise, Zelle, Cash App and more — non-custodially, at the live Chainlink market rate with zero spread. It is a thin, opinionated facade over `@zkp2p/sdk`: a small, honest surface (eight verbs) that a React app, a Node service, and an AI agent consume identically.
+Peer Cash is a productized crypto-to-fiat **offramp**: one npm package that turns a user's Base USDC into fiat on Venmo, Revolut, Wise, Zelle, Cash App and more, with protocol-held funds, no custodial off-ramp provider, and the live Chainlink market rate with zero spread. It is a thin, opinionated facade over `@zkp2p/sdk`: a small, honest surface (eight verbs) that a React app, a Node service, and an AI agent consume identically.
 
-The protocol did not change. Peer Cash is a **framing plus an SDK that enforces the framing** — the cashing-out user becomes a standard maker; a standard taker pays them fiat and proves it via TEE-TLS; escrow releases. No new contracts, no proof inversion, no curator changes.
+The protocol did not change. Peer Cash is a **framing plus an SDK that enforces the framing**: the cashing-out user becomes a standard maker; a standard taker pays them fiat and proves it via TEE-TLS; the protocol releases funds. No new contracts, no proof inversion, no curator changes.
 
 ## Who it's for
 
 Directionally, this is infrastructure for **app integrators who need to offboard their users to fiat without standing up a centralized off-ramp**. The target consumers are:
 
-- **Wallets** that want an in-app "cash out to my bank / payment app" button without integrating a MoonPay/Ramp/Transak-style custodial provider, its KYC funnel, and its per-transaction economics.
+- **Wallets** that want an in-app "cash out to my bank / payment app" button without integrating a MoonPay/Ramp/Transak-style custodial provider, its hosted identity funnel, and its per-transaction economics.
 - **Crypto apps and consumer products** that hold user USDC and want a native exit to fiat as a feature, not a redirect to a third party.
-- **DeFi protocols and on-chain products** that need a programmatic, non-custodial withdrawal-to-fiat path — including agent- and policy-driven flows where no human clicks a widget.
+- **DeFi protocols and onchain products** that need a programmatic withdrawal-to-fiat path without a custodial off-ramp provider, including agent- and policy-driven flows where no human clicks a widget.
 - **AI agents** holding USDC that need to cash out through typed tools with host-side signing.
 
-The wedge against centralized off-ramps (MoonPay, Ramp, Transak, Coinbase off-ramp) is structural, not just pricing: **non-custodial** (funds sit in an audited escrow contract, never a provider's balance sheet), **no KYC funnel** the integrator has to embed or the user has to clear, **market rate at zero spread** instead of a marked-up quote, and an **API/agent-native surface** rather than a hosted iframe widget. The integrator ships a few function calls; their users never leave the app or hand custody to a middleman.
+The wedge against centralized off-ramps (MoonPay, Ramp, Transak, Coinbase off-ramp) is structural, not just pricing: **protocol-held funds** instead of provider custody, **no separate Peer identity flow** for the integrator to embed, **market rate at zero spread** instead of a marked-up quote, and an **API/agent-native surface** rather than a hosted iframe widget. The integrator ships a few function calls; their users never leave the app or hand custody to a middleman.
 
 ## 2. Problem
 
-- **Offramping is the underserved half.** Onramps are everywhere; "get my USDC into my Venmo" with no KYC funnel and no custodian is rare. The protocol already supports it — nothing packaged it.
+- **Offramping is the underserved half.** Onramps are everywhere; "get my USDC into my Venmo" without a hosted identity funnel or custodial provider is rare. The protocol already supports it; nothing packaged it.
 - **The full SDK is too much surface for this job.** `@zkp2p/sdk` exposes ~40+ methods, rate/spread/vault/DRM controls, both sides of the book. A developer who just wants "USDC in, fiat out" should not have to learn deposits, intents, verifiers, gating services, and oracle configs.
 - **Agents are a first-class customer with no first-class surface.** An AI agent holding USDC should be able to cash out through typed tools with host-side signing — no UI, no human. Nothing existed for that.
-- **Trust needs to be verifiable, not asserted.** Code that constructs the transactions moving a user's money into escrow, shipped from a private repo, is a black box. A standalone public repo makes the non-custodial claim auditable.
+- **Trust needs to be verifiable, not asserted.** Code that constructs the transactions moving a user's USDC into protocol-held funds, shipped from a private repo, is a black box. A standalone public repo makes the custody claim auditable.
 
 ## 3. Goals / Non-goals
 
@@ -50,7 +50,7 @@ The wedge against centralized off-ramps (MoonPay, Ramp, Transak, Coinbase off-ra
 
 ## 4. Product model
 
-- **Maker inversion.** The user deposits USDC into EscrowV2 priced at the live Chainlink oracle, zero spread — by construction the best offer on the book, which is the fill incentive. A buyer signals an intent, pays fiat off-chain, proves it, and escrow releases the USDC to them.
+- **Maker inversion.** The user deposits USDC into the protocol priced at the live Chainlink oracle, zero spread. By construction this is the best offer on the book, which is the fill incentive. A buyer signals an intent, pays fiat offchain, proves it, and the protocol releases the USDC to them.
 - **Oracle-at-fill pricing. There is no quote.** The binding rate resolves at the oracle when a buyer fills. The API says `estimate()`, never `quote()`. Anything implying a locked price is a bug.
 - **Honest ETA.** Buyer arrival time is unknowable; `order.explain()` states only what the chain shows. No countdowns.
 - **The chain is the database.** Orders derive from the indexer by `depositId`. Integrators store one column: `userId → depositId`.
