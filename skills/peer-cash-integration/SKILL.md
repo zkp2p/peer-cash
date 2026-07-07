@@ -1,6 +1,6 @@
 ---
 name: peer-cash-integration
-description: Integrate Peer Cash (@zkp2p/cash) into any codebase — React app, Node service, or agent runtime. Covers the maker-inversion mental model, oracle-at-fill pricing, the six verbs, indexer-native order tracking, the failure playbook, and the maker-side staging verification that proves the integration works. Use when adding crypto-to-fiat cash-out to a product or wiring the cash tools into an agent host.
+description: Integrate Peer Cash (@zkp2p/cash) into any codebase — React app, Node service, or agent runtime. Covers the maker-inversion mental model, oracle-at-fill pricing, the verbs, indexer-native order tracking, the failure playbook, and the maker-side staging verification that proves the integration works. Use when adding crypto-to-fiat cash-out to a product or wiring the cash tools into an agent host.
 ---
 
 # Peer Cash integration
@@ -30,9 +30,9 @@ non-custodially, over the ZKP2P protocol.
 | ------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | React app                 | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider | wagmi/viem `WalletClient` from the connected wallet                                 |
 | Node service              | `createCashClient` + `cashout()`/`withdraw()`                    | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
-| Agent host / policy layer | `prepare()` / `prepareWithdraw()` → unsigned `txs[]`             | Host signs; see `@zkp2p/cash/tools` for the six-verb JSON-schema manifest           |
+| Agent host / policy layer | `prepare()` / `prepareWithdraw()` → unsigned `txs[]`             | Host signs; see `@zkp2p/cash/tools` for the JSON-schema tool manifest               |
 
-## 3. Recipes — the six verbs
+## 3. Recipes — the verbs
 
 Authoritative signatures live in the package's typedoc and `AGENTS.md` — do
 not copy types from here; import them.
@@ -60,8 +60,13 @@ for await (const o of cash.watch(res.depositId)) {
   // 5 watch
   if (!o.isInFlight) break;
 }
-await cash.withdraw(res.depositId, { signer }); // 6 unwind
+await cash.withdraw(res.depositId, { signer }); // 6 unwind (amount: for partial)
+await cash.topUp(res.depositId, usdc(50), { signer }); // 7 top up a live order
 ```
+
+Every mutating verb also has an unsigned `prepare*` counterpart, and every
+transaction carries ERC-8021 attribution (`peer-cash` + your
+`createCashClient({ referrer })` codes).
 
 ## 4. Order management — indexer-native
 

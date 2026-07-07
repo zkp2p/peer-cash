@@ -6,7 +6,7 @@ live Chainlink market rate, with zero spread, non-custodially.
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. Your USDC sits in an audited escrow contract until a buyer pays you
 fiat and proves it cryptographically (TEE-TLS). No account, no KYC form, no
-custodian. Six verbs cover the whole lifecycle.
+custodian. Seven verbs cover the whole lifecycle.
 
 ```ts
 import { createCashClient, usdc } from '@zkp2p/cash';
@@ -30,17 +30,23 @@ for await (const order of cash.watch(depositId)) {
 }
 ```
 
-## The six verbs
+## The seven verbs
 
-| Verb                                 | What it does                                                                   |
-| ------------------------------------ | ------------------------------------------------------------------------------ |
-| `capabilities()`                     | Sync discovery: platforms × currencies × payee format hints × amount bounds    |
-| `estimate({ amount, currency })`     | Live oracle rate — no payee, no side effects, idempotent                       |
-| `cashout(input, { signer })`         | Registers your payee, creates the escrow deposit, returns the `depositId`      |
-| `prepare(input)`                     | Same as cashout but returns unsigned `txs[]` — agent wallets, AA, server keys  |
-| `order(depositId)` / `orders(owner)` | Resume any order from its id alone; list all orders for a wallet               |
-| `watch(depositId)`                   | Async iterator: yields on every state change until terminal, abort, or timeout |
-| `withdraw(depositId, { signer })`    | The ONE unwind verb — prunes expired intents first when needed                 |
+| Verb                                       | What it does                                                                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `capabilities()`                           | Sync discovery: platforms × currencies × payee format hints × amount bounds                                                     |
+| `estimate({ amount, currency })`           | Live oracle rate — no payee, no side effects, idempotent                                                                        |
+| `cashout(input, { signer })`               | Registers your payee, creates the escrow deposit, returns the `depositId`                                                       |
+| `prepare(input)`                           | Same as cashout but returns unsigned `txs[]` — agent wallets, AA, server keys                                                   |
+| `order(depositId)` / `orders(owner)`       | Resume any order from its id alone; list all orders for a wallet                                                                |
+| `watch(depositId)`                         | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
+| `withdraw(depositId, { signer, amount? })` | The ONE unwind verb — partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
+| `topUp(depositId, amount, { signer })`     | Add USDC to a live order — same payee, same market rate                                                                         |
+
+Every mutating verb has an unsigned counterpart (`prepare`, `prepareWithdraw`,
+`prepareTopUp`), and every transaction — including approves — carries ERC-8021
+attribution: `peer-cash` first, your own `referrer` code(s) after it, so
+onchain analytics can segment cash flow end to end.
 
 ## Lifecycle
 
@@ -68,13 +74,14 @@ Deep dive: [docs/lifecycle-and-recovery.md](docs/lifecycle-and-recovery.md).
 
 ## For agents
 
-- `cashout`/`withdraw` have unsigned counterparts (`prepare`,
-  `prepareWithdraw`) — inspect calldata before signing, sign anywhere.
+- `cashout`/`withdraw`/`topUp` have unsigned counterparts (`prepare`,
+  `prepareWithdraw`, `prepareTopUp`) — inspect calldata before signing, sign
+  anywhere.
 - Every error carries `code`, `retryable`, and a `remediation` sentence.
 - Every order carries `nextActions: ('wait' | 'withdraw')[]` — no heuristics.
 - Every wire type has a zod schema + JSON codec — state crosses process
   boundaries losslessly.
-- `@zkp2p/cash/tools` exports a JSON-schema tool manifest of the six verbs.
+- `@zkp2p/cash/tools` exports a JSON-schema tool manifest of the verbs.
 
 Start at [AGENTS.md](AGENTS.md), or load the
 [`peer-cash-integration` skill](skills/peer-cash-integration/SKILL.md).

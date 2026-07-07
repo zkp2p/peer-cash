@@ -28,4 +28,5 @@ export type {
   IndexerDepositWithRelations,
   PreparedTransaction,
   RuntimeEnv,
+  TxOverrides,
 } from '@zkp2p/sdk';

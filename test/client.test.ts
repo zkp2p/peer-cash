@@ -27,8 +27,10 @@ const mockInstance = {
   createDeposit: vi.fn(),
   prepareCreateDeposit: vi.fn(),
   ensureAllowance: vi.fn(),
-  withdrawDeposit: vi.fn(),
-  pruneExpiredIntents: vi.fn(),
+  withdrawDeposit: Object.assign(vi.fn(), { prepare: vi.fn() }),
+  pruneExpiredIntents: Object.assign(vi.fn(), { prepare: vi.fn() }),
+  addFunds: Object.assign(vi.fn(), { prepare: vi.fn() }),
+  removeFunds: Object.assign(vi.fn(), { prepare: vi.fn() }),
 };
 
 vi.mock('@zkp2p/sdk', async (importOriginal) => {
@@ -37,7 +39,8 @@ vi.mock('@zkp2p/sdk', async (importOriginal) => {
   return { ...actual, Zkp2pClient: vi.fn(() => mockInstance) };
 });
 
-import { createCashClient } from '../src/client/createCashClient';
+import { getAttributionDataSuffix } from '@zkp2p/sdk';
+import { createCashClient, CASH_ATTRIBUTION_CODE } from '../src/client/createCashClient';
 import { isCashError } from '../src/client/errors';
 
 const NOW = Math.floor(Date.now() / 1000);
@@ -434,6 +437,183 @@ describe('watch()', () => {
       controller.abort();
     }
     expect(seen).toEqual(['awaiting-buyer']);
+  });
+});
+
+describe('ERC-8021 attribution', () => {
+  it('cashout stamps peer-cash on approve and createDeposit', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+      },
+      { signer },
+    );
+
+    expect(mockInstance.ensureAllowance).toHaveBeenCalledWith(
+      expect.objectContaining({ txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] } }),
+    );
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] } }),
+    );
+  });
+
+  it('integrator referrer codes stack after peer-cash', async () => {
+    const cash = createCashClient({ environment: 'staging', referrer: 'acme-app' });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await cash.cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+      },
+      { signer },
+    );
+
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE, 'acme-app'] },
+      }),
+    );
+  });
+
+  it('prepare() appends the attribution suffix to the manual approve calldata', async () => {
+    mockInstance.prepareCreateDeposit.mockResolvedValue({
+      depositDetails: [{}],
+      prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
+    });
+
+    const { txs } = await client().prepare({
+      amount: 5_000_000n,
+      receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+    });
+
+    const suffix = getAttributionDataSuffix([CASH_ATTRIBUTION_CODE]).slice(2);
+    expect(txs[0]?.data.endsWith(suffix)).toBe(true);
+    expect(mockInstance.prepareCreateDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] } }),
+    );
+  });
+});
+
+describe('topUp()', () => {
+  it('settles allowance against the order escrow, then adds funds', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.addFunds.mockResolvedValue('0xtopup');
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+
+    const result = await client().topUp(DEPOSIT_ID, 2_000_000n, { signer });
+
+    expect(mockInstance.ensureAllowance).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 2_000_000n, spender: ESCROW }),
+    );
+    expect(mockInstance.addFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        depositId: 5n,
+        amount: 2_000_000n,
+        escrowAddress: ESCROW,
+        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
+      }),
+    );
+    expect(result).toEqual({ depositId: DEPOSIT_ID, txHash: '0xtopup' });
+  });
+
+  it('rejects terminal orders with ORDER_NOT_ACTIVE', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({ remainingDeposits: '0', totalWithdrawn: '5000000', status: 'WITHDRAWN' }),
+    ]);
+    await expect(client().topUp(DEPOSIT_ID, 2_000_000n, { signer })).rejects.toMatchObject({
+      code: 'ORDER_NOT_ACTIVE',
+      retryable: false,
+    });
+    expect(mockInstance.addFunds).not.toHaveBeenCalled();
+  });
+
+  it('rejects dust amounts before any network call', async () => {
+    await expect(client().topUp(DEPOSIT_ID, 9_999n, { signer })).rejects.toMatchObject({
+      code: 'AMOUNT_BELOW_MINIMUM',
+    });
+    expect(mockInstance.indexer.getDepositsByIdsWithRelations).not.toHaveBeenCalled();
+  });
+
+  it('requires a signer', async () => {
+    await expect(
+      client().topUp(DEPOSIT_ID, 2_000_000n, { signer: {} as WalletClient }),
+    ).rejects.toMatchObject({ code: 'SIGNER_REQUIRED' });
+  });
+
+  it('prepareTopUp returns [approve, addFunds] unsigned txs', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.addFunds.prepare.mockResolvedValue({
+      to: ESCROW,
+      data: '0xaddfunds',
+      value: 0n,
+      chainId: 8453,
+    });
+
+    const { txs } = await client().prepareTopUp(DEPOSIT_ID, 2_000_000n);
+    expect(txs).toHaveLength(2);
+    expect(txs[0]?.to.toLowerCase()).toBe('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913');
+    expect(txs[0]?.data.startsWith('0x095ea7b3')).toBe(true);
+    expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xaddfunds' });
+  });
+});
+
+describe('withdraw() — partial', () => {
+  it('withdraws a partial amount via removeFunds', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.removeFunds.mockResolvedValue('0xpartial');
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+
+    const result = await client().withdraw(DEPOSIT_ID, { signer, amount: 2_000_000n });
+    expect(mockInstance.removeFunds).toHaveBeenCalledWith(
+      expect.objectContaining({ depositId: 5n, amount: 2_000_000n }),
+    );
+    expect(mockInstance.withdrawDeposit).not.toHaveBeenCalled();
+    expect(result.withdrawTxHash).toBe('0xpartial');
+  });
+
+  it('a live buyer intent does NOT block partial withdrawal of unlocked funds', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        remainingDeposits: '4000000',
+        outstandingIntentAmount: '1000000',
+        intents: [
+          {
+            intentHash: '0xa',
+            status: 'SIGNALED',
+            amount: '1000000',
+            owner: '0xbuyer',
+            expiryTime: String(NOW + 3600),
+          },
+        ],
+      }),
+    ]);
+    mockInstance.removeFunds.mockResolvedValue('0xpartial');
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+
+    const result = await client().withdraw(DEPOSIT_ID, { signer, amount: 4_000_000n });
+    expect(result.withdrawTxHash).toBe('0xpartial');
+  });
+
+  it('rejects amounts above the unlocked balance', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({ remainingDeposits: '4000000', outstandingIntentAmount: '1000000' }),
+    ]);
+    await expect(
+      client().withdraw(DEPOSIT_ID, { signer, amount: 4_500_000n }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_AVAILABLE_FUNDS', retryable: true });
+    expect(mockInstance.removeFunds).not.toHaveBeenCalled();
   });
 });
 

@@ -88,7 +88,13 @@ export interface CashPayout {
   payeeData: CuratorPayeeDataInput;
 }
 
-/** Input to create a market-rate (0% spread) cash-out deposit. */
+/**
+ * Input to create a market-rate (0% spread) cash-out deposit.
+ *
+ * Deliberately narrow: no rate/spread knobs, no vault/DRM delegate, no
+ * retain-on-empty override — a cash-out is a one-shot order that cleans up
+ * when fully filled. The API cannot express what Peer Cash does not offer.
+ */
 export interface CashDepositInput {
   /** Deposit asset — Base USDC (defaults to {@link BASE_USDC_ADDRESS}). */
   token?: Address;
@@ -98,10 +104,4 @@ export interface CashDepositInput {
   payouts: CashPayout[];
   /** Per-order min/max in USDC base units. Defaults derive from {@link buildIntentAmountRange}. */
   intentAmountRange?: { min: bigint; max: bigint };
-  /** Optional rate-manager / vault delegate. */
-  delegate?: Address;
-  /** Optional intent guardian. */
-  intentGuardian?: Address;
-  /** Override the one-shot cleanup default (`false`). */
-  retainOnEmpty?: boolean;
 }

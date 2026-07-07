@@ -1,5 +1,5 @@
 /**
- * `@zkp2p/cash/tools` — JSON-schema tool definitions of the six verbs, so
+ * `@zkp2p/cash/tools` — JSON-schema tool definitions of the verbs, so
  * agent hosts (peer-cli, zkp2p-mcp, any MCP server or tool-use loop) adopt
  * Peer Cash without re-deriving schemas.
  *
@@ -125,11 +125,29 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_withdraw',
     description:
-      'Unwind a cash-out: returns UNSIGNED transaction(s) to withdraw the deposit (prepare path — signing stays host-side). State-aware: when the only live intents have expired it includes a pruneExpiredIntents transaction first; while a live buyer intent locks funds it fails with ACTIVE_INTENT_BLOCKS_WITHDRAWAL (retryable — wait for expiry).',
+      'Unwind a cash-out: returns UNSIGNED transaction(s) (prepare path — signing stays host-side). With amount: partial withdrawal of the unlocked balance (a live buyer intent does not block it). Without amount: closes the order fully, state-aware — when the only live intents have expired it includes a pruneExpiredIntents transaction first; while a live buyer intent locks funds it fails with ACTIVE_INTENT_BLOCKS_WITHDRAWAL (retryable — wait for expiry).',
     inputSchema: {
       type: 'object',
-      properties: { depositId },
+      properties: {
+        depositId,
+        amount: {
+          ...bigintString,
+          description:
+            'Optional partial amount (USDC base units, decimal string). Omit to close the order fully.',
+        },
+      },
       required: ['depositId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'cash_topup',
+    description:
+      'Add USDC to a live cash-out order (same payee, same market rate). Returns UNSIGNED transactions [approve, addFunds] for the host to sign and submit in order. Fails with ORDER_NOT_ACTIVE if the order is already delivered or returned.',
+    inputSchema: {
+      type: 'object',
+      properties: { depositId, amount: bigintString },
+      required: ['depositId', 'amount'],
       additionalProperties: false,
     },
   },
@@ -140,7 +158,7 @@ export const cashToolManifest = {
   name: '@zkp2p/cash',
   version: '0.1.0',
   description:
-    'Peer Cash — offramp-only: cash out Base USDC to fiat at the live oracle market rate (0% spread). Six verbs; mutating tools return unsigned transactions.',
+    'Peer Cash — offramp-only: cash out Base USDC to fiat at the live oracle market rate (0% spread). Seven verbs; mutating tools return unsigned transactions with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 

@@ -4,6 +4,7 @@ import type {
   CashClient,
   CashoutInput,
   CashoutResult,
+  TopUpResult,
   WithdrawResult,
 } from '../client/createCashClient';
 
@@ -18,11 +19,13 @@ export interface UseCashoutOptions {
 /**
  * Orchestrate a cash-out end to end on the maker side:
  * - `cashout(input)` → create the market-rate deposit, resolve its composite id.
- * - `withdraw(depositId)` → the ONE unwind verb; prunes expired intents first
- *   when needed. The caller never chooses between cancel/recover.
+ * - `topUp(depositId, amount)` → add USDC to a live order.
+ * - `withdraw(depositId, amount?)` → the ONE unwind verb; partial with an
+ *   amount, full close without. The caller never chooses between
+ *   cancel/recover — expired intents are pruned automatically.
  */
 export function useCashout({ client, signer, onCashout, onError }: UseCashoutOptions) {
-  const [pending, setPending] = useState<null | 'cashout' | 'withdraw'>(null);
+  const [pending, setPending] = useState<null | 'cashout' | 'withdraw' | 'topUp'>(null);
   const [result, setResult] = useState<CashoutResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
@@ -55,7 +58,7 @@ export function useCashout({ client, signer, onCashout, onError }: UseCashoutOpt
   );
 
   const withdraw = useCallback(
-    async (depositId: string): Promise<WithdrawResult | null> => {
+    async (depositId: string, amount?: bigint): Promise<WithdrawResult | null> => {
       if (!client || !signer) {
         const err = new Error('Cash client or signer is not ready');
         setError(err);
@@ -65,7 +68,34 @@ export function useCashout({ client, signer, onCashout, onError }: UseCashoutOpt
       setPending('withdraw');
       setError(null);
       try {
-        return await client.withdraw(depositId, { signer });
+        return await client.withdraw(depositId, {
+          signer,
+          ...(amount !== undefined ? { amount } : {}),
+        });
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        setError(e);
+        onError?.(e);
+        return null;
+      } finally {
+        setPending(null);
+      }
+    },
+    [client, signer, onError],
+  );
+
+  const topUp = useCallback(
+    async (depositId: string, amount: bigint): Promise<TopUpResult | null> => {
+      if (!client || !signer) {
+        const err = new Error('Cash client or signer is not ready');
+        setError(err);
+        onError?.(err);
+        return null;
+      }
+      setPending('topUp');
+      setError(null);
+      try {
+        return await client.topUp(depositId, amount, { signer });
       } catch (err) {
         const e = err instanceof Error ? err : new Error(String(err));
         setError(e);
@@ -79,7 +109,7 @@ export function useCashout({ client, signer, onCashout, onError }: UseCashoutOpt
   );
 
   return useMemo(
-    () => ({ cashout, withdraw, pending, result, error }),
-    [cashout, withdraw, pending, result, error],
+    () => ({ cashout, topUp, withdraw, pending, result, error }),
+    [cashout, topUp, withdraw, pending, result, error],
   );
 }

@@ -1,5 +1,5 @@
 /**
- * Example: wiring the six verbs into an agent tool-use loop.
+ * Example: wiring the cash verbs into an agent tool-use loop.
  *
  * The host owns signing: mutating tools return UNSIGNED transactions the host
  * submits with its own key management. Everything crossing the tool boundary

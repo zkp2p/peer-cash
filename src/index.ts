@@ -1,15 +1,15 @@
 /**
  * `@zkp2p/cash` — Peer Cash: an offramp-only SDK for the ZKP2P protocol.
  *
- * Six verbs, every operation available as pure serializable data, a thin
+ * Seven verbs, every operation available as pure serializable data, a thin
  * opinionated facade over `@zkp2p/sdk`. A React app, a Node service, and an
  * AI agent are equal consumers.
  *
  * @packageDocumentation
  */
 
-// The client — the six verbs
-export { createCashClient } from './client/createCashClient';
+// The client — the verbs
+export { createCashClient, CASH_ATTRIBUTION_CODE } from './client/createCashClient';
 export type {
   CashClient,
   CashClientOptions,
@@ -18,6 +18,8 @@ export type {
   CashoutResult,
   PrepareResult,
   WithdrawResult,
+  WithdrawOptions,
+  TopUpResult,
   SignerOptions,
   WatchOptions,
   OrdersOptions,

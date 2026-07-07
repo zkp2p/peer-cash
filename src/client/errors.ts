@@ -8,6 +8,8 @@ export type CashErrorCode =
   | 'AMOUNT_BELOW_MINIMUM'
   | 'ACTIVE_INTENT_BLOCKS_WITHDRAWAL'
   | 'NOTHING_TO_WITHDRAW'
+  | 'INSUFFICIENT_AVAILABLE_FUNDS'
+  | 'ORDER_NOT_ACTIVE'
   | 'ESCROW_PAUSED'
   | 'INDEXER_LAG'
   | 'ORDER_NOT_FOUND'
@@ -81,6 +83,20 @@ export const errors = {
       message: `Order ${depositId} has a live buyer intent; escrow blocks withdrawal while a buyer may still deliver.`,
       retryable: true,
       remediation: `Wait for the buyer to complete or for their intent to expire, then call withdraw() again — it prunes expired intents automatically.`,
+    }),
+  insufficientAvailableFunds: (depositId: string, requested: bigint, available: bigint) =>
+    new CashError({
+      code: 'INSUFFICIENT_AVAILABLE_FUNDS',
+      message: `Order ${depositId} has ${available} base units available; ${requested} requested.`,
+      retryable: true,
+      remediation: `Withdraw at most the available (unlocked) amount, or omit the amount to close the order fully once no buyer intent is live.`,
+    }),
+  orderNotActive: (depositId: string) =>
+    new CashError({
+      code: 'ORDER_NOT_ACTIVE',
+      message: `Order ${depositId} is closed (delivered or returned); it cannot be topped up.`,
+      retryable: false,
+      remediation: `Start a new cash-out with cashout() instead.`,
     }),
   nothingToWithdraw: (depositId: string) =>
     new CashError({

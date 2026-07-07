@@ -56,6 +56,18 @@ none of those are knowable:
 Anything that looks like a committed quote or a delivery timer in a UI built
 on this SDK is a bug in that UI.
 
+## Managing a live order
+
+- **Top up** — `topUp(depositId, amount)` adds USDC to a live order: same
+  payee, same market-rate pricing, no new registration. Closed orders reject
+  with `ORDER_NOT_ACTIVE`; start a new `cashout()` instead.
+- **Partial withdrawal** — `withdraw(depositId, { amount })` pulls part of
+  the _unlocked_ balance back out. A live buyer intent does not block it
+  (their locked portion is untouched); asking for more than the unlocked
+  balance fails with `INSUFFICIENT_AVAILABLE_FUNDS`.
+- There is no retain-on-empty or rate knob to manage — a cash order cleans
+  itself up when fully filled, and the market rate is not configurable.
+
 ## Unwinding: one verb
 
 `withdraw(depositId, { signer })` handles every recovery case:
@@ -96,18 +108,20 @@ transaction receipt you already hold is the source of truth.
 
 ## Failure table
 
-| Code                              | Retryable | What happened / what to do                                                                 |
-| --------------------------------- | --------- | ------------------------------------------------------------------------------------------ |
-| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                |
-| `UNSUPPORTED_PLATFORM`            | no        | Platform not in this environment's catalog. Pick from `capabilities()`.                    |
-| `AMOUNT_BELOW_MINIMUM`            | no        | Below the $0.01 hard floor. Recommended minimum is 1 USDC.                                 |
-| `PAYEE_REGISTRATION_FAILED`       | yes       | Curator rejected or was unreachable. Check the handle format hint, retry.                  |
-| `TRANSACTION_FAILED`              | no        | The deposit tx reverted. Funds unchanged; inspect on Basescan.                             |
-| `DEPOSIT_RESOLUTION_FAILED`       | no        | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually. |
-| `ORDER_NOT_FOUND`                 | yes       | Unknown id or indexer lag. Verify the id; retry within seconds of creation.                |
-| `INDEXER_LAG`                     | yes       | Indexer behind the chain. Retry shortly.                                                   |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | A buyer may still deliver. Wait for fill or expiry, withdraw again.                        |
-| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal. Check `order(depositId).state`.                                         |
-| `SIGNER_REQUIRED`                 | no        | Pass `{ signer }` or use the `prepare*` path.                                              |
-| `WATCH_TIMEOUT`                   | yes       | Order still live; resume `watch()`/`order()` any time.                                     |
-| `ESCROW_PAUSED`                   | yes       | Protocol paused deposits. Existing funds stay withdrawable.                                |
+| Code                              | Retryable | What happened / what to do                                                                                        |
+| --------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------- |
+| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                       |
+| `UNSUPPORTED_PLATFORM`            | no        | Platform not in this environment's catalog. Pick from `capabilities()`.                                           |
+| `AMOUNT_BELOW_MINIMUM`            | no        | Below the $0.01 hard floor. Recommended minimum is 1 USDC.                                                        |
+| `PAYEE_REGISTRATION_FAILED`       | yes       | Curator rejected or was unreachable. Check the handle format hint, retry.                                         |
+| `TRANSACTION_FAILED`              | no        | The deposit tx reverted. Funds unchanged; inspect on Basescan.                                                    |
+| `DEPOSIT_RESOLUTION_FAILED`       | no        | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually.                        |
+| `ORDER_NOT_FOUND`                 | yes       | Unknown id or indexer lag. Verify the id; retry within seconds of creation.                                       |
+| `INDEXER_LAG`                     | yes       | Indexer behind the chain. Retry shortly.                                                                          |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | A buyer may still deliver. Wait for fill or expiry, withdraw again — or withdraw the unlocked part with `amount`. |
+| `INSUFFICIENT_AVAILABLE_FUNDS`    | yes       | Partial amount exceeds the unlocked balance. Lower it.                                                            |
+| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal. Check `order(depositId).state`.                                                                |
+| `ORDER_NOT_ACTIVE`                | no        | Cannot top up a closed order. Start a new `cashout()`.                                                            |
+| `SIGNER_REQUIRED`                 | no        | Pass `{ signer }` or use the `prepare*` path.                                                                     |
+| `WATCH_TIMEOUT`                   | yes       | Order still live; resume `watch()`/`order()` any time.                                                            |
+| `ESCROW_PAUSED`                   | yes       | Protocol paused deposits. Existing funds stay withdrawable.                                                       |

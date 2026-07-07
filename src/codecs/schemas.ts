@@ -84,6 +84,11 @@ export const withdrawResultJsonSchema = z.object({
   withdrawTxHash: z.string(),
 });
 
+export const topUpResultJsonSchema = z.object({
+  depositId: z.string(),
+  txHash: z.string(),
+});
+
 export const cashCapabilitiesJsonSchema = z.object({
   chainId: z.number(),
   token: z.object({ address: z.string(), symbol: z.literal('USDC'), decimals: z.number() }),
@@ -114,4 +119,5 @@ export type PreparedTransactionJson = z.infer<typeof preparedTransactionJsonSche
 export type CashoutResultJson = z.infer<typeof cashoutResultJsonSchema>;
 export type PrepareResultJson = z.infer<typeof prepareResultJsonSchema>;
 export type WithdrawResultJson = z.infer<typeof withdrawResultJsonSchema>;
+export type TopUpResultJson = z.infer<typeof topUpResultJsonSchema>;
 export type CashCapabilitiesJson = z.infer<typeof cashCapabilitiesJsonSchema>;

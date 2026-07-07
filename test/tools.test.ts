@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cashToolManifest, cashTools } from '../src/tools';
 
 describe('tools manifest', () => {
-  it('covers the six verbs', () => {
+  it('covers the verbs', () => {
     expect(cashTools.map((t) => t.name)).toEqual([
       'cash_capabilities',
       'cash_estimate',
@@ -10,6 +10,7 @@ describe('tools manifest', () => {
       'cash_order',
       'cash_orders',
       'cash_withdraw',
+      'cash_topup',
     ]);
   });
 
@@ -22,7 +23,7 @@ describe('tools manifest', () => {
   });
 
   it('mutating tools default to the prepare path (unsigned txs, host-side signing)', () => {
-    for (const name of ['cash_cashout', 'cash_withdraw']) {
+    for (const name of ['cash_cashout', 'cash_withdraw', 'cash_topup']) {
       const tool = cashTools.find((t) => t.name === name);
       expect(tool?.description).toMatch(/UNSIGNED/);
     }
@@ -31,7 +32,7 @@ describe('tools manifest', () => {
   it('is JSON-serializable as-is', () => {
     expect(() => JSON.stringify(cashToolManifest)).not.toThrow();
     const parsed = JSON.parse(JSON.stringify(cashToolManifest));
-    expect(parsed.tools).toHaveLength(6);
+    expect(parsed.tools).toHaveLength(7);
     expect(parsed.name).toBe('@zkp2p/cash');
   });
 });

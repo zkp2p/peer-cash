@@ -155,8 +155,6 @@ export async function prepareCashDepositParams(
     paymentMethodsOverride,
     paymentMethodDataOverride,
     currenciesOverride,
-    retainOnEmpty: input.retainOnEmpty ?? CASH_RETAIN_ON_EMPTY,
-    ...(input.delegate ? { delegate: input.delegate } : {}),
-    ...(input.intentGuardian ? { intentGuardian: input.intentGuardian } : {}),
+    retainOnEmpty: CASH_RETAIN_ON_EMPTY,
   } as CreateDepositParamsArg;
 }

@@ -8,7 +8,12 @@ import type { CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
 import type { CashCapabilities } from '../client/capabilities';
-import type { CashoutResult, PrepareResult, WithdrawResult } from '../client/createCashClient';
+import type {
+  CashoutResult,
+  PrepareResult,
+  TopUpResult,
+  WithdrawResult,
+} from '../client/createCashClient';
 import {
   cashCapabilitiesJsonSchema,
   cashEstimateJsonSchema,
@@ -17,6 +22,7 @@ import {
   prepareResultJsonSchema,
   preparedTransactionJsonSchema,
   withdrawResultJsonSchema,
+  topUpResultJsonSchema,
   type CashCapabilitiesJson,
   type CashEstimateJson,
   type CashFillJson,
@@ -25,6 +31,7 @@ import {
   type PrepareResultJson,
   type PreparedTransactionJson,
   type WithdrawResultJson,
+  type TopUpResultJson,
 } from './schemas';
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
@@ -164,6 +171,17 @@ export function withdrawResultFromJson(json: unknown): WithdrawResult {
     pruneTxHash: parsed.pruneTxHash,
     withdrawTxHash: parsed.withdrawTxHash,
   }) as unknown as WithdrawResult;
+}
+
+// --- TopUpResult ---
+
+export function topUpResultToJson(result: TopUpResult): TopUpResultJson {
+  return { depositId: result.depositId, txHash: result.txHash };
+}
+
+export function topUpResultFromJson(json: unknown): TopUpResult {
+  const parsed = topUpResultJsonSchema.parse(json);
+  return { depositId: parsed.depositId, txHash: parsed.txHash as TopUpResult['txHash'] };
 }
 
 // --- CashCapabilities ---

@@ -6,7 +6,9 @@
  *   2. prepare() returns well-formed unsigned txs (read-only path)
  *   3. cashout() a small real deposit → depositId from the receipt
  *   4. order(depositId) + orders(owner) show it awaiting-buyer (indexer proven)
- *   5. withdraw() immediately → order shows returned; balance restored minus gas
+ *   5. the deposit tx calldata carries the peer-cash ERC-8021 attribution
+ *   6. topUp() grows the order; partial withdraw() shrinks it while still live
+ *   7. withdraw() fully → order shows returned; balance restored minus gas
  *
  * Never waits on a buyer — buyer-side is known-working and out of scope.
  *
@@ -20,6 +22,7 @@ import { createCashClient, usdc, formatUsdc, isCashError, BASE_USDC_ADDRESS } fr
 import type { CashOrder } from '../src';
 
 const AMOUNT = usdc(1);
+const TOPUP_AMOUNT = usdc('0.5');
 // The curator validates payee handles against the live platform, so this must
 // be a real account — the workspace's standing test payee (see test-wallet-ops).
 const RECEIVE = {
@@ -88,7 +91,7 @@ console.log(`wallet: ${account.address}`);
 console.log(`environment: staging | amount: ${formatUsdc(AMOUNT)} USDC\n`);
 
 // --- 1. capabilities + estimate ---
-console.log('[1/5] capabilities + estimate');
+console.log('[1/7] capabilities + estimate');
 const caps = cash.capabilities();
 if (!caps.platforms.some((p) => p.platform === 'venmo' && p.currencies.includes('USD'))) {
   fail('capabilities() is missing the venmo/USD corridor');
@@ -101,7 +104,7 @@ if (est.kind !== 'oracle-estimate' || est.rate !== 1)
 ok(`estimate: ${formatUsdc(AMOUNT)} USDC ≈ ${est.receiveAmount} USD`);
 
 // --- 2. prepare (unsigned path, no submission) ---
-console.log('[2/5] prepare() unsigned path');
+console.log('[2/7] prepare() unsigned path');
 const preparedResult = await cash.prepare({
   amount: AMOUNT,
   receive: RECEIVE,
@@ -116,7 +119,7 @@ ok(
 );
 
 // --- 3. cashout ---
-console.log('[3/5] cashout()');
+console.log('[3/7] cashout()');
 const balanceBefore = await usdcBalance();
 console.log(`  balance before: ${formatUsdc(balanceBefore)} USDC`);
 
@@ -128,7 +131,7 @@ if (result.order.state !== 'awaiting-buyer')
 ok('deposit created and composite id resolved from DepositReceived');
 
 // --- 4. indexer round-trip ---
-console.log('[4/5] order() + orders() show awaiting-buyer');
+console.log('[4/7] order() + orders() show awaiting-buyer');
 const live = await pollOrder(result.depositId, (o) => o.state === 'awaiting-buyer', 'order()');
 if (live.totalAmount !== AMOUNT) fail(`indexed totalAmount ${live.totalAmount} != ${AMOUNT}`);
 if (!live.nextActions.includes('withdraw'))
@@ -144,8 +147,37 @@ if (!mine.some((o) => o.depositId === result.depositId)) {
 }
 ok(`orders(): ${mine.length} in-flight order(s), new deposit present`);
 
-// --- 5. withdraw + returned ---
-console.log('[5/5] withdraw() → returned');
+// --- 5. attribution on-chain ---
+console.log('[5/7] ERC-8021 attribution on the deposit tx');
+const depositTx = await publicClient.getTransaction({ hash: result.txHash });
+const peerCashHex = Buffer.from('peer-cash').toString('hex');
+if (!depositTx.input.includes(peerCashHex)) {
+  fail('createDeposit calldata is missing the peer-cash attribution suffix');
+}
+ok('createDeposit calldata carries the peer-cash attribution code');
+
+// --- 6. topUp + partial withdraw ---
+console.log('[6/7] topUp() and partial withdraw()');
+const topped = await cash.topUp(result.depositId, TOPUP_AMOUNT, { signer });
+console.log(`  topUp tx: https://basescan.org/tx/${topped.txHash}`);
+const grown = await pollOrder(
+  result.depositId,
+  (o) => o.totalAmount === AMOUNT + TOPUP_AMOUNT,
+  'topUp indexed',
+);
+ok(`order(): total grew to ${formatUsdc(grown.totalAmount)} USDC`);
+
+const partial = await cash.withdraw(result.depositId, { signer, amount: TOPUP_AMOUNT });
+console.log(`  partial withdraw tx: https://basescan.org/tx/${partial.withdrawTxHash}`);
+const shrunk = await pollOrder(
+  result.depositId,
+  (o) => o.state === 'awaiting-buyer' && o.returnedAmount === TOPUP_AMOUNT,
+  'partial withdraw indexed',
+);
+ok(`order(): still ${shrunk.state}, ${formatUsdc(shrunk.returnedAmount)} USDC returned, rest live`);
+
+// --- 7. full withdraw + returned ---
+console.log('[7/7] withdraw() → returned');
 const withdrawn = await cash.withdraw(result.depositId, { signer });
 console.log(`  tx: https://basescan.org/tx/${withdrawn.withdrawTxHash}`);
 if (withdrawn.pruneTxHash)

@@ -1,6 +1,6 @@
 # @zkp2p/cash — contributor guide
 
-Peer Cash is an offramp-only SDK: six verbs to cash out Base USDC to fiat at
+Peer Cash is an offramp-only SDK: seven verbs to cash out Base USDC to fiat at
 the live Chainlink oracle market rate (0% spread, always). It is a thin facade
 over the published `@zkp2p/sdk` — minimal is judged at the API surface, not
 the dependency tree.
@@ -28,9 +28,9 @@ the dependency tree.
   construction, receipt parsing). No I/O. Ported from the reviewed reference
   implementation; keep it dependency-light and fully unit-tested.
 - `src/client/` — `createCashClient` facade over a read-only `Zkp2pClient`,
-  the six verbs, typed errors.
+  the verbs, typed errors.
 - `src/codecs/` — zod schemas + JSON (de)serialization for every wire type.
-- `src/tools/` — JSON-schema tool manifest of the six verbs for agent runtimes.
+- `src/tools/` — JSON-schema tool manifest of the verbs for agent runtimes.
 - `src/react/` — optional hooks (`useEstimate`, `useCashout`, `useOrder`,
   `useOrders`). React is an optional peer dep; nothing outside `src/react/`
   may import it.

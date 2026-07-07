@@ -9,14 +9,20 @@ the maker can withdraw an unmatched deposit.
 ## Decision tree: pick your entry point
 
 1. **You control a signer in-process** (viem `WalletClient`, e.g. a local
-   key or embedded wallet) → use `cashout()` / `withdraw()` directly.
+   key or embedded wallet) → use `cashout()` / `topUp()` / `withdraw()`
+   directly.
 2. **Signing happens elsewhere** (AA bundler, policy engine, custody service,
-   human approval step) → use `prepare()` / `prepareWithdraw()`. Both return
-   unsigned `txs[]` (`{ to, data, value, chainId }`); submit them in order and
-   wait for each receipt.
+   human approval step) → use `prepare()` / `prepareTopUp()` /
+   `prepareWithdraw()`. Each returns unsigned `txs[]`
+   (`{ to, data, value, chainId }`); submit them in order and wait for each
+   receipt.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
-   `@zkp2p/cash/tools` and map the six tool names to the verbs above.
-   Mutating tools return unsigned transactions; keep signing host-side.
+   `@zkp2p/cash/tools` and map the tool names to the verbs above. Mutating
+   tools return unsigned transactions; keep signing host-side.
+
+Every transaction (including approves) carries ERC-8021 attribution:
+`peer-cash`, then any `referrer` codes from `createCashClient` options, then
+the Base builder code.
 
 ## The loop
 
@@ -71,21 +77,23 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
 
 Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 
-| Code                              | Retryable | Agent action                                                    |
-| --------------------------------- | --------- | --------------------------------------------------------------- |
-| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Re-pick currency from `capabilities()`                          |
-| `UNSUPPORTED_PLATFORM`            | no        | Re-pick platform from `capabilities()`                          |
-| `AMOUNT_BELOW_MINIMUM`            | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)           |
-| `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff         |
-| `TRANSACTION_FAILED`              | no        | Surface to operator; funds unchanged                            |
-| `DEPOSIT_RESOLUTION_FAILED`       | no        | Extract depositId from the `DepositReceived` log in the receipt |
-| `ORDER_NOT_FOUND`                 | yes       | Retry (indexer lag) unless the id is provably wrong             |
-| `INDEXER_LAG`                     | yes       | Retry after a few seconds                                       |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | Wait; retry `withdraw()` after intent expiry                    |
-| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal; reconcile your records                       |
-| `SIGNER_REQUIRED`                 | no        | Provide `{ signer }` or switch to the prepare path              |
-| `WATCH_TIMEOUT`                   | yes       | Resume `watch(depositId)` whenever convenient                   |
-| `ESCROW_PAUSED`                   | yes       | Back off; existing funds remain withdrawable                    |
+| Code                              | Retryable | Agent action                                                                                    |
+| --------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
+| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Re-pick currency from `capabilities()`                                                          |
+| `UNSUPPORTED_PLATFORM`            | no        | Re-pick platform from `capabilities()`                                                          |
+| `AMOUNT_BELOW_MINIMUM`            | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)                                           |
+| `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff                                         |
+| `TRANSACTION_FAILED`              | no        | Surface to operator; funds unchanged                                                            |
+| `DEPOSIT_RESOLUTION_FAILED`       | no        | Extract depositId from the `DepositReceived` log in the receipt                                 |
+| `ORDER_NOT_FOUND`                 | yes       | Retry (indexer lag) unless the id is provably wrong                                             |
+| `INDEXER_LAG`                     | yes       | Retry after a few seconds                                                                       |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | Wait; retry full `withdraw()` after intent expiry (or withdraw the unlocked part with `amount`) |
+| `INSUFFICIENT_AVAILABLE_FUNDS`    | yes       | Partial amount exceeds the unlocked balance; lower it or close fully later                      |
+| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal; reconcile your records                                                       |
+| `ORDER_NOT_ACTIVE`                | no        | Top-up target is closed; start a new `cashout()` instead                                        |
+| `SIGNER_REQUIRED`                 | no        | Provide `{ signer }` or switch to the prepare path                                              |
+| `WATCH_TIMEOUT`                   | yes       | Resume `watch(depositId)` whenever convenient                                                   |
+| `ESCROW_PAUSED`                   | yes       | Back off; existing funds remain withdrawable                                                    |
 
 `isCashError(err)` narrows unknown errors; `err.toJSON()` is safe for logs
 and tool results.
