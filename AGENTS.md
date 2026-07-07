@@ -24,6 +24,16 @@ Every transaction (including approves) carries ERC-8021 attribution:
 `peer-cash`, then any `referrer` codes from `createCashClient` options, then
 the Base builder code.
 
+**Two platform caveats, both surfaced in `capabilities()`:**
+
+- **Wise and PayPal** carry `requiresIdentityAttestation: true`. Their curator
+  registration needs a signed maker identity attestation this SDK cannot mint
+  (it comes from the ZKP2P app/extension). A bare-handle `cashout()` to these
+  fails fast with `PAYEE_VERIFICATION_REQUIRED` before any transaction.
+- **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
+  platform at registration — the account must exist. The rest (Zelle, Chime,
+  etc.) are format-checked only. Match handles to the `payeeHint`.
+
 ## The loop
 
 ```ts
@@ -88,8 +98,10 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Re-pick currency from `capabilities()`                                                          |
 | `UNSUPPORTED_PLATFORM`            | no        | Re-pick platform from `capabilities()`                                                          |
 | `AMOUNT_BELOW_MINIMUM`            | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)                                           |
-| `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff                                         |
-| `TRANSACTION_FAILED`              | no        | Surface to operator; funds unchanged                                                            |
+| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation — register the payee via the ZKP2P app first     |
+| `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff (curator caps at 20 registrations/min)  |
+| `ALLOWANCE_NOT_VISIBLE`           | yes       | Approve mined but a stale RPC replica hid it; retry the same call in a few seconds              |
+| `TRANSACTION_FAILED`              | no        | The on-chain call reverted or was mapped from a raw error; surface to operator; funds unchanged |
 | `DEPOSIT_RESOLUTION_FAILED`       | no        | Extract depositId from the `DepositReceived` log in the receipt                                 |
 | `ORDER_NOT_FOUND`                 | yes       | Retry (indexer lag) unless the id is provably wrong                                             |
 | `INDEXER_LAG`                     | yes       | Retry after a few seconds                                                                       |

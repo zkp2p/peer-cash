@@ -49,6 +49,11 @@ Every mutating verb has an unsigned counterpart (`prepare`, `prepareWithdraw`,
 attribution: `peer-cash` first, your own `referrer` code(s) after it, so
 onchain analytics can segment cash flow end to end.
 
+`capabilities()` tells you which platforms need a verified identity to
+register a payee (`requiresIdentityAttestation` — Wise and PayPal today); a
+bare-handle `cashout()` to those fails fast with `PAYEE_VERIFICATION_REQUIRED`
+rather than reverting on-chain.
+
 ## Lifecycle
 
 ```

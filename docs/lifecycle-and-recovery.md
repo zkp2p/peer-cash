@@ -84,6 +84,14 @@ Each fill is a receipt that sharpens over its life:
   `paidAt`, `releasedAmount` (USDC actually released), and
   `fillLatencySeconds` (signal → proven delivery).
 
+`fiatOwed` and `fiatPaid` are decoded to whole currency units. The verified
+`paymentAmount` arrives from the indexer in cents (2 decimals) — the same
+convention the first-party ZKP2P clients display it with — and the SDK
+divides by 100. The signal-time `fiatOwed` derives from `amount × rate` at
+1e18 precision; `resolveIntentFiatAmount` in the reference clients uses the
+same ceil-to-cent math, and the decode is verified against live production
+receipts.
+
 Orders also carry their `payouts` legs reconstructed from the chain —
 platform, currency, payee hash, and a pricing proof (`spreadBps: 0`,
 `kind: 'oracle_chainlink'`, `marketRate: true`): the zero-spread claim is a
@@ -135,6 +143,21 @@ Right after `cashout()`, the indexer may not have seen the deposit yet
 polling. Do not treat an immediate `ORDER_NOT_FOUND` as a lost deposit — the
 transaction receipt you already hold is the source of truth.
 
+## Payee registration, over time
+
+`cashout()` registers your payee with the curator once, keyed by a hash of the
+handle; the registration has no TTL and stays resolvable for the deposit's
+whole life. Two things to know for long-lived orders:
+
+- For the **live-validated platforms** (Venmo, Revolut, Cash App, Monzo), if
+  the underlying account is later deleted, the curator can revoke the payee at
+  a buyer's intent-signing time — a buyer then cannot take the deposit until
+  the payee is re-registered. Format-only platforms (Zelle, Chime, …) are
+  never re-checked.
+- **Wise and PayPal** require a signed identity attestation to register at all;
+  this SDK surfaces that as `PAYEE_VERIFICATION_REQUIRED` and `capabilities()`
+  flags those platforms with `requiresIdentityAttestation: true`.
+
 ## Failure table
 
 | Code                              | Retryable | What happened / what to do                                                                                        |
@@ -142,8 +165,10 @@ transaction receipt you already hold is the source of truth.
 | `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                       |
 | `UNSUPPORTED_PLATFORM`            | no        | Platform not in this environment's catalog. Pick from `capabilities()`.                                           |
 | `AMOUNT_BELOW_MINIMUM`            | no        | Below the $0.01 hard floor. Recommended minimum is 1 USDC.                                                        |
-| `PAYEE_REGISTRATION_FAILED`       | yes       | Curator rejected or was unreachable. Check the handle format hint, retry.                                         |
-| `TRANSACTION_FAILED`              | no        | The deposit tx reverted. Funds unchanged; inspect on Basescan.                                                    |
+| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation; register the payee via the ZKP2P app first.                       |
+| `PAYEE_REGISTRATION_FAILED`       | yes       | Curator rejected or was unreachable. Check the handle hint, retry (curator caps at 20 registrations/min per IP).  |
+| `ALLOWANCE_NOT_VISIBLE`           | yes       | Approve mined but a stale RPC replica hid it. Retry the same call in a few seconds.                               |
+| `TRANSACTION_FAILED`              | no        | An on-chain call reverted (or a raw error was wrapped). Funds unchanged if it reverted pre-acceptance.            |
 | `DEPOSIT_RESOLUTION_FAILED`       | no        | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually.                        |
 | `ORDER_NOT_FOUND`                 | yes       | Unknown id or indexer lag. Verify the id; retry within seconds of creation.                                       |
 | `INDEXER_LAG`                     | yes       | Indexer behind the chain. Retry shortly.                                                                          |
