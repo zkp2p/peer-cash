@@ -1,12 +1,12 @@
 # @zkp2p/cash
 
-Cash out Base USDC to fiat — Venmo, Revolut, Wise, Zelle, and more — at the
-live Chainlink market rate, with zero spread, non-custodially.
+Cash out Base USDC to fiat on Venmo, Revolut, Wise, Zelle, and more at the
+live Chainlink market rate, with zero spread and no custodial off-ramp provider.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
-protocol. Your USDC sits in an audited escrow contract until a buyer pays you
-fiat and proves it cryptographically (TEE-TLS). No account, no KYC form, no
-custodian. Seven verbs cover the whole lifecycle.
+protocol. Your USDC is secured by the protocol until a buyer pays you fiat and
+proves the payment with TEE-TLS. No hosted widget, no provider custody, no
+separate Peer identity flow. Eight verbs cover the whole lifecycle.
 
 ```ts
 import { createCashClient, usdc } from '@zkp2p/cash';
@@ -30,13 +30,13 @@ for await (const order of cash.watch(depositId)) {
 }
 ```
 
-## The seven verbs
+## The eight verbs
 
 | Verb                                       | What it does                                                                                                                    |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | `capabilities()`                           | Sync discovery: platforms × currencies × payee format hints × amount bounds                                                     |
 | `estimate({ amount, currency })`           | Live oracle rate — no payee, no side effects, idempotent                                                                        |
-| `cashout(input, { signer })`               | Registers your payee, creates the escrow deposit, returns the `depositId`                                                       |
+| `cashout(input, { signer })`               | Registers your payee, creates the protocol-held order, returns the `depositId`                                                  |
 | `prepare(input)`                           | Same as cashout but returns unsigned `txs[]` — agent wallets, AA, server keys                                                   |
 | `order(depositId)` / `orders(owner)`       | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                         | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
@@ -66,7 +66,7 @@ awaiting-buyer ──────────► matched ───────�
 ```
 
 - **You are the maker.** Your deposit is priced by the live Chainlink oracle
-  with `spreadBps: 0` — the best offer on the book, by construction.
+  with `spreadBps: 0`, making it the best offer on the book by construction.
 - **There is no quote.** The binding rate resolves at the oracle when a buyer
   fills. `estimate()` says "approximately"; nothing in this API pretends to
   lock a price.
@@ -120,10 +120,10 @@ npm install @zkp2p/cash viem
 ## Trust model, honestly
 
 This SDK is open source, so the code that constructs the parameters moving
-your money into escrow is auditable. It depends on the published `@zkp2p/sdk`
-for protocol internals, which currently ships from private source — the
-non-custodial claim is verifiable here, and the dependency's claim is not
-(yet). Escrow custody is on-chain either way: only the escrow contract holds
+your USDC into protocol-held funds is auditable. It depends on the published
+`@zkp2p/sdk` for protocol internals, which currently ships from private source.
+The Peer Cash facade is verifiable here; the dependency is not yet fully open.
+Onchain custody is still enforced by the protocol: only the contract holds
 funds, and only you can withdraw an unmatched deposit.
 
 ## License

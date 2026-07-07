@@ -1,8 +1,8 @@
-# @zkp2p/cash — contributor guide
+# @zkp2p/cash - contributor guide
 
-Peer Cash is an offramp-only SDK: seven verbs to cash out Base USDC to fiat at
+Peer Cash is an offramp-only SDK: eight verbs to cash out Base USDC to fiat at
 the live Chainlink oracle market rate (0% spread, always). It is a thin facade
-over the published `@zkp2p/sdk` — minimal is judged at the API surface, not
+over the published `@zkp2p/sdk`. Minimal is judged at the API surface, not
 the dependency tree.
 
 ## Ground rules

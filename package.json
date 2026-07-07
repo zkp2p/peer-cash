@@ -1,7 +1,7 @@
 {
   "name": "@zkp2p/cash",
   "version": "0.1.0",
-  "description": "Peer Cash — offramp-only SDK for the ZKP2P protocol: seven verbs to cash out Base USDC to fiat at the live oracle market rate.",
+  "description": "Peer Cash - offramp-only SDK for the ZKP2P protocol: eight verbs to cash out Base USDC to fiat at the live oracle market rate.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -20,7 +20,7 @@
     "usdc",
     "base",
     "crypto-to-fiat",
-    "escrow",
+    "payments",
     "sdk"
   ],
   "main": "./dist/index.cjs",

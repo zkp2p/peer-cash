@@ -1,25 +1,25 @@
 ---
 name: peer-cash-integration
-description: Integrate Peer Cash (@zkp2p/cash) into any codebase — React app, Node service, or agent runtime. Covers the maker-inversion mental model, oracle-at-fill pricing, the verbs, indexer-native order tracking, the failure playbook, and the maker-side staging verification that proves the integration works. Use when adding crypto-to-fiat cash-out to a product or wiring the cash tools into an agent host.
+description: Integrate Peer Cash (@zkp2p/cash) into any codebase - React app, Node service, or agent runtime. Covers the maker-inversion mental model, oracle-at-fill pricing, the verbs, indexer-native order tracking, the failure playbook, and the maker-side staging verification that proves the integration works. Use when adding crypto-to-fiat cash-out to a product or wiring the cash tools into an agent host.
 ---
 
 # Peer Cash integration
 
 Onboard this codebase to `@zkp2p/cash`: an offramp-only SDK that cashes out
 Base USDC to fiat at the live Chainlink market rate (0% spread),
-non-custodially, over the ZKP2P protocol.
+with protocol-held funds and no custodial off-ramp provider.
 
 ## 1. Mental model (read before writing code)
 
-- **Maker inversion.** The cashing-out user is the _maker_: their USDC goes
-  into escrow as a deposit. A buyer (taker) pays them fiat and proves it
-  (TEE-TLS); escrow releases the USDC. The protocol runs in its normal
+- **Maker inversion.** The cashing-out user is the _maker_: their USDC becomes
+  a protocol-held deposit. A buyer (taker) pays them fiat and proves it
+  with TEE-TLS; the protocol releases the USDC. The protocol runs in its normal
   direction — Peer Cash is a lens on it, not a fork of it.
 - **Oracle-at-fill pricing. There is no quote.** The deposit carries
   `oracleRateConfig { spreadBps: 0 }`; the binding rate is whatever the
   Chainlink feed says when a buyer fills. `estimate()` is deliberately named
   — anything in your UI or agent output implying a locked rate is a bug.
-- **Custody story.** Funds are held by the escrow contract only. An unmatched
+- **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
 - **Honest ETA.** Buyer arrival time is unknowable. Use `order.explain()`;
   never render a countdown.

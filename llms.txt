@@ -1,14 +1,16 @@
-# @zkp2p/cash — Peer Cash
+# @zkp2p/cash - Peer Cash
 
 > Offramp-only SDK for the ZKP2P protocol: cash out Base USDC to fiat (Venmo,
-> Revolut, Wise, Zelle, …) at the live Chainlink oracle market rate with zero
-> spread, non-custodially. Six verbs; every operation available as pure
+> Revolut, Wise, Zelle, ...) at the live Chainlink oracle market rate with zero
+> spread and no custodial off-ramp provider. Eight verbs; every operation is
+> available as pure
 > serializable data; a React app, a Node service, and an AI agent are equal
 > consumers.
 
 Key facts:
-- The cashing-out user is the MAKER: their USDC becomes an escrow deposit; a
-  buyer pays fiat and proves it (TEE-TLS); escrow releases the USDC.
+
+- The cashing-out user is the MAKER: their USDC becomes a protocol-held order;
+  a buyer pays fiat and proves it with TEE-TLS; the protocol releases the USDC.
 - There is NO quote. estimate() reads the oracle; the binding rate resolves
   at fill time. Never present a locked price or an ETA.
 - Resume any order from its depositId alone (composite escrow_onchainId).
