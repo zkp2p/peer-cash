@@ -126,7 +126,7 @@ The unforgivable class is misreporting money. The build is hardened against it a
 
 ## 12. Rollout
 
-Repo created **private**, flipped **public** as the final step together with the `0.1.0` npm publish. Nothing is pushed or published until explicit go. The landing page (`/cash` on peer.xyz, developer-conversion) ships as its own PR on `zkp2p-clients`.
+Repo is **private** on the `zkp2p` org; it flips **public** as the final step together with the `0.1.0` npm publish, on explicit go. The developer-conversion landing page (`/cash` on peer.xyz) is open as its own **draft PR on `zkp2p-clients` (#1103)**, brand-native and claims-reviewed, held in draft until the publish lands so its npm and GitHub CTA links resolve.
 
 ## 13. Acceptance criteria — all met
 
