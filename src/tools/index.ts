@@ -170,7 +170,7 @@ export const cashTools: CashToolDefinition[] = [
 /** Manifest wrapper with versioning for host registries. */
 export const cashToolManifest = {
   name: '@zkp2p/cash',
-  version: '0.1.0',
+  version: '0.1.1',
   description:
     'Peer Cash - offramp-only: cash out Base USDC to fiat at the live oracle market rate (0% spread). Eight verbs; mutating tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
