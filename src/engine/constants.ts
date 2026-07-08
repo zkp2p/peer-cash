@@ -1,16 +1,16 @@
 /**
- * Peer Cash — engine constants.
+ * Peer Cash - engine constants.
  *
  * Peer Cash is an async crypto→fiat offramp built on the maker/deposit side of
  * the protocol: the cashing-out user IS the maker. They create a deposit at the
  * live oracle/market rate (0% spread); a buyer (a standard taker) signals an
  * intent, pays fiat, and proves it via the standard TEE-TLS flow, releasing the
- * user's crypto. The protocol is reused in its existing direction — no proof
+ * user's crypto. The protocol is reused in its existing direction - no proof
  * inversion, no sell-side quote.
  */
 import type { IntentStatus } from '../sdk-types';
 
-/** Base chain id — Peer Cash settles in Base USDC. */
+/** Base chain id - Peer Cash settles in Base USDC. */
 export const BASE_CHAIN_ID = 8453;
 
 /** Canonical USDC on Base (6 decimals). The deposit asset for every cash-out. */
@@ -35,7 +35,7 @@ export const ORACLE_MIN_CONVERSION_RATE_SENTINEL = 1n;
 
 /**
  * The full intent-status set a cash-out order can pass through. The indexer's
- * `getIntentsForDeposits` defaults to `['SIGNALED']` only — passing this
+ * `getIntentsForDeposits` defaults to `['SIGNALED']` only - passing this
  * explicit set is REQUIRED, otherwise `delivered`/`returned` states are
  * silently filtered out.
  */

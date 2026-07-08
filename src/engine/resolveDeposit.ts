@@ -1,5 +1,5 @@
 /**
- * Peer Cash — resolve the composite deposit id from a `createDeposit` receipt.
+ * Peer Cash - resolve the composite deposit id from a `createDeposit` receipt.
  *
  * `createDeposit` returns only a tx hash; the on-chain `depositId` is assigned by
  * the contract and emitted in `DepositReceived` (indexed). We decode it from the
@@ -54,7 +54,7 @@ export function parseCompositeDepositId(compositeId: string): {
 } {
   const idx = compositeId.lastIndexOf('_');
   if (idx === -1) {
-    // No escrow prefix — treat the whole string as the on-chain id.
+    // No escrow prefix - treat the whole string as the on-chain id.
     return { escrowAddress: '', onchainDepositId: BigInt(compositeId) };
   }
   const escrowAddress = compositeId.slice(0, idx);

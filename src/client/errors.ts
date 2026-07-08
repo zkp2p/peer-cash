@@ -1,5 +1,5 @@
 /**
- * Typed errors — every failure carries a `code`, whether it is `retryable`,
+ * Typed errors - every failure carries a `code`, whether it is `retryable`,
  * and a `remediation` sentence so agents can self-drive recovery.
  */
 export type CashErrorCode =
@@ -63,7 +63,7 @@ export const errors = {
       code: 'ORACLE_UNSUPPORTED_CURRENCY',
       message: `${currency} has no live Chainlink oracle feed; Peer Cash is market-rate only.`,
       retryable: false,
-      remediation: `Pick a currency listed in capabilities() — each one is priced by a live oracle feed.`,
+      remediation: `Pick a currency listed in capabilities() - each one is priced by a live oracle feed.`,
     }),
   unsupportedPlatform: (platform: string) =>
     new CashError({
@@ -84,7 +84,7 @@ export const errors = {
       code: 'ACTIVE_INTENT_BLOCKS_WITHDRAWAL',
       message: `Order ${depositId} has a live buyer intent; escrow blocks withdrawal while a buyer may still deliver.`,
       retryable: true,
-      remediation: `Wait for the buyer to complete or for their intent to expire, then call withdraw() again — it prunes expired intents automatically.`,
+      remediation: `Wait for the buyer to complete or for their intent to expire, then call withdraw() again - it prunes expired intents automatically.`,
     }),
   insufficientAvailableFunds: (depositId: string, requested: bigint, available: bigint) =>
     new CashError({
@@ -105,7 +105,7 @@ export const errors = {
       code: 'NOTHING_TO_WITHDRAW',
       message: `Order ${depositId} holds no withdrawable funds (already delivered or returned).`,
       retryable: false,
-      remediation: `Check order(depositId).state — this order is terminal.`,
+      remediation: `Check order(depositId).state - this order is terminal.`,
     }),
   indexerLag: (depositId: string) =>
     new CashError({
@@ -119,7 +119,7 @@ export const errors = {
       code: 'ORDER_NOT_FOUND',
       message: `No deposit found for id ${depositId}.`,
       retryable: true,
-      remediation: `Verify the composite depositId (escrow_onchainId). If the deposit was created seconds ago this is indexer lag — retry shortly.`,
+      remediation: `Verify the composite depositId (escrow_onchainId). If the deposit was created seconds ago this is indexer lag - retry shortly.`,
     }),
   payeeRegistrationFailed: (cause: unknown) =>
     new CashError(
@@ -167,7 +167,7 @@ export const errors = {
       code: 'WATCH_TIMEOUT',
       message: `watch(${depositId}) exceeded ${timeoutMs}ms without reaching a terminal state.`,
       retryable: true,
-      remediation: `The order is still live — resume any time with watch(depositId) or order(depositId).`,
+      remediation: `The order is still live - resume any time with watch(depositId) or order(depositId).`,
     }),
   transactionFailed: (txHash: string, cause?: unknown) =>
     new CashError(

@@ -31,12 +31,12 @@ export function formatUsdc(amount: bigint): string {
   return `${negative ? '-' : ''}${whole}${trimmed ? `.${trimmed}` : ''}`;
 }
 
-/** Protocol rate precision — conversion rates are fiat-per-USDC scaled by 1e18. */
+/** Protocol rate precision - conversion rates are fiat-per-USDC scaled by 1e18. */
 export const RATE_PRECISION = 10n ** 18n;
 
 /**
  * Fiat owed for a USDC amount at a locked 1e18 conversion rate, in fiat base
- * units (6 decimals), rounded UP to the nearest cent — the same math the
+ * units (6 decimals), rounded UP to the nearest cent - the same math the
  * protocol clients use, so the number matches what the buyer is told to pay.
  */
 export function fiatFromUsdc(amount: bigint, conversionRate: bigint): bigint {

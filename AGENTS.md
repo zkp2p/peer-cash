@@ -1,4 +1,4 @@
-# @zkp2p/cash — agent integration manual
+# @zkp2p/cash - agent integration manual
 
 You are integrating Peer Cash: an offramp that converts Base USDC to fiat
 (Venmo, Revolut, Wise, Zelle, ...) at the live Chainlink market rate. The user
@@ -14,8 +14,8 @@ and only the maker can withdraw an unmatched deposit.
 2. **Signing happens elsewhere** (AA bundler, policy engine, custody service,
    human approval step) → use `prepare()` / `prepareTopUp()` /
    `prepareWithdraw()`. Each returns unsigned `txs[]`
-   (`{ to, data, value, chainId }`); submit them in order and wait for each
-   receipt.
+   (`{ to, data, value, chainId }`) plus same-index `steps[]` labels; inspect
+   the plan, submit the transactions in order, and wait for each receipt.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
    `@zkp2p/cash/tools` and map the tool names to the verbs above. Mutating
    tools return unsigned transactions; keep signing host-side.
@@ -31,7 +31,7 @@ the Base builder code.
   (it comes from the ZKP2P app/extension). A bare-handle `cashout()` to these
   fails fast with `PAYEE_VERIFICATION_REQUIRED` before any transaction.
 - **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
-  platform at registration — the account must exist. The rest (Zelle, Chime,
+  platform at registration - the account must exist. The rest (Zelle, Chime,
   etc.) are format-checked only. Match handles to the `payeeHint`.
 
 ## The loop
@@ -44,7 +44,7 @@ const cash = createCashClient({ environment: 'production' });
 // 1. Discover - static and side-effect free, do this once.
 const caps = cash.capabilities();
 
-// 2. Estimate — idempotent, cacheable, no side effects.
+// 2. Estimate - idempotent, cacheable, no side effects.
 const est = await cash.estimate({ amount: usdc(500), currency: 'EUR' });
 
 // 3. Execute.
@@ -58,7 +58,7 @@ const { depositId } = await cash.cashout(
 
 // 4. Persist depositId ↔ your user. That row is the entire integration state.
 
-// 5. Drive the lifecycle from nextActions — no heuristics.
+// 5. Drive the lifecycle from nextActions - no heuristics.
 const order = await cash.order(depositId);
 if (order.nextActions.includes('withdraw') && shouldUnwind) {
   await cash.withdraw(depositId, { signer });
@@ -72,7 +72,7 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
 - **Never promise a rate.** `estimate()` is `kind: 'oracle-estimate'`; the
   binding rate resolves at the oracle when a buyer fills. Do not display or
   log it as a locked price.
-- **Never invent an ETA.** Use `order.explain()` — one honest sentence from
+- **Never invent an ETA.** Use `order.explain()` - one honest sentence from
   live data. Buyer arrival time is not knowable.
 - **`ORDER_NOT_FOUND` seconds after `cashout()` is indexer lag**, not a lost
   deposit. The tx receipt you hold is the truth. Retry; `watch()` absorbs
@@ -83,7 +83,7 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
   locked rate; after the proof, `fiatPaid`/`paymentId`/`releasedAmount` are
   the verified outcome. Reconcile against those, not your own math.
 - **Check the buyer during `matched`.** `buyer(address)` (tool: `cash_buyer`)
-  returns their fulfilled/pruned history and success rate — surface it
+  returns their fulfilled/pruned history and success rate - surface it
   instead of a raw address.
 - **Serialize with the codecs.** `orderToJson`/`orderFromJson` etc. round-trip
   bigints losslessly and re-attach `explain()`. Plain `JSON.stringify` on a
@@ -98,7 +98,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Re-pick currency from `capabilities()`                                                          |
 | `UNSUPPORTED_PLATFORM`            | no        | Re-pick platform from `capabilities()`                                                          |
 | `AMOUNT_BELOW_MINIMUM`            | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)                                           |
-| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation — register the payee via the ZKP2P app first     |
+| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation - register the payee via the ZKP2P app first     |
 | `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff (curator caps at 20 registrations/min)  |
 | `ALLOWANCE_NOT_VISIBLE`           | yes       | Approve mined but a stale RPC replica hid it; retry the same call in a few seconds              |
 | `TRANSACTION_FAILED`              | no        | The on-chain call reverted or was mapped from a raw error; surface to operator; funds unchanged |
@@ -119,7 +119,7 @@ and tool results.
 ## Verification checklist (staging, maker-side only)
 
 Prove your integration against `environment: 'staging'` with a funded test
-wallet. Never wait on a buyer — buyer-side is out of your scope:
+wallet. Never wait on a buyer - buyer-side is out of your scope:
 
 1. `cashout()` a small amount (1–2 USDC) → capture `depositId`.
 2. `order(depositId)` shows `awaiting-buyer` (retry through indexer lag).
@@ -127,5 +127,5 @@ wallet. Never wait on a buyer — buyer-side is out of your scope:
 4. `withdraw(depositId)` → transaction succeeds.
 5. `order(depositId)` shows `returned`; wallet balance is restored minus gas.
 
-If step 4 ever fails with funds stuck, stop and escalate — do not retry
+If step 4 ever fails with funds stuck, stop and escalate - do not retry
 blindly.

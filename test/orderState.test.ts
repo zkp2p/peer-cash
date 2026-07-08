@@ -25,7 +25,7 @@ function intent(seed: IntentSeed): IntentEntity {
   } as IntentEntity;
 }
 
-describe('deriveCashOrder — state transitions', () => {
+describe('deriveCashOrder - state transitions', () => {
   it('awaiting-buyer: live funds, no intents', () => {
     const order = deriveCashOrder('esc_1', [], {
       remainingAmount: 5_000_000n,
@@ -53,7 +53,7 @@ describe('deriveCashOrder — state transitions', () => {
     expect(order.pendingAmount).toBe(1_000_000n);
     expect(order.primaryIntentHash).toBe('0xa');
     expect(order.matchedAt).toBe(NOW - 600);
-    // funds locked by a live intent — withdrawal is not offered
+    // funds locked by a live intent - withdrawal is not offered
     expect(order.nextActions).toEqual(['wait']);
   });
 
@@ -72,7 +72,7 @@ describe('deriveCashOrder — state transitions', () => {
     expect(order.nextActions).toEqual(['wait', 'withdraw']);
   });
 
-  it('delivering: partial fill — some taken, live funds remain', () => {
+  it('delivering: partial fill - some taken, live funds remain', () => {
     const order = deriveCashOrder(
       'esc_1',
       [
@@ -182,7 +182,7 @@ describe('deriveCashOrder — state transitions', () => {
   });
 });
 
-describe('deriveCashOrder — dust and fallbacks', () => {
+describe('deriveCashOrder - dust and fallbacks', () => {
   it('dust remainder is not treated as live funds', () => {
     const order = deriveCashOrder('esc_1', [], {
       remainingAmount: 9_999n, // below $0.01 dust threshold

@@ -1,9 +1,9 @@
 /**
- * Peer Cash — payout-leg reconstruction from indexed deposit relations.
+ * Peer Cash - payout-leg reconstruction from indexed deposit relations.
  *
  * A deposit's payment methods and per-method currency tuples live on-chain as
  * hashes. This decodes them back to human units (platform id, currency code)
- * via the protocol catalogs and surfaces the pricing state — including the
+ * via the protocol catalogs and surfaces the pricing state - including the
  * verifiable zero-spread invariant every cash order carries.
  */
 import { getCurrencyCodeFromHash, resolvePaymentMethodNameFromHash } from '@zkp2p/sdk';
@@ -56,7 +56,7 @@ function toPricing(tuple: MethodCurrencyLike | undefined): CashPayoutPricing {
 
 /**
  * Decode a deposit's payment methods + currency tuples into payout legs.
- * Pure — the environment arrives via the catalog. One leg per
+ * Pure - the environment arrives via the catalog. One leg per
  * (method, currency) pair; cash orders create exactly one in v1.
  */
 export function derivePayouts(
@@ -72,7 +72,7 @@ export function derivePayouts(
     try {
       platform = resolvePaymentMethodNameFromHash(platformHash, catalog);
     } catch {
-      // Malformed / non-bytes32 hash — keep the raw value, no decoded name.
+      // Malformed / non-bytes32 hash - keep the raw value, no decoded name.
       platform = undefined;
     }
     const tuples = currencies.filter(

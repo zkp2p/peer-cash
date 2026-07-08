@@ -110,6 +110,18 @@ export const preparedTransactionJsonSchema = z.object({
   chainId: z.number(),
 });
 
+export const cashPreparedStepJsonSchema = z.object({
+  kind: z.enum([
+    'approve',
+    'createDeposit',
+    'pruneExpiredIntents',
+    'withdrawDeposit',
+    'removeFunds',
+    'addFunds',
+  ]),
+  description: z.string(),
+});
+
 export const cashoutResultJsonSchema = z.object({
   depositId: z.string(),
   txHash: z.string(),
@@ -120,6 +132,7 @@ export const cashoutResultJsonSchema = z.object({
 
 export const prepareResultJsonSchema = z.object({
   txs: z.array(preparedTransactionJsonSchema),
+  steps: z.array(cashPreparedStepJsonSchema),
   register: z.object({ hashedOnchainIds: z.array(z.string()) }),
 });
 
@@ -166,6 +179,7 @@ export type CashoutResultJson = z.infer<typeof cashoutResultJsonSchema>;
 export type PrepareResultJson = z.infer<typeof prepareResultJsonSchema>;
 export type WithdrawResultJson = z.infer<typeof withdrawResultJsonSchema>;
 export type TopUpResultJson = z.infer<typeof topUpResultJsonSchema>;
+export type CashPreparedStepJson = z.infer<typeof cashPreparedStepJsonSchema>;
 export type CashPayoutInfoJson = z.infer<typeof cashPayoutInfoJsonSchema>;
 export type CashBuyerProfileJson = z.infer<typeof cashBuyerProfileJsonSchema>;
 export type CashCapabilitiesJson = z.infer<typeof cashCapabilitiesJsonSchema>;

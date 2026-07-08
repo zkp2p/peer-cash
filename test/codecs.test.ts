@@ -101,7 +101,14 @@ describe('prepared tx + result codecs', () => {
   });
 
   it('prepareResult round-trips', () => {
-    const result = { txs: [tx, tx], register: { hashedOnchainIds: ['0x1'] } };
+    const result = {
+      txs: [tx, tx],
+      steps: [
+        { kind: 'approve' as const, description: 'Approve Base USDC.' },
+        { kind: 'createDeposit' as const, description: 'Create the order.' },
+      ],
+      register: { hashedOnchainIds: ['0x1'] },
+    };
     expect(prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(result))))).toEqual(
       result,
     );

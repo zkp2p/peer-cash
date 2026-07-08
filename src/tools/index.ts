@@ -5,7 +5,8 @@
  *
  * Design rules:
  * - Mutating verbs default to the **prepare path**: the tool returns unsigned
- *   transactions; signing stays host-side, where key custody and policy live.
+ *   transactions plus readable step labels; signing stays host-side, where key
+ *   custody and policy live.
  * - Every input/output is plain JSON (bigints as decimal strings) - see the
  *   codecs exported from the package root for lossless (de)serialization.
  * - `watch` is intentionally not a tool: agents poll `cash_order` between
@@ -57,7 +58,7 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_cashout',
     description:
-      'Start a cash-out: registers the payee with the curator and returns UNSIGNED transactions [approve, createDeposit] for the host to sign and submit (prepare path - signing stays host-side). After submission, parse the depositId from the DepositReceived event or find it via cash_orders, then track with cash_order.',
+      'Start a cash-out: registers the payee with the curator and returns UNSIGNED transactions plus same-index steps [approve, createDeposit] for the host to sign and submit (prepare path - signing stays host-side). After submission, parse the depositId from the DepositReceived event or find it via cash_orders, then track with cash_order.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -138,7 +139,7 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_withdraw',
     description:
-      'Unwind a cash-out: returns UNSIGNED transaction(s) (prepare path - signing stays host-side). With amount: partial withdrawal of the unlocked balance (a live buyer intent does not block it). Without amount: closes the order fully, state-aware - when the only live intents have expired it includes a pruneExpiredIntents transaction first; while a live buyer intent locks funds it fails with ACTIVE_INTENT_BLOCKS_WITHDRAWAL (retryable - wait for expiry).',
+      'Unwind a cash-out: returns UNSIGNED transaction(s) plus same-index steps (prepare path - signing stays host-side). With amount: partial withdrawal of the unlocked balance (a live buyer intent does not block it). Without amount: closes the order fully, state-aware - when the only live intents have expired it includes a pruneExpiredIntents transaction first; while a live buyer intent locks funds it fails with ACTIVE_INTENT_BLOCKS_WITHDRAWAL (retryable - wait for expiry).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -156,7 +157,7 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_topup',
     description:
-      'Add USDC to a live cash-out order (same payee, same market rate). Returns UNSIGNED transactions [approve, addFunds] for the host to sign and submit in order. Fails with ORDER_NOT_ACTIVE if the order is already delivered or returned.',
+      'Add USDC to a live cash-out order (same payee, same market rate). Returns UNSIGNED transactions plus same-index steps [approve, addFunds] for the host to sign and submit in order. Fails with ORDER_NOT_ACTIVE if the order is already delivered or returned.',
     inputSchema: {
       type: 'object',
       properties: { depositId, amount: bigintString },
@@ -171,7 +172,7 @@ export const cashToolManifest = {
   name: '@zkp2p/cash',
   version: '0.1.0',
   description:
-    'Peer Cash - offramp-only: cash out Base USDC to fiat at the live oracle market rate (0% spread). Eight verbs; mutating tools return unsigned transactions with ERC-8021 peer-cash attribution.',
+    'Peer Cash - offramp-only: cash out Base USDC to fiat at the live oracle market rate (0% spread). Eight verbs; mutating tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 

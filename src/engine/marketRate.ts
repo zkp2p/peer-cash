@@ -1,10 +1,10 @@
 /**
- * Peer Cash — market-rate (0% spread) deposit construction.
+ * Peer Cash - market-rate (0% spread) deposit construction.
  *
  * The user sells at the prevailing live Chainlink oracle rate with `spreadBps: 0`.
  * This requires EscrowV2 "override mode" (the only `createDeposit` path that can
  * attach an `oracleRateConfig`), so we build the three override arrays ourselves
- * — exactly mirroring the SDK's auto-mode (`data: '0x'`, gating service, payee
+ * - exactly mirroring the SDK's auto-mode (`data: '0x'`, gating service, payee
  * hash) but injecting the oracle config.
  */
 import type { Address } from 'viem';
@@ -139,7 +139,7 @@ export async function prepareCashDepositParams(
   });
 
   // `conversionRates` is required for the length/shape check but is unused in
-  // override mode — the on-chain tuple comes from `currenciesOverride`.
+  // override mode - the on-chain tuple comes from `currenciesOverride`.
   const conversionRates = payouts.map((p) => [
     { currency: p.currency, conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString() },
   ]);

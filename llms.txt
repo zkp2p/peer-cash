@@ -2,9 +2,9 @@
 
 > Offramp-only SDK for the ZKP2P protocol: cash out Base USDC to fiat (Venmo,
 > Revolut, Wise, Zelle, ...) at the live Chainlink oracle market rate with zero
-> spread and no custodial off-ramp provider. Eight verbs; every operation is
-> available as pure
-> serializable data; a React app, a Node service, and an AI agent are equal
+> spread and no centralized off-ramp provider. The user is the maker,
+> ZKP2P handles the buyer side, and eight verbs expose readable order state.
+> Every operation is available as pure serializable data; a React app, a Node service, and an AI agent are equal
 > consumers.
 
 Key facts:
@@ -14,13 +14,15 @@ Key facts:
 - There is NO quote. estimate() reads the oracle; the binding rate resolves
   at fill time. Never present a locked price or an ETA.
 - Resume any order from its depositId alone (composite escrow_onchainId).
-- One unwind verb: withdraw(depositId) — prunes expired intents automatically;
+- One unwind verb: withdraw(depositId) - prunes expired intents automatically;
   pass amount for a partial withdrawal of the unlocked balance.
 - topUp(depositId, amount) adds USDC to a live order (same payee, same rate).
 - Mutating verbs have unsigned counterparts (prepare, prepareWithdraw,
   prepareTopUp) for host-side signing; @zkp2p/cash/tools ships a JSON-schema
-  tool manifest. Every transaction carries ERC-8021 attribution ('peer-cash'
-  plus integrator referrer codes).
+  tool manifest. Prepare results include `txs[]` plus same-index `steps[]`
+  labels so hosts can explain approvals and deposits before signing. Every
+  transaction carries ERC-8021 attribution ('peer-cash' plus integrator
+  referrer codes).
 - Errors are typed: { code, retryable, remediation }.
 - Everything is decoded to human units: platform ids and currency codes from
   their on-chain hashes, plain-number rates from 1e18 precision.
@@ -35,7 +37,7 @@ Key facts:
 ## Docs
 
 - [README](README.md): quickstart, verb table, lifecycle diagram
-- [AGENTS.md](AGENTS.md): agent integration manual — decision tree,
+- [AGENTS.md](AGENTS.md): agent integration manual - decision tree,
   prepare-path patterns, error → remediation table
 - [Lifecycle and recovery](docs/lifecycle-and-recovery.md): states, partial
   fills, honest-ETA principle, unwind, resumability, failure table

@@ -14,27 +14,27 @@ with protocol-held funds and no custodial off-ramp provider.
 - **Maker inversion.** The cashing-out user is the _maker_: their USDC becomes
   a protocol-held deposit. A buyer (taker) pays them fiat and proves it
   with TEE-TLS; the protocol releases the USDC. The protocol runs in its normal
-  direction — Peer Cash is a lens on it, not a fork of it.
+  direction - Peer Cash is a lens on it, not a fork of it.
 - **Oracle-at-fill pricing. There is no quote.** The deposit carries
   `oracleRateConfig { spreadBps: 0 }`; the binding rate is whatever the
   Chainlink feed says when a buyer fills. `estimate()` is deliberately named
-  — anything in your UI or agent output implying a locked rate is a bug.
+  - anything in your UI or agent output implying a locked rate is a bug.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
 - **Honest ETA.** Buyer arrival time is unknowable. Use `order.explain()`;
   never render a countdown.
 
-## 2. Decision tree — entry point by runtime
+## 2. Decision tree - entry point by runtime
 
-| Runtime                   | Entry                                                            | Signer pattern                                                                      |
-| ------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| React app                 | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider | wagmi/viem `WalletClient` from the connected wallet                                 |
-| Node service              | `createCashClient` + `cashout()`/`withdraw()`                    | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
-| Agent host / policy layer | `prepare()` / `prepareWithdraw()` → unsigned `txs[]`             | Host signs; see `@zkp2p/cash/tools` for the JSON-schema tool manifest               |
+| Runtime                   | Entry                                                             | Signer pattern                                                                      |
+| ------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| React app                 | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider  | wagmi/viem `WalletClient` from the connected wallet                                 |
+| Node service              | `createCashClient` + `cashout()`/`withdraw()`                     | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
+| Agent host / policy layer | `prepare()` / `prepareWithdraw()` -> unsigned `txs[]` + `steps[]` | Host signs; see `@zkp2p/cash/tools` for the JSON-schema tool manifest               |
 
-## 3. Recipes — the verbs
+## 3. Recipes - the verbs
 
-Authoritative signatures live in the package's typedoc and `AGENTS.md` — do
+Authoritative signatures live in the package's typedoc and `AGENTS.md` - do
 not copy types from here; import them.
 
 ```ts
@@ -53,7 +53,7 @@ const res = await cash.cashout(
   },
   { signer },
 );
-const { txs } = await cash.prepare({/* same input */}); // 2b unsigned
+const { txs, steps } = await cash.prepare({/* same input */}); // 2b unsigned plan
 const order = await cash.order(res.depositId); // 3 observe
 const mine = await cash.orders(ownerAddress, { inFlight: true }); // 4 list
 for await (const o of cash.watch(res.depositId)) {
@@ -68,21 +68,21 @@ Every mutating verb also has an unsigned `prepare*` counterpart, and every
 transaction carries ERC-8021 attribution (`peer-cash` + your
 `createCashClient({ referrer })` codes).
 
-## 4. Order management — indexer-native
+## 4. Order management - indexer-native
 
 - A cash order IS a deposit; the chain is the database. No storage layer.
 - Bind orders to your users with one column in _your_ system:
   `userId → depositId`, populated from `cashout()`'s return value.
-- `order(depositId)` cold-hydrates from the id alone — resumable across
+- `order(depositId)` cold-hydrates from the id alone - resumable across
   processes, devices, and crashes.
 - Serialize across boundaries with the exported codecs
-  (`orderToJson`/`orderFromJson`) — they handle bigints and re-attach
+  (`orderToJson`/`orderFromJson`) - they handle bigints and re-attach
   `explain()`.
 
 ## 5. Failure playbook
 
 Every error is a `CashError` with `code`, `retryable`, `remediation`. The
-full table lives in `AGENTS.md` and `docs/lifecycle-and-recovery.md` — quote
+full table lives in `AGENTS.md` and `docs/lifecycle-and-recovery.md` - quote
 those, don't re-derive. The three that matter most in practice:
 
 - `ORDER_NOT_FOUND` seconds after `cashout()` = indexer lag. The receipt is
@@ -95,7 +95,7 @@ those, don't re-derive. The three that matter most in practice:
 ## 6. Verification checklist (mandatory before calling the integration done)
 
 Run against `environment: 'staging'` with a small funded wallet.
-**Maker-side only — never wait on a buyer.**
+**Maker-side only - never wait on a buyer.**
 
 1. Create a real 1–2 USDC deposit via `cashout()`; capture `depositId`.
 2. Assert `order(depositId).state === 'awaiting-buyer'` (retry through
