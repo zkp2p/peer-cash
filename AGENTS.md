@@ -28,7 +28,7 @@ the Base builder code.
 
 - **Wise and PayPal** carry `requiresIdentityAttestation: true`. Their curator
   registration needs a signed maker identity attestation this SDK cannot mint
-  (it comes from the ZKP2P app/extension). A bare-handle `cashout()` to these
+  (it comes from the Peer app/extension). A bare-handle `cashout()` to these
   fails fast with `PAYEE_VERIFICATION_REQUIRED` before any transaction.
 - **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
   platform at registration - the account must exist. The rest (Zelle, Chime,
@@ -98,7 +98,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Re-pick currency from `capabilities()`                                                          |
 | `UNSUPPORTED_PLATFORM`            | no        | Re-pick platform from `capabilities()`                                                          |
 | `AMOUNT_BELOW_MINIMUM`            | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)                                           |
-| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation - register the payee via the ZKP2P app first     |
+| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation - register the payee via the Peer app first      |
 | `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff (curator caps at 20 registrations/min)  |
 | `ALLOWANCE_NOT_VISIBLE`           | yes       | Approve mined but a stale RPC replica hid it; retry the same call in a few seconds              |
 | `TRANSACTION_FAILED`              | no        | The on-chain call reverted or was mapped from a raw error; surface to operator; funds unchanged |

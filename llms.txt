@@ -3,7 +3,7 @@
 > Offramp-only SDK for the ZKP2P protocol: cash out Base USDC to fiat (Venmo,
 > Revolut, Wise, Zelle, ...) at the live Chainlink oracle market rate with zero
 > spread and no centralized off-ramp provider. The user is the maker,
-> ZKP2P handles the buyer side, and eight verbs expose readable order state.
+> Peer handles the buyer side, and eight verbs expose readable order state.
 > Every operation is available as pure serializable data; a React app, a Node service, and an AI agent are equal
 > consumers.
 
@@ -33,6 +33,12 @@ Key facts:
 - buyer(address) aggregates a buyer's track record (fulfilled/pruned/success
   rate) from their full intent history.
 - v1 is same-chain only: Base USDC in.
+
+## Links
+
+- Live demo: https://react-cashout-demo.vercel.app
+- Product page: https://peer.xyz/cash
+- npm: https://www.npmjs.com/package/@zkp2p/cash
 
 ## Docs
 

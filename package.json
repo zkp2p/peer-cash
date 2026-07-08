@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Peer Cash - offramp-only SDK for the ZKP2P protocol: eight verbs to cash out Base USDC to fiat at the live oracle market rate.",
   "license": "MIT",
+  "author": "Peer (https://peer.xyz)",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -16,10 +17,15 @@
   "bugs": "https://github.com/zkp2p/peer-cash/issues",
   "keywords": [
     "zkp2p",
+    "peer",
     "offramp",
     "usdc",
     "base",
     "crypto-to-fiat",
+    "venmo",
+    "chainlink",
+    "viem",
+    "agent",
     "payments",
     "sdk"
   ],
@@ -45,9 +51,11 @@
   },
   "files": [
     "dist",
+    "skills",
     "AGENTS.md",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "llms.txt"
   ],
   "scripts": {
     "build": "tsup",

@@ -14,8 +14,8 @@ to them.
 The protocol runs in its normal direction - nothing here is inverted or
 special-cased.
 
-Because your deposit is priced at market with no spread, it is the best offer
-on the book by construction. That is the fill incentive.
+Because your deposit is priced at market with no spread, it is the best price
+a rational maker can offer. That is the fill incentive.
 
 ## States
 
@@ -87,7 +87,7 @@ Each fill is a receipt that sharpens over its life:
 
 `fiatOwed` and `fiatPaid` are decoded to whole currency units. The verified
 `paymentAmount` arrives from the indexer in cents (2 decimals) - the same
-convention the first-party ZKP2P clients display it with - and the SDK
+convention the first-party Peer clients display it with - and the SDK
 divides by 100. The signal-time `fiatOwed` derives from `amount × rate` at
 1e18 precision; `resolveIntentFiatAmount` in the reference clients uses the
 same ceil-to-cent math, and the decode is verified against live production
@@ -169,7 +169,7 @@ whole life. Two things to know for long-lived orders:
 | `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                       |
 | `UNSUPPORTED_PLATFORM`            | no        | Platform not in this environment's catalog. Pick from `capabilities()`.                                           |
 | `AMOUNT_BELOW_MINIMUM`            | no        | Below the $0.01 hard floor. Recommended minimum is 1 USDC.                                                        |
-| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation; register the payee via the ZKP2P app first.                       |
+| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation; register the payee via the Peer app first.                        |
 | `PAYEE_REGISTRATION_FAILED`       | yes       | Curator rejected or was unreachable. Check the handle hint, retry (curator caps at 20 registrations/min per IP).  |
 | `ALLOWANCE_NOT_VISIBLE`           | yes       | Approve mined but a stale RPC replica hid it. Retry the same call in a few seconds.                               |
 | `TRANSACTION_FAILED`              | no        | An on-chain call reverted (or a raw error was wrapped). Funds unchanged if it reverted pre-acceptance.            |

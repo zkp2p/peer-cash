@@ -6,9 +6,11 @@ provider.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. The cashing-out user is the maker: their USDC becomes a
-protocol-held deposit, ZKP2P handles the buyer side, and the SDK gives the
+protocol-held deposit, Peer handles the buyer side, and the SDK gives the
 integrator a small set of typed verbs plus readable order state. No hosted
 widget, no provider custody, no quote engine to maintain.
+
+**[Live demo](https://react-cashout-demo.vercel.app)** · **[Product page](https://peer.xyz/cash)**
 
 ```ts
 import { createCashClient, usdc } from '@zkp2p/cash';
@@ -39,7 +41,6 @@ for await (const order of cash.watch(depositId)) {
 | `capabilities()`                           | Sync discovery: platforms × currencies × payee format hints × amount bounds                                                     |
 | `estimate({ amount, currency })`           | Live oracle rate - no payee, no side effects, idempotent                                                                        |
 | `cashout(input, { signer })`               | Registers your payee, creates the protocol-held order, returns the `depositId`                                                  |
-| `prepare(input)`                           | Same as cashout but returns unsigned `txs[]` + readable `steps[]` - agent wallets, AA, server keys                              |
 | `order(depositId)` / `orders(owner)`       | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                         | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })` | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
@@ -71,7 +72,7 @@ awaiting-buyer ──────────► matched ───────�
 ```
 
 - **You are the maker.** Your deposit is priced by the live Chainlink oracle
-  with `spreadBps: 0`, making it the best offer on the book by construction.
+  with `spreadBps: 0`, making it the best price a rational maker can offer.
 - **There is no quote.** The binding rate resolves at the oracle when a buyer
   fills. `estimate()` says "approximately"; nothing in this API pretends to
   lock a price.
@@ -123,6 +124,13 @@ options. v1 is same-chain only: Base USDC in.
 ```sh
 npm install @zkp2p/cash viem
 ```
+
+## Examples
+
+Runnable first-party examples in [`examples/`](examples):
+
+- [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
+- [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.
 
 ## Trust model, honestly
 
