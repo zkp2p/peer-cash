@@ -1,5 +1,5 @@
 /**
- * Peer Cash — buyer reputation, derived purely from the buyer's own intent
+ * Peer Cash - buyer reputation, derived purely from the buyer's own intent
  * history. The anxious moment in a cash-out is `matched`: a stranger's
  * address is holding your order. This turns that address into a track record.
  */

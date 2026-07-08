@@ -1,5 +1,5 @@
 /**
- * `@zkp2p/cash/react` — optional hooks over the cash verbs.
+ * `@zkp2p/cash/react` - optional hooks over the cash verbs.
  *
  * React is an optional peer dependency; importing from the package root never
  * pulls it in. Build the client once (e.g. in a provider) with

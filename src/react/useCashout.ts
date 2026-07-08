@@ -22,7 +22,7 @@ export interface UseCashoutOptions {
  * - `topUp(depositId, amount)` → add USDC to a live order.
  * - `withdraw(depositId, amount?)` → the ONE unwind verb; partial with an
  *   amount, full close without. The caller never chooses between
- *   cancel/recover — expired intents are pruned automatically.
+ *   cancel/recover - expired intents are pruned automatically.
  */
 export function useCashout({ client, signer, onCashout, onError }: UseCashoutOptions) {
   const [pending, setPending] = useState<null | 'cashout' | 'withdraw' | 'topUp'>(null);

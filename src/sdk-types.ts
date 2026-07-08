@@ -3,7 +3,7 @@
  *
  * The reference implementation imported these from internal SDK paths; the
  * published package exports them under indexer-prefixed names, and one type
- * (`CuratorPayeeDataInput`) is not exported at all — it is recovered here from
+ * (`CuratorPayeeDataInput`) is not exported at all - it is recovered here from
  * the `registerPayeeDetails` method signature. Everything else in this package
  * imports SDK types from this module so the mapping lives in exactly one place.
  */

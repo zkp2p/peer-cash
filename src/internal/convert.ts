@@ -1,6 +1,6 @@
 /**
  * Coercion helpers for raw indexer values (string | number | null | missing).
- * Internal — not part of the public API.
+ * Internal - not part of the public API.
  */
 
 /** Coerce to bigint, treating null/undefined/empty/malformed as 0n. */

@@ -1,5 +1,5 @@
 /**
- * `createCashClient` — the seven-verb facade over a read-only `Zkp2pClient`.
+ * `createCashClient` - the eight-verb facade over a read-only `Zkp2pClient`.
  *
  * The facade keeps the outward surface tiny (capabilities / estimate / cashout
  * / order / orders / watch / withdraw / topUp) while reusing the published
@@ -70,7 +70,7 @@ const ERC20_ALLOWANCE_ABI = parseAbi([
 ]);
 
 export interface CashClientOptions {
-  /** `'production' | 'preproduction' | 'staging'` — selects contracts, curator, and indexer. */
+  /** `'production' | 'preproduction' | 'staging'` - selects contracts, curator, and indexer. */
   environment: RuntimeEnv;
   /** viem transport for RPC reads; defaults to the public Base RPC. */
   transport?: Transport;
@@ -116,7 +116,7 @@ export interface SignerOptions {
 export interface WithdrawOptions extends SignerOptions {
   /**
    * Partial amount to withdraw (USDC base units). Only unlocked funds are
-   * withdrawable partially — a live buyer intent does not block it. Omit to
+   * withdrawable partially - a live buyer intent does not block it. Omit to
    * close the order fully (prunes expired intents first when needed).
    */
   amount?: bigint;
@@ -127,8 +127,23 @@ export interface TopUpResult {
   txHash: Hash;
 }
 
+export type CashPreparedStepKind =
+  | 'approve'
+  | 'createDeposit'
+  | 'pruneExpiredIntents'
+  | 'withdrawDeposit'
+  | 'removeFunds'
+  | 'addFunds';
+
+export interface CashPreparedStep {
+  /** Stable action label for the transaction at the same index in `txs[]`. */
+  kind: CashPreparedStepKind;
+  /** Human-readable reason to show in approval UIs, logs, or policy reviews. */
+  description: string;
+}
+
 export interface CashoutResult {
-  /** Composite deposit id (`escrow_onchainId`) — the resume key. Bind it to your user. */
+  /** Composite deposit id (`escrow_onchainId`) - the resume key. Bind it to your user. */
   depositId: string;
   txHash: Hash;
   escrowAddress: string;
@@ -140,11 +155,13 @@ export interface CashoutResult {
 export interface PrepareResult {
   /**
    * Unsigned transactions in submission order: `[approve, createDeposit]`.
-   * Submit with any signer — agent wallet, AA bundler, server key. Drop the
+   * Submit with any signer - agent wallet, AA bundler, server key. Drop the
    * approve when the escrow already has sufficient allowance.
    */
   txs: PreparedTransaction[];
-  /** Curator payee registration output — the payee hashes now live on the deposit params. */
+  /** One label per transaction in `txs[]`, same order. */
+  steps: CashPreparedStep[];
+  /** Curator payee registration output - the payee hashes now live on the deposit params. */
   register: { hashedOnchainIds: string[] };
 }
 
@@ -169,44 +186,47 @@ export interface OrdersOptions {
 }
 
 export interface CashClient {
-  /** 0 — Discovery: sync, static. */
+  /** 0 - Discovery: sync, static. */
   capabilities(): CashCapabilities;
-  /** 1 — Estimate: currency + amount only. No payee, no side effects, no expiry. */
+  /** 1 - Estimate: currency + amount only. No payee, no side effects, no expiry. */
   estimate(input: EstimateInput): Promise<CashEstimate>;
-  /** 2 — Cash out: payee registration + deposit params + submission happen here. */
+  /** 2 - Cash out: payee registration + deposit params + submission happen here. */
   cashout(input: CashoutInput, opts: SignerOptions): Promise<CashoutResult>;
-  /** 2b — Unsigned path: `txs[]` for agent wallets, AA, server keys, policy layers. */
+  /** 2b - Unsigned path: `txs[]` for agent wallets, AA, server keys, policy layers. */
   prepare(input: CashoutInput): Promise<PrepareResult>;
-  /** 3 — Observe: resumable from `depositId` alone; no session state anywhere. */
+  /** 3 - Observe: resumable from `depositId` alone; no session state anywhere. */
   order(depositId: string): Promise<CashOrder>;
   /**
-   * 3b — Observe helper: a buyer's protocol track record from their full
+   * 3b - Observe helper: a buyer's protocol track record from their full
    * intent history. Answers "who just matched my order?" during `matched`.
    */
   buyer(address: string): Promise<CashBuyerProfile>;
-  /** 4 — List: indexer-native. A cash order IS a deposit; the chain is the database. */
+  /** 4 - List: indexer-native. A cash order IS a deposit; the chain is the database. */
   orders(owner: string, opts?: OrdersOptions): Promise<CashOrder[]>;
-  /** 5 — Watch: yields on change; ends at a terminal state, abort, or timeout. */
+  /** 5 - Watch: yields on change; ends at a terminal state, abort, or timeout. */
   watch(depositId: string, opts?: WatchOptions): AsyncGenerator<CashOrder, void, void>;
   /**
-   * 6 — Withdraw: ONE unwind verb. With `amount`, withdraws that much of the
+   * 6 - Withdraw: ONE unwind verb. With `amount`, withdraws that much of the
    * unlocked balance (partial; a live buyer intent does not block it).
-   * Without, closes the order fully — pruning expired intents first when
+   * Without, closes the order fully - pruning expired intents first when
    * needed.
    */
   withdraw(depositId: string, opts: WithdrawOptions): Promise<WithdrawResult>;
   /**
-   * 6b — Unsigned path for the unwind verb (agent surface): the same state
+   * 6b - Unsigned path for the unwind verb (agent surface): the same state
    * checks as `withdraw()`, returning `txs[]` for host-side signing.
    */
   prepareWithdraw(
     depositId: string,
     opts?: { amount?: bigint },
-  ): Promise<{ txs: PreparedTransaction[] }>;
-  /** 7 — Top up: add USDC to a live order (same payee, same market rate). */
+  ): Promise<{ txs: PreparedTransaction[]; steps: CashPreparedStep[] }>;
+  /** 7 - Top up: add USDC to a live order (same payee, same market rate). */
   topUp(depositId: string, amount: bigint, opts: SignerOptions): Promise<TopUpResult>;
-  /** 7b — Unsigned path: `[approve, addFunds]` for host-side signing. */
-  prepareTopUp(depositId: string, amount: bigint): Promise<{ txs: PreparedTransaction[] }>;
+  /** 7b - Unsigned path: `[approve, addFunds]` for host-side signing. */
+  prepareTopUp(
+    depositId: string,
+    amount: bigint,
+  ): Promise<{ txs: PreparedTransaction[]; steps: CashPreparedStep[] }>;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -235,7 +255,7 @@ function orderFingerprint(order: CashOrder): string {
 /**
  * Send a mutating on-chain call, then wait for and verify its receipt.
  * Submission errors are mapped to typed `CashError`s; a reverted receipt
- * throws `TRANSACTION_FAILED` — a mutating verb never reports success for a
+ * throws `TRANSACTION_FAILED` - a mutating verb never reports success for a
  * transaction that did not land, and never leaks a raw RPC error to the caller.
  */
 async function submitAndConfirm(
@@ -320,7 +340,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     });
   }
 
-  // Read-only client — indexer, curator registration, oracle reads.
+  // Read-only client - indexer, curator registration, oracle reads.
   const readClient = buildSdkClient(createWalletClient({ chain: base, transport }));
 
   // Signing clients are built lazily and cached per WalletClient identity.
@@ -388,7 +408,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     const deposit = deposits[0];
 
     if (!deposit) {
-      // Deposit not yet indexed (lag right after creation) — read intents directly.
+      // Deposit not yet indexed (lag right after creation) - read intents directly.
       const intents = await readClient.indexer.getIntentsForDeposits(
         [depositId],
         CASH_ORDER_STATUSES,
@@ -487,7 +507,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
    * Ensure the escrow can pull the deposit amount, and make the allowance
    * durable before returning: `ensureAllowance` sends the approve without
    * waiting for it to mine, and load-balanced RPC replicas can serve stale
-   * `eth_call` state even after the receipt lands — so wait for the receipt,
+   * `eth_call` state even after the receipt lands - so wait for the receipt,
    * then poll until the allowance is visible on the read path.
    */
   async function settleAllowance(
@@ -523,7 +543,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       if (visible >= amount) return;
       await sleep(1_000);
     }
-    // The approve mined but the allowance never surfaced on the read path —
+    // The approve mined but the allowance never surfaced on the read path -
     // surface it as retryable rather than blindly submitting a doomed deposit.
     throw errors.allowanceNotVisible(amount);
   }
@@ -543,7 +563,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
       const params = await buildDepositParams(client, depositInput);
 
-      // Spender must be the escrow createDeposit will target — the default can
+      // Spender must be the escrow createDeposit will target - the default can
       // point at the legacy escrow while deposits go to EscrowV2.
       const escrow = client.escrowV2Address ?? client.escrowAddress;
       const owner = opts.signer.account!.address;
@@ -552,7 +572,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const attributedParams = { ...params, txOverrides: attribution };
       // Submit the deposit; one retry for the replica-lag case the allowance
       // visibility loop cannot fully rule out. All other failures map to typed
-      // errors and a reverted receipt throws — no raw errors, no false success.
+      // errors and a reverted receipt throws - no raw errors, no false success.
       const send = async (): Promise<`0x${string}`> => {
         try {
           return (await client.createDeposit(attributedParams)).hash;
@@ -617,7 +637,20 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
       const hashedOnchainIds = (params.paymentMethodDataOverride ?? []).map((d) => d.payeeDetails);
 
-      return { txs: [approve, prepared], register: { hashedOnchainIds } };
+      return {
+        txs: [approve, prepared],
+        steps: [
+          {
+            kind: 'approve',
+            description: 'Approve Base USDC for the Peer Cash escrow.',
+          },
+          {
+            kind: 'createDeposit',
+            description: 'Create the protocol-held cash-out order.',
+          },
+        ],
+        register: { hashedOnchainIds },
+      };
     },
 
     async order(depositId: string): Promise<CashOrder> {
@@ -634,7 +667,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const deposits = await readClient.indexer.getDeposits({ depositor: owner }, { limit });
 
       const derived = deposits
-        // List rows carry no intent detail — flag it so `nextActions` treats a
+        // List rows carry no intent detail - flag it so `nextActions` treats a
         // live outstanding amount conservatively (no false "withdraw" offer).
         .map((d) => deriveCashOrder(d.id, [], { ...depositOrderOptions(d), fillsIncluded: false }))
         // Drop dust/empty deposits that never represented a real cash-out.
@@ -662,7 +695,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         try {
           order = await fetchOrder(depositId);
         } catch (err) {
-          // Right after cashout the indexer may not have the deposit yet — keep polling.
+          // Right after cashout the indexer may not have the deposit yet - keep polling.
           if (!(isCashError(err) && err.code === 'ORDER_NOT_FOUND')) throw err;
         }
 
@@ -702,7 +735,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
       let pruneTxHash: Hash | undefined;
       if (expiredIntent) {
-        // Free the expired intent's locked amount back to the deposit first —
+        // Free the expired intent's locked amount back to the deposit first -
         // withdrawDeposit reverts while any intent is still recorded as active.
         pruneTxHash = await submitAndConfirm(client, 'pruneExpiredIntents', () =>
           client.pruneExpiredIntents({
@@ -731,7 +764,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     async prepareWithdraw(
       depositId: string,
       opts: { amount?: bigint } = {},
-    ): Promise<{ txs: PreparedTransaction[] }> {
+    ): Promise<{ txs: PreparedTransaction[]; steps: CashPreparedStep[] }> {
       if (opts.amount !== undefined) {
         const { onchainDepositId, escrowArg } = await partialWithdrawContext(
           depositId,
@@ -743,12 +776,21 @@ export function createCashClient(options: CashClientOptions): CashClient {
           ...escrowArg,
           txOverrides: attribution,
         });
-        return { txs: [tx] };
+        return {
+          txs: [tx],
+          steps: [
+            {
+              kind: 'removeFunds',
+              description: 'Withdraw the requested unlocked USDC amount.',
+            },
+          ],
+        };
       }
 
       const { expiredIntent, onchainDepositId, escrowArg } = await withdrawContext(depositId);
 
       const txs: PreparedTransaction[] = [];
+      const steps: CashPreparedStep[] = [];
       if (expiredIntent) {
         txs.push(
           await readClient.pruneExpiredIntents.prepare({
@@ -757,6 +799,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
             txOverrides: attribution,
           }),
         );
+        steps.push({
+          kind: 'pruneExpiredIntents',
+          description: 'Prune expired buyer intents so the locked amount becomes withdrawable.',
+        });
       }
       txs.push(
         await readClient.withdrawDeposit.prepare({
@@ -765,7 +811,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
           txOverrides: attribution,
         }),
       );
-      return { txs };
+      steps.push({
+        kind: 'withdrawDeposit',
+        description: 'Close the order and withdraw all remaining USDC.',
+      });
+      return { txs, steps };
     },
 
     async topUp(depositId: string, amount: bigint, opts: SignerOptions): Promise<TopUpResult> {
@@ -792,7 +842,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
       return { depositId, txHash };
     },
 
-    async prepareTopUp(depositId: string, amount: bigint): Promise<{ txs: PreparedTransaction[] }> {
+    async prepareTopUp(
+      depositId: string,
+      amount: bigint,
+    ): Promise<{ txs: PreparedTransaction[]; steps: CashPreparedStep[] }> {
       const { onchainDepositId, escrowArg } = await topUpContext(depositId, amount);
 
       const prepared = await readClient.addFunds.prepare({
@@ -816,7 +869,19 @@ export function createCashClient(options: CashClientOptions): CashClient {
         chainId: BASE_CHAIN_ID,
       };
 
-      return { txs: [approve, prepared] };
+      return {
+        txs: [approve, prepared],
+        steps: [
+          {
+            kind: 'approve',
+            description: 'Approve additional Base USDC for the Peer Cash escrow.',
+          },
+          {
+            kind: 'addFunds',
+            description: 'Add USDC to the live cash-out order.',
+          },
+        ],
+      };
     },
   };
 }

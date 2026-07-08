@@ -1,5 +1,5 @@
 /**
- * Peer Cash — pure order-state derivation.
+ * Peer Cash - pure order-state derivation.
  *
  * The indexer's Deposit entity has NO `amount` field; the real numbers live in
  * `remainingDeposits`, `outstandingIntentAmount`, `totalAmountTaken`,
@@ -102,7 +102,7 @@ function toFill(intent: IntentLike): CashFill {
 /**
  * Whether a signaled fill can still be completed by its buyer. Uses the
  * indexer's reconciler flag when present, belt-and-braces with the local
- * clock (the reconciler can lag; the clock can skew — either signal counts).
+ * clock (the reconciler can lag; the clock can skew - either signal counts).
  */
 export function isFillLive(fill: CashFill, nowSeconds: number): boolean {
   if (fill.status !== 'SIGNALED') return false;
@@ -113,13 +113,13 @@ export function isFillLive(fill: CashFill, nowSeconds: number): boolean {
 export interface DeriveCashOrderOptions {
   /** Original deposit amount, when already computed (else derived from the parts below). */
   totalAmount?: bigint;
-  /** `remainingDeposits` — currently available, unlocked balance. */
+  /** `remainingDeposits` - currently available, unlocked balance. */
   remainingAmount?: bigint;
-  /** `outstandingIntentAmount` — currently locked by an active (SIGNALED) intent. */
+  /** `outstandingIntentAmount` - currently locked by an active (SIGNALED) intent. */
   outstandingAmount?: bigint;
-  /** `totalAmountTaken` — cumulative amount delivered to buyers (cashed out). */
+  /** `totalAmountTaken` - cumulative amount delivered to buyers (cashed out). */
   takenAmount?: bigint;
-  /** `totalWithdrawn` — cumulative amount returned to the maker. */
+  /** `totalWithdrawn` - cumulative amount returned to the maker. */
   withdrawnAmount?: bigint;
   /** Deposit status from the indexer: `ACTIVE` | `CLOSED`. */
   status?: string;
@@ -151,7 +151,7 @@ function fmtUsdc(amount: bigint): string {
 export type CashOrderData = Omit<CashOrder, 'explain'>;
 
 /**
- * One honest sentence from live data — never a fake countdown. The binding
+ * One honest sentence from live data - never a fake countdown. The binding
  * rate resolves at the oracle when a buyer fills, and buyer arrival time is
  * unknowable, so the sentence only ever states what the chain actually shows.
  */
@@ -183,7 +183,7 @@ export function withExplain(data: CashOrderData): CashOrder {
 
 /**
  * What the caller can do next. Withdrawal is legal while no live (unexpired)
- * SIGNALED intent locks the funds — `withdraw()` prunes expired intents first
+ * SIGNALED intent locks the funds - `withdraw()` prunes expired intents first
  * when needed, so an order whose only active intents have expired is
  * withdrawable again.
  *
@@ -195,13 +195,13 @@ export function withExplain(data: CashOrderData): CashOrder {
 function deriveNextActions(state: CashOrderState, hasLiveIntent: boolean): CashNextAction[] {
   if (state === 'delivered' || state === 'returned') return [];
   if (state === 'awaiting-buyer') return ['wait', 'withdraw'];
-  // matched | delivering — funds are locked while a signaled intent is live.
+  // matched | delivering - funds are locked while a signaled intent is live.
   return hasLiveIntent ? ['wait'] : ['wait', 'withdraw'];
 }
 
 /**
  * Derive the resumable {@link CashOrder} view for one deposit. Pure and
- * deterministic — safe on every poll, list render, or cold page load.
+ * deterministic - safe on every poll, list render, or cold page load.
  */
 export function deriveCashOrder(
   depositId: string,
@@ -224,7 +224,7 @@ export function deriveCashOrder(
 
   const status = options.status;
   // The indexer's DepositStatus is ACTIVE | CLOSED; a fully-withdrawn deposit
-  // is CLOSED (never a 'WITHDRAWN' status — that value exists only on the
+  // is CLOSED (never a 'WITHDRAWN' status - that value exists only on the
   // fund-activity log). 'WITHDRAWN' is tolerated here purely for forward-compat.
   const isTerminal = status === 'CLOSED' || status === 'WITHDRAWN';
   const hasLiveFunds = remaining > DUST_THRESHOLD || outstanding > 0n;
@@ -264,7 +264,7 @@ export function deriveCashOrder(
 
   // Was fill-level intent detail available? Explicitly signalled by the caller,
   // else inferred from whether any intents were passed. When absent (list rows),
-  // a positive `outstanding` is assumed to be a live lock — the conservative,
+  // a positive `outstanding` is assumed to be a live lock - the conservative,
   // money-safe default for `nextActions`.
   const fillsIncluded = options.fillsIncluded ?? fills.length > 0;
   const hasLiveIntent = fillsIncluded

@@ -11,7 +11,7 @@ oracle rate with zero spread. A buyer (a standard protocol taker) _signals an
 intent_ against your deposit, pays you fiat offchain (Venmo, Revolut, Wise,
 ...), and proves the payment via TEE-TLS. The protocol then releases your USDC
 to them.
-The protocol runs in its normal direction — nothing here is inverted or
+The protocol runs in its normal direction - nothing here is inverted or
 special-cased.
 
 Because your deposit is priced at market with no spread, it is the best offer
@@ -31,7 +31,7 @@ Every state derives from on-chain events. There are no synthetic states.
 
 Intent statuses underneath: `SIGNALED → FULFILLED` (paid + proven),
 `PRUNED` (expired unpaid), `MANUALLY_RELEASED` (support path, counts as
-fulfilled). Always query the full set — the indexer defaults to `SIGNALED`
+fulfilled). Always query the full set - the indexer defaults to `SIGNALED`
 only, which silently hides terminal states.
 
 ## Partial fills
@@ -45,7 +45,7 @@ passes through `delivering` until the last one completes. `filledAmount`,
 ## The honest-ETA principle
 
 `order.explain()` returns one sentence built from live data. It will never
-show a countdown, a progress percentage, or an "estimated arrival" — because
+show a countdown, a progress percentage, or an "estimated arrival" - because
 none of those are knowable:
 
 - **Buyer arrival time is market-driven.** A deposit at market rate should
@@ -59,14 +59,14 @@ on this SDK is a bug in that UI.
 
 ## Managing a live order
 
-- **Top up** — `topUp(depositId, amount)` adds USDC to a live order: same
+- **Top up** - `topUp(depositId, amount)` adds USDC to a live order: same
   payee, same market-rate pricing, no new registration. Closed orders reject
   with `ORDER_NOT_ACTIVE`; start a new `cashout()` instead.
-- **Partial withdrawal** — `withdraw(depositId, { amount })` pulls part of
+- **Partial withdrawal** - `withdraw(depositId, { amount })` pulls part of
   the _unlocked_ balance back out. A live buyer intent does not block it
   (their locked portion is untouched); asking for more than the unlocked
   balance fails with `INSUFFICIENT_AVAILABLE_FUNDS`.
-- There is no retain-on-empty or rate knob to manage — a cash order cleans
+- There is no retain-on-empty or rate knob to manage - a cash order cleans
   itself up when fully filled, and the market rate is not configurable.
 
 ## Receipts, decoded
@@ -77,7 +77,7 @@ bigints (raw values stay available as `*Hash` / `conversionRate` fields).
 
 Each fill is a receipt that sharpens over its life:
 
-- **At signal**: `rate` (the oracle rate locked for THIS fill — the moment
+- **At signal**: `rate` (the oracle rate locked for THIS fill - the moment
   "approximately" becomes exact) and `fiatOwed` (`amount × rate`, rounded up
   to the cent, matching what the buyer's client tells them to pay).
 - **After the proof**: `fiatPaid` (the verified amount actually sent),
@@ -86,14 +86,14 @@ Each fill is a receipt that sharpens over its life:
   `fillLatencySeconds` (signal → proven delivery).
 
 `fiatOwed` and `fiatPaid` are decoded to whole currency units. The verified
-`paymentAmount` arrives from the indexer in cents (2 decimals) — the same
-convention the first-party ZKP2P clients display it with — and the SDK
+`paymentAmount` arrives from the indexer in cents (2 decimals) - the same
+convention the first-party ZKP2P clients display it with - and the SDK
 divides by 100. The signal-time `fiatOwed` derives from `amount × rate` at
 1e18 precision; `resolveIntentFiatAmount` in the reference clients uses the
 same ceil-to-cent math, and the decode is verified against live production
 receipts.
 
-Orders also carry their `payouts` legs reconstructed from the chain —
+Orders also carry their `payouts` legs reconstructed from the chain -
 platform, currency, payee hash, and a pricing proof (`spreadBps: 0`,
 `kind: 'oracle_chainlink'`, `marketRate: true`): the zero-spread claim is a
 queryable fact, not marketing copy.
@@ -102,7 +102,7 @@ queryable fact, not marketing copy.
 
 `buyer(address)` aggregates the matched buyer's full intent history into a
 track record: lifetime intents, fulfilled vs pruned counts, a success rate in
-basis points, first/last seen. Use it during `matched` — the moment a
+basis points, first/last seen. Use it during `matched` - the moment a
 stranger's address is holding your order is exactly when a 95%-success,
 200-order counterparty reads very differently from a fresh wallet.
 
@@ -121,16 +121,19 @@ stranger's address is holding your order is exactly when a 95%-success,
    or expiry, then call `withdraw()` again.
 4. **Nothing left** (`delivered`/`returned`): throws `NOTHING_TO_WITHDRAW`.
 
-There is deliberately no `cancel` vs `recover` split — the deposit state
+There is deliberately no `cancel` vs `recover` split - the deposit state
 decides, not the caller. Agents needing host-side signing use
 `prepareWithdraw(depositId)` for the same logic as unsigned `txs[]`.
+Prepare results also carry `steps[]` in the same order as `txs[]`, so a host
+can show `pruneExpiredIntents` before `withdrawDeposit` instead of asking a
+user or policy engine to approve opaque calldata.
 
 ## Resumability
 
 The `depositId` (composite `escrow_onchainId`) is the only key you need:
 
 - `cashout()` returns it, parsed from the `DepositReceived` event in the
-  transaction receipt — available immediately, no indexer wait.
+  transaction receipt - available immediately, no indexer wait.
 - `order(depositId)` reconstructs the full order from the indexer at any
   time, on any machine. There is no session, no cache, no local store.
 - Bind orders to your own users with one column in **your** database:
@@ -141,7 +144,7 @@ The `depositId` (composite `escrow_onchainId`) is the only key you need:
 Right after `cashout()`, the indexer may not have seen the deposit yet
 (typically a few seconds). `order()` throws `ORDER_NOT_FOUND` with
 `retryable: true`; `watch()` and the React hooks absorb this and keep
-polling. Do not treat an immediate `ORDER_NOT_FOUND` as a lost deposit — the
+polling. Do not treat an immediate `ORDER_NOT_FOUND` as a lost deposit - the
 transaction receipt you already hold is the source of truth.
 
 ## Payee registration, over time
@@ -152,7 +155,7 @@ whole life. Two things to know for long-lived orders:
 
 - For the **live-validated platforms** (Venmo, Revolut, Cash App, Monzo), if
   the underlying account is later deleted, the curator can revoke the payee at
-  a buyer's intent-signing time — a buyer then cannot take the deposit until
+  a buyer's intent-signing time - a buyer then cannot take the deposit until
   the payee is re-registered. Format-only platforms (Zelle, Chime, …) are
   never re-checked.
 - **Wise and PayPal** require a signed identity attestation to register at all;
@@ -173,7 +176,7 @@ whole life. Two things to know for long-lived orders:
 | `DEPOSIT_RESOLUTION_FAILED`       | no        | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually.                        |
 | `ORDER_NOT_FOUND`                 | yes       | Unknown id or indexer lag. Verify the id; retry within seconds of creation.                                       |
 | `INDEXER_LAG`                     | yes       | Indexer behind the chain. Retry shortly.                                                                          |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | A buyer may still deliver. Wait for fill or expiry, withdraw again — or withdraw the unlocked part with `amount`. |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | A buyer may still deliver. Wait for fill or expiry, withdraw again - or withdraw the unlocked part with `amount`. |
 | `INSUFFICIENT_AVAILABLE_FUNDS`    | yes       | Partial amount exceeds the unlocked balance. Lower it.                                                            |
 | `NOTHING_TO_WITHDRAW`             | no        | Order is terminal. Check `order(depositId).state`.                                                                |
 | `ORDER_NOT_ACTIVE`                | no        | Cannot top up a closed order. Start a new `cashout()`.                                                            |

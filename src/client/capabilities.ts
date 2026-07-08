@@ -1,5 +1,5 @@
 /**
- * Discovery — sync, static. Platforms × currencies × oracle support × amount
+ * Discovery - sync, static. Platforms × currencies × oracle support × amount
  * bounds × payee format hints, all derivable without a network call.
  */
 import { getPaymentMethodsCatalog, getCurrencyCodeFromHash } from '@zkp2p/sdk';
@@ -14,7 +14,7 @@ export const RECOMMENDED_MIN_CASHOUT_AMOUNT = 1_000_000n; // 1 USDC
 
 /**
  * Payee handle format hints per platform, for input UX and agent validation.
- * Purely informational — the curator validates authoritatively at registration.
+ * Purely informational - the curator validates authoritatively at registration.
  */
 const PAYEE_HINTS: Record<string, string> = {
   venmo: 'Venmo username, with or without the leading @ (e.g. @andrew-w)',
@@ -32,7 +32,7 @@ const PAYEE_HINTS: Record<string, string> = {
 
 /**
  * Platforms whose curator payee registration requires a signed maker identity
- * attestation — a bare handle is rejected. The attestation is produced by the
+ * attestation - a bare handle is rejected. The attestation is produced by the
  * ZKP2P app / extension, not this SDK, so a cash-out to these platforms needs
  * the payee registered there first (see `PAYEE_VERIFICATION_REQUIRED`).
  */
@@ -44,7 +44,7 @@ export function platformRequiresIdentityAttestation(platform: string): boolean {
 }
 
 export interface CashPlatformCapability {
-  /** Platform id, e.g. `'venmo'` — the value `receive.platform` accepts. */
+  /** Platform id, e.g. `'venmo'` - the value `receive.platform` accepts. */
   platform: string;
   /** Market-rate (oracle-priced) currencies this platform can pay out. */
   currencies: CurrencyType[];
@@ -52,7 +52,7 @@ export interface CashPlatformCapability {
   payeeHint: string;
   /**
    * When true, registering a payee for this platform requires a signed maker
-   * identity attestation the SDK cannot produce — register the payee via the
+   * identity attestation the SDK cannot produce - register the payee via the
    * ZKP2P app/extension first. A bare-handle `cashout()` throws
    * `PAYEE_VERIFICATION_REQUIRED`.
    */
@@ -69,7 +69,7 @@ export interface CashCapabilities {
   currencies: CurrencyType[];
   /** Amount bounds in USDC base units. */
   amount: { min: bigint; recommendedMin: bigint; max: null };
-  /** Pricing is always the live oracle at fill time — never a committed quote. */
+  /** Pricing is always the live oracle at fill time - never a committed quote. */
   pricing: { kind: 'oracle-market-rate'; spreadBps: 0 };
 }
 

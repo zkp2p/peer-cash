@@ -1,5 +1,5 @@
 /**
- * JSON codecs — lossless (de)serialization for every wire type. bigints encode
+ * JSON codecs - lossless (de)serialization for every wire type. bigints encode
  * as decimal strings; `parse*` validates with the zod schema and re-attaches
  * derived behavior (`order.explain()`).
  */
@@ -9,6 +9,7 @@ import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
 import type { CashCapabilities } from '../client/capabilities';
 import type {
+  CashPreparedStep,
   CashoutResult,
   PrepareResult,
   TopUpResult,
@@ -19,6 +20,7 @@ import {
   cashEstimateJsonSchema,
   cashOrderJsonSchema,
   cashoutResultJsonSchema,
+  cashPreparedStepJsonSchema,
   prepareResultJsonSchema,
   preparedTransactionJsonSchema,
   withdrawResultJsonSchema,
@@ -29,6 +31,7 @@ import {
   type CashEstimateJson,
   type CashFillJson,
   type CashOrderJson,
+  type CashPreparedStepJson,
   type CashoutResultJson,
   type PrepareResultJson,
   type PreparedTransactionJson,
@@ -146,6 +149,14 @@ export function preparedTxFromJson(json: unknown): PreparedTransaction {
   };
 }
 
+export function preparedStepToJson(step: CashPreparedStep): CashPreparedStepJson {
+  return { kind: step.kind, description: step.description };
+}
+
+export function preparedStepFromJson(json: unknown): CashPreparedStep {
+  return cashPreparedStepJsonSchema.parse(json);
+}
+
 // --- CashoutResult ---
 
 export function cashoutResultToJson(result: CashoutResult): CashoutResultJson {
@@ -172,12 +183,20 @@ export function cashoutResultFromJson(json: unknown): CashoutResult {
 // --- PrepareResult ---
 
 export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
-  return { txs: result.txs.map(preparedTxToJson), register: result.register };
+  return {
+    txs: result.txs.map(preparedTxToJson),
+    steps: result.steps.map(preparedStepToJson),
+    register: result.register,
+  };
 }
 
 export function prepareResultFromJson(json: unknown): PrepareResult {
   const parsed = prepareResultJsonSchema.parse(json);
-  return { txs: parsed.txs.map(preparedTxFromJson), register: parsed.register };
+  return {
+    txs: parsed.txs.map(preparedTxFromJson),
+    steps: parsed.steps.map(preparedStepFromJson),
+    register: parsed.register,
+  };
 }
 
 // --- WithdrawResult ---

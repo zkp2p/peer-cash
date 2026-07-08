@@ -3,12 +3,19 @@
  *
  * The host owns signing: mutating tools return UNSIGNED transactions the host
  * submits with its own key management. Everything crossing the tool boundary
- * is JSON — the codecs make that lossless.
+ * is JSON - the codecs make that lossless.
  *
  * Run: bun examples/agent-tool-use.ts   (read-only tools run against staging)
  */
 import { createCashClient, usdc, isCashError } from '@zkp2p/cash';
-import { capabilitiesToJson, estimateToJson, orderToJson, prepareResultToJson } from '@zkp2p/cash';
+import {
+  buyerProfileToJson,
+  capabilitiesToJson,
+  estimateToJson,
+  orderToJson,
+  prepareResultToJson,
+  preparedTxToJson,
+} from '@zkp2p/cash';
 import { cashToolManifest } from '@zkp2p/cash/tools';
 
 const cash = createCashClient({ environment: 'staging' });
@@ -42,9 +49,21 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
         });
         return orders.map(orderToJson);
       }
+      case 'cash_buyer':
+        return buyerProfileToJson(await cash.buyer(args.address as string));
       case 'cash_withdraw': {
-        const { txs } = await cash.prepareWithdraw(args.depositId as string);
-        return { txs: txs.map((tx) => ({ ...tx, value: tx.value.toString() })) };
+        const amount = args.amount !== undefined ? BigInt(args.amount as string) : undefined;
+        const { txs, steps } = await cash.prepareWithdraw(args.depositId as string, {
+          ...(amount !== undefined ? { amount } : {}),
+        });
+        return { txs: txs.map(preparedTxToJson), steps };
+      }
+      case 'cash_topup': {
+        const { txs, steps } = await cash.prepareTopUp(
+          args.depositId as string,
+          BigInt(args.amount as string),
+        );
+        return { txs: txs.map(preparedTxToJson), steps };
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

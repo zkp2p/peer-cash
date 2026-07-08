@@ -1,5 +1,5 @@
 /**
- * Peer Cash — public domain types for the engine.
+ * Peer Cash - public domain types for the engine.
  */
 import type { Address } from 'viem';
 import type { CurrencyType, CuratorPayeeDataInput, IntentStatus } from '../sdk-types';
@@ -8,15 +8,15 @@ import type { CurrencyType, CuratorPayeeDataInput, IntentStatus } from '../sdk-t
  * The lifecycle state of a cash-out, derived purely from on-chain-observable
  * intent events against the user's deposit.
  *
- * - `awaiting-buyer` — deposit is live, no buyer has signaled yet.
- * - `matched` — a buyer signaled an intent (`SIGNALED`); fiat not yet proven.
- * - `delivering` — partial fill in progress (some intents fulfilled, some still signaled).
- * - `delivered` — fiat paid + proven, escrow released (`FULFILLED`).
- * - `returned` — buyer didn't deliver; intent pruned, deposit recoverable/recovered.
+ * - `awaiting-buyer` - deposit is live, no buyer has signaled yet.
+ * - `matched` - a buyer signaled an intent (`SIGNALED`); fiat not yet proven.
+ * - `delivering` - partial fill in progress (some intents fulfilled, some still signaled).
+ * - `delivered` - fiat paid + proven, escrow released (`FULFILLED`).
+ * - `returned` - buyer didn't deliver; intent pruned, deposit recoverable/recovered.
  */
 export type CashOrderState = 'awaiting-buyer' | 'matched' | 'delivering' | 'delivered' | 'returned';
 
-/** What the caller can do next. The lifecycle is self-driving — no consumer heuristics. */
+/** What the caller can do next. The lifecycle is self-driving - no consumer heuristics. */
 export type CashNextAction = 'wait' | 'withdraw';
 
 /**
@@ -36,19 +36,19 @@ export interface CashFill {
   currency?: string;
   /** Raw on-chain currency hash (bytes32), for anything the catalog can't decode. */
   currencyHash?: string;
-  /** Fiat per USDC locked at signal time — the binding rate for THIS fill. */
+  /** Fiat per USDC locked at signal time - the binding rate for THIS fill. */
   rate?: number;
   /** Raw locked conversion rate (1e18 precision). */
   conversionRate?: bigint;
   /** Fiat the buyer must send: `amount × rate`, rounded up to the cent. */
   fiatOwed?: number;
-  /** Verified receipt — actual fiat paid, from the payment proof. */
+  /** Verified receipt - actual fiat paid, from the payment proof. */
   fiatPaid?: number;
-  /** Verified receipt — decoded currency actually paid (may differ from `currency`). */
+  /** Verified receipt - decoded currency actually paid (may differ from `currency`). */
   paidCurrency?: string;
-  /** Verified receipt — the platform's external payment id. */
+  /** Verified receipt - the platform's external payment id. */
   paymentId?: string;
-  /** Verified receipt — unix seconds the fiat payment was made. */
+  /** Verified receipt - unix seconds the fiat payment was made. */
   paidAt?: number;
   /** USDC actually released from escrow for this fill (gross, base units). */
   releasedAmount?: bigint;
@@ -56,17 +56,17 @@ export interface CashFill {
   fillLatencySeconds?: number;
   /** Indexer reconciler flag: the intent's window has lapsed on-chain. */
   isExpired?: boolean;
-  /** Unix seconds — when the buyer signaled (matched). */
+  /** Unix seconds - when the buyer signaled (matched). */
   signaledAt?: number;
-  /** Unix seconds — when the signaled intent expires and becomes prunable. */
+  /** Unix seconds - when the signaled intent expires and becomes prunable. */
   expiresAt?: number;
-  /** Unix seconds — when fiat was proven and escrow released (delivered). */
+  /** Unix seconds - when fiat was proven and escrow released (delivered). */
   fulfilledAt?: number;
-  /** Unix seconds — when the intent expired and was pruned (returned). */
+  /** Unix seconds - when the intent expired and was pruned (returned). */
   prunedAt?: number;
 }
 
-/** Pricing state of one payout tuple — the zero-spread claim, verifiable from indexed data. */
+/** Pricing state of one payout tuple - the zero-spread claim, verifiable from indexed data. */
 export interface CashPayoutPricing {
   /** Depositor-configured spread markup in basis points (0 for every cash order). */
   spreadBps?: number;
@@ -78,11 +78,11 @@ export interface CashPayoutPricing {
   oracleRate?: number;
   /** Unix seconds of the last accepted oracle snapshot. */
   lastOracleUpdatedAt?: number;
-  /** True when the tuple is priced by an oracle at zero spread — the Peer Cash invariant. */
+  /** True when the tuple is priced by an oracle at zero spread - the Peer Cash invariant. */
   marketRate: boolean;
 }
 
-/** One payout leg reconstructed from the chain — platform, currency, payee hash, pricing. */
+/** One payout leg reconstructed from the chain - platform, currency, payee hash, pricing. */
 export interface CashPayoutInfo {
   /** Decoded platform id, e.g. `'venmo'` (undefined if the catalog doesn't know the hash). */
   platform?: string;
@@ -101,10 +101,10 @@ export interface CashPayoutInfo {
 
 /**
  * The full, resumable view of a cash-out order, reconstructed from the indexer
- * by `depositId` alone — survives a closed tab, new device, or wallet reconnect.
+ * by `depositId` alone - survives a closed tab, new device, or wallet reconnect.
  */
 export interface CashOrder {
-  /** Composite deposit id (`escrow_onchainId`) — the resume key. */
+  /** Composite deposit id (`escrow_onchainId`) - the resume key. */
   depositId: string;
   state: CashOrderState;
   /** Every buyer intent against the deposit (>1 only for partial fills). */
@@ -117,15 +117,15 @@ export interface CashOrder {
   pendingAmount: bigint;
   /** Sum returned (withdrawn) to the maker. */
   returnedAmount: bigint;
-  /** Self-driving lifecycle — what the caller can do right now. */
+  /** Self-driving lifecycle - what the caller can do right now. */
   nextActions: CashNextAction[];
   /** The primary order id (first/active intent's `intentHash`) once matched. */
   primaryIntentHash?: string;
-  /** Unix seconds — earliest signal (first match). */
+  /** Unix seconds - earliest signal (first match). */
   matchedAt?: number;
-  /** Unix seconds — latest fulfilment (delivery). */
+  /** Unix seconds - latest fulfilment (delivery). */
   deliveredAt?: number;
-  /** Unix seconds — when the deposit last changed on-chain. */
+  /** Unix seconds - when the deposit last changed on-chain. */
   updatedAt?: number;
   /** Total number of buyer intents against the deposit (from the indexer aggregate). */
   intentCount?: number;
@@ -140,7 +140,7 @@ export interface CashOrder {
   isInFlight: boolean;
   /** Whether the deposit has been withdrawn on-chain (terminal return). */
   withdrawn?: boolean;
-  /** One honest sentence from live data — never a fake countdown. */
+  /** One honest sentence from live data - never a fake countdown. */
   explain(): string;
 }
 
@@ -176,11 +176,11 @@ export interface CashPayout {
  * Input to create a market-rate (0% spread) cash-out deposit.
  *
  * Deliberately narrow: no rate/spread knobs, no vault/DRM delegate, no
- * retain-on-empty override — a cash-out is a one-shot order that cleans up
+ * retain-on-empty override - a cash-out is a one-shot order that cleans up
  * when fully filled. The API cannot express what Peer Cash does not offer.
  */
 export interface CashDepositInput {
-  /** Deposit asset — Base USDC (defaults to {@link BASE_USDC_ADDRESS}). */
+  /** Deposit asset - Base USDC (defaults to {@link BASE_USDC_ADDRESS}). */
   token?: Address;
   /** Total amount to cash out, in USDC base units (6 decimals). */
   amount: bigint;

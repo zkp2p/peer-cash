@@ -22,7 +22,7 @@ export interface UseOrderOptions {
  * Fully resumable: the order is reconstructed from on-chain data on every load,
  * so it survives a closed tab, a new device, or a wallet reconnect. Polls while
  * the order is in flight and stops once it reaches a terminal state.
- * `ORDER_NOT_FOUND` right after creation is indexer lag — polling continues.
+ * `ORDER_NOT_FOUND` right after creation is indexer lag - polling continues.
  */
 export function useOrder({
   client,
@@ -46,7 +46,7 @@ export function useOrder({
         return derived;
       } catch (err) {
         if (isCashError(err) && err.code === 'ORDER_NOT_FOUND') {
-          // Indexer lag right after creation — not an error, keep polling.
+          // Indexer lag right after creation - not an error, keep polling.
           return null;
         }
         const e = err instanceof Error ? err : new Error(String(err));

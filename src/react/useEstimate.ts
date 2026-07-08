@@ -15,7 +15,7 @@ export interface UseEstimateOptions {
 /**
  * Live market-rate estimate for a screen-1 display. The figure is a `≈`
  * estimate; the binding rate resolves at the Chainlink oracle when a buyer
- * fills — there is no committed quote to show.
+ * fills - there is no committed quote to show.
  */
 export function useEstimate({
   client,

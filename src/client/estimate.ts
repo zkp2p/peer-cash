@@ -1,5 +1,5 @@
 /**
- * Estimate — currency + amount only. No payee, no side effects, no expiry,
+ * Estimate - currency + amount only. No payee, no side effects, no expiry,
  * idempotent, cacheable. "≈ at whatever the oracle says when a buyer fills."
  *
  * Reads the same Chainlink feed the protocol prices the deposit against, so
@@ -42,13 +42,13 @@ export interface EstimateInput {
 /**
  * Chainlink feeds should update at least daily; a reading older than this is
  * flagged `stale` so a consumer can warn rather than quote a frozen rate. The
- * on-chain fill enforces the deposit's own `maxStaleness` regardless — this is
+ * on-chain fill enforces the deposit's own `maxStaleness` regardless - this is
  * a display-side signal only.
  */
 const DEFAULT_MAX_STALENESS_SECONDS = 86_400;
 
 export interface CashEstimate {
-  /** Always `'oracle-estimate'` — there is no committed quote in Peer Cash. */
+  /** Always `'oracle-estimate'` - there is no committed quote in Peer Cash. */
   kind: 'oracle-estimate';
   currency: CurrencyType;
   /** The input amount, USDC base units. */
@@ -61,7 +61,7 @@ export interface CashEstimate {
   asOf: number;
   /** Unix seconds the Chainlink feed last updated (absent for the USD passthrough). */
   oracleUpdatedAt?: number;
-  /** True when the feed reading is older than a day — treat the rate with caution. */
+  /** True when the feed reading is older than a day - treat the rate with caution. */
   stale?: boolean;
 }
 
@@ -83,7 +83,7 @@ export async function readEstimate(
   let rate: number;
   let oracleUpdatedAt: number | undefined;
   if (!feedConfig || feedConfig.feed.toLowerCase() === ZERO_ADDRESS) {
-    // USD passthrough — USDC ≈ USD.
+    // USD passthrough - USDC ≈ USD.
     rate = 1;
   } else {
     const result = (await publicClient.readContract({

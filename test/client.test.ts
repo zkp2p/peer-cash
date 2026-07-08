@@ -286,12 +286,13 @@ describe('prepare()', () => {
       prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
     });
 
-    const { txs, register } = await client().prepare({
+    const { txs, steps, register } = await client().prepare({
       amount: 5_000_000n,
       receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
     });
 
     expect(txs).toHaveLength(2);
+    expect(steps.map((s) => s.kind)).toEqual(['approve', 'createDeposit']);
     expect(txs[0]?.to.toLowerCase()).toBe('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'); // USDC approve
     expect(txs[0]?.data.startsWith('0x095ea7b3')).toBe(true); // approve selector
     expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xdeposit' });
@@ -625,15 +626,16 @@ describe('topUp()', () => {
       chainId: 8453,
     });
 
-    const { txs } = await client().prepareTopUp(DEPOSIT_ID, 2_000_000n);
+    const { txs, steps } = await client().prepareTopUp(DEPOSIT_ID, 2_000_000n);
     expect(txs).toHaveLength(2);
+    expect(steps.map((s) => s.kind)).toEqual(['approve', 'addFunds']);
     expect(txs[0]?.to.toLowerCase()).toBe('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913');
     expect(txs[0]?.data.startsWith('0x095ea7b3')).toBe(true);
     expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xaddfunds' });
   });
 });
 
-describe('withdraw() — partial', () => {
+describe('withdraw() - partial', () => {
   it('withdraws a partial amount via removeFunds', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
     mockInstance.removeFunds.mockResolvedValue('0xpartial');
@@ -681,7 +683,71 @@ describe('withdraw() — partial', () => {
   });
 });
 
-describe('withdraw() — receipt safety and error mapping', () => {
+describe('prepareWithdraw()', () => {
+  it('labels direct full-close withdraw txs', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.withdrawDeposit.prepare.mockResolvedValue({
+      to: ESCROW,
+      data: '0xwithdraw',
+      value: 0n,
+      chainId: 8453,
+    });
+
+    const { txs, steps } = await client().prepareWithdraw(DEPOSIT_ID);
+    expect(txs).toHaveLength(1);
+    expect(steps.map((s) => s.kind)).toEqual(['withdrawDeposit']);
+  });
+
+  it('labels prune + withdraw when an expired intent must be cleared first', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        remainingDeposits: '4000000',
+        outstandingIntentAmount: '1000000',
+        intents: [
+          {
+            intentHash: '0xa',
+            status: 'SIGNALED',
+            amount: '1000000',
+            owner: '0xbuyer',
+            expiryTime: String(NOW - 60),
+          },
+        ],
+      }),
+    ]);
+    mockInstance.pruneExpiredIntents.prepare.mockResolvedValue({
+      to: ESCROW,
+      data: '0xprune',
+      value: 0n,
+      chainId: 8453,
+    });
+    mockInstance.withdrawDeposit.prepare.mockResolvedValue({
+      to: ESCROW,
+      data: '0xwithdraw',
+      value: 0n,
+      chainId: 8453,
+    });
+
+    const { txs, steps } = await client().prepareWithdraw(DEPOSIT_ID);
+    expect(txs).toHaveLength(2);
+    expect(steps.map((s) => s.kind)).toEqual(['pruneExpiredIntents', 'withdrawDeposit']);
+  });
+
+  it('labels partial withdraw txs', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.removeFunds.prepare.mockResolvedValue({
+      to: ESCROW,
+      data: '0xremove',
+      value: 0n,
+      chainId: 8453,
+    });
+
+    const { txs, steps } = await client().prepareWithdraw(DEPOSIT_ID, { amount: 2_000_000n });
+    expect(txs).toHaveLength(1);
+    expect(steps.map((s) => s.kind)).toEqual(['removeFunds']);
+  });
+});
+
+describe('withdraw() - receipt safety and error mapping', () => {
   it('throws TRANSACTION_FAILED when the full withdraw reverts (never false success)', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
     mockInstance.withdrawDeposit.mockResolvedValue('0xw');
@@ -724,7 +790,7 @@ describe('withdraw() — receipt safety and error mapping', () => {
   });
 });
 
-describe('cashout() — allowance visibility', () => {
+describe('cashout() - allowance visibility', () => {
   it('throws retryable ALLOWANCE_NOT_VISIBLE when the approve never surfaces', async () => {
     vi.useFakeTimers();
     try {
@@ -754,7 +820,7 @@ describe('cashout() — allowance visibility', () => {
   });
 });
 
-describe('orders() — list-row nextActions honesty', () => {
+describe('orders() - list-row nextActions honesty', () => {
   it('does NOT offer withdraw on a matched row (outstanding lock, no fill detail)', async () => {
     mockInstance.indexer.getDeposits.mockResolvedValue([
       depositRow({
@@ -770,7 +836,7 @@ describe('orders() — list-row nextActions honesty', () => {
   });
 });
 
-describe('cashout() — verified platforms', () => {
+describe('cashout() - verified platforms', () => {
   it('rejects wise with PAYEE_VERIFICATION_REQUIRED before any network call', async () => {
     await expect(
       client().cashout(
