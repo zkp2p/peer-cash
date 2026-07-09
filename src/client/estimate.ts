@@ -48,7 +48,7 @@ export interface EstimateInput {
   currency: CurrencyType;
   /** Optional payout platform for platform-specific fill ETA sampling. */
   platform?: string;
-  /** Optional Relay source asset. Omit for the current Base USDC default path. */
+  /** Optional Relay EVM source asset. Omit for the current Base USDC default path. */
   source?: RelaySourceInput & {
     /** Source wallet that will submit Relay's origin transaction. Required by Relay quote. */
     user: string;
@@ -178,11 +178,15 @@ export async function readEstimate(
   };
 
   if (context.indexerClient && context.environment) {
-    estimate.eta = await readFillEta(context.indexerClient, {
-      environment: context.environment,
-      currency,
-      ...(input.platform ? { platform: input.platform } : {}),
-    });
+    try {
+      estimate.eta = await readFillEta(context.indexerClient, {
+        environment: context.environment,
+        currency,
+        ...(input.platform ? { platform: input.platform } : {}),
+      });
+    } catch {
+      // ETA is historical garnish; the oracle estimate remains usable without it.
+    }
   }
 
   return estimate;

@@ -1,6 +1,6 @@
 # @zkp2p/cash
 
-Route any Relay-supported source asset into Base USDC, then cash out to fiat
+Route any Relay-supported EVM source asset into Base USDC, then cash out to fiat
 on Venmo, Revolut, Wise, Zelle, and more at the live Chainlink market rate,
 with zero spread and no centralized off-ramp provider.
 
@@ -44,7 +44,7 @@ const { depositId, source } = await cash.cashout(
     source: { chainId: 1, currency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' },
     receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@you' } },
   },
-  { signer },
+  { signer, sourceSigner },
 );
 // source.amount is the Base USDC amount Relay delivered before the cash-out order.
 ```
@@ -54,8 +54,8 @@ const { depositId, source } = await cash.cashout(
 | Verb                                                           | What it does                                                                                                                    |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
-| `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK source chains/tokens                                                                       |
-| `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK source routing into Base USDC before cashout                                                                          |
+| `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
+| `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `estimate({ amount, currency })`                               | Base USDC oracle estimate plus simple recent-fill ETA                                                                           |
 | `cashout(input, { signer })`                                   | Registers your payee, creates the protocol-held order, returns the `depositId`                                                  |
@@ -70,14 +70,14 @@ Base-USDC cashout, withdraw, and top-up have unsigned counterparts (`prepare`,
 a same-index `steps[]` plan such as `approve`, `createDeposit`, or
 `withdrawDeposit`, so wallets, AA systems, and agents can show what each
 transaction does before signing. Source-routed cashout runs Relay first, so it
-uses the signed `cashout({ source }, { signer })` path or an explicit
-`quoteSource()` / `executeSourceQuote()` pre-step. Every Peer Cash transaction
+uses the signed `cashout({ source }, { signer, sourceSigner })` path for
+non-Base sources or an explicit `quoteSource()` / `executeSourceQuote()` pre-step. Every Peer Cash transaction
 including approves carries ERC-8021 attribution: `peer-cash` first, your own
 `referrer` code(s) after it.
 
 The default/minimal flow is unchanged: pass Base USDC base units to
 `estimate()` and `cashout()`. For any other source asset, pass `source` to
-`cashout()` and the SDK first executes the Relay route into Base USDC, then
+`cashout()` with a source-chain signer and the SDK first executes the Relay route into Base USDC, then
 creates the Peer Cash order. The destination is always canonical Base USDC
 (`8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913`); source support is
 discovered and quoted by `@relayprotocol/relay-sdk`, not a static token

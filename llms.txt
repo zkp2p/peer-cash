@@ -1,6 +1,6 @@
 # @zkp2p/cash - Peer Cash
 
-> Offramp-only SDK for the ZKP2P protocol: route any Relay-supported source
+> Offramp-only SDK for the ZKP2P protocol: route any Relay-supported EVM source
 > asset to Base USDC, then cash out to fiat (Venmo, Revolut, Wise, Zelle, ...)
 > at the live Chainlink oracle market rate with zero spread and no centralized
 > off-ramp provider. The user is the maker, Peer handles the buyer side, and the
@@ -14,7 +14,7 @@ Key facts:
 - The cashing-out user is the MAKER: their USDC becomes a protocol-held order;
   a buyer pays fiat and proves it with TEE-TLS; the protocol releases the USDC.
 - Destination is always Base USDC. Source chains/tokens come from Relay SDK
-  metadata and quote execution, not a static allowlist.
+  metadata and quote execution, filtered to EVM chains this SDK can sign.
 - There is NO locked fiat quote. estimate() reads the oracle; the binding rate
   resolves at fill time. ETA is `{ seconds, label }` from recent indexer data,
   not a guarantee.
@@ -36,7 +36,8 @@ Key facts:
 - buyer(address) aggregates a buyer's track record (fulfilled/pruned/success
   rate) from their full intent history.
 - Default path is same-chain Base USDC. Optional `source` on `cashout()` runs
-  Relay source-to-Base-USDC first.
+  Relay source-to-Base-USDC first; non-Base source chains require
+  `sourceSigner`.
 
 ## Links
 

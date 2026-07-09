@@ -68,7 +68,7 @@ export interface CashCapabilities {
   destination: { chainId: number; token: { address: string; symbol: 'USDC'; decimals: number } };
   /**
    * Source discovery. The sync default is Base USDC only; pass
-   * `{ includeRelaySources: true }` to `capabilities()` for live Relay sources.
+   * `{ includeRelaySources: true }` to `capabilities()` for live Relay EVM sources.
    */
   source: {
     default: { chainId: number; token: { address: string; symbol: 'USDC'; decimals: number } };

@@ -37,5 +37,6 @@ describe('tools manifest', () => {
     const parsed = JSON.parse(JSON.stringify(cashToolManifest));
     expect(parsed.tools).toHaveLength(10);
     expect(parsed.name).toBe('@zkp2p/cash');
+    expect(parsed.version).toBe('0.1.2');
   });
 });

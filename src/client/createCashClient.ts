@@ -139,7 +139,7 @@ export interface SignerOptions {
 }
 
 export interface CashoutOptions extends SignerOptions {
-  /** Optional source-chain signer for Relay. Defaults to `signer`. */
+  /** Source-chain signer for Relay. Required when `input.source.chainId` is not Base. */
   sourceSigner?: WalletClient;
   /** Relay execution progress callback when `input.source` is present. */
   onSourceProgress?: (data: ProgressData) => void;
@@ -224,11 +224,11 @@ export interface OrdersOptions {
 export interface CashClient {
   /** 0 - Discovery: sync, static. */
   capabilities(): CashCapabilities;
-  /** 0b - Discovery with live Relay-supported source chains/tokens. */
+  /** 0b - Discovery with live Relay-supported EVM source chains/tokens. */
   capabilities(options: { includeRelaySources: true }): Promise<CashCapabilities>;
   /** Relay-only source discovery helper. */
   sourceCapabilities(): Promise<CashSourceCapabilities>;
-  /** Quote any Relay-supported source asset into Base USDC. */
+  /** Quote any Relay-supported EVM source asset into Base USDC. */
   quoteSource(input: RelayQuoteInput): Promise<RelayQuote>;
   /** Execute a Relay SDK quote into Base USDC before starting the Peer Cash order. */
   executeSourceQuote(
@@ -408,9 +408,8 @@ export function createCashClient(options: CashClientOptions): CashClient {
     return client;
   }
 
-  function validateInput(input: CashoutInput): CashDepositInput {
-    const { amount, receive } = input;
-    if (amount < MIN_CASHOUT_AMOUNT) throw errors.amountBelowMinimum(amount, MIN_CASHOUT_AMOUNT);
+  function validatePayout(input: CashoutInput): Omit<CashDepositInput, 'amount'> {
+    const { receive } = input;
     const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
     if (!catalog[receive.platform]) throw errors.unsupportedPlatform(receive.platform);
     if (!isMarketRateSupported(receive.currency)) {
@@ -425,7 +424,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
       throw errors.payeeVerificationRequired(receive.platform);
     }
     return {
-      amount,
       payouts: [
         {
           processorName: receive.platform,
@@ -435,6 +433,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
       ],
       ...(input.intentAmountRange ? { intentAmountRange: input.intentAmountRange } : {}),
     };
+  }
+
+  function validateInput(input: CashoutInput): CashDepositInput {
+    if (input.amount < MIN_CASHOUT_AMOUNT) {
+      throw errors.amountBelowMinimum(input.amount, MIN_CASHOUT_AMOUNT);
+    }
+    return { amount: input.amount, ...validatePayout(input) };
   }
 
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
@@ -657,22 +662,42 @@ export function createCashClient(options: CashClientOptions): CashClient {
     async cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult> {
       const client = signingClient('cashout', opts);
       const owner = opts.signer.account!.address;
+      const payoutInput = validatePayout(input);
 
       let sourceResult: CashoutResult['source'];
       let cashoutAmount = input.amount;
       if (input.source) {
-        const sourceSigner = opts.sourceSigner ?? opts.signer;
-        if (!sourceSigner.account) throw errors.signerRequired('source cashout');
+        const sourceSigner =
+          opts.sourceSigner ?? (input.source.chainId === BASE_CHAIN_ID ? opts.signer : undefined);
+        if (!sourceSigner?.account) throw errors.signerRequired('source cashout');
+        if (
+          input.source.recipient !== undefined &&
+          input.source.recipient.toLowerCase() !== owner.toLowerCase()
+        ) {
+          throw errors.sourceRecipientMismatch(input.source.recipient, owner);
+        }
         const relayQuote = await quoteRelayToBaseUsdc(
           {
             user: sourceSigner.account.address,
             amount: input.amount,
             source: { chainId: input.source.chainId, currency: input.source.currency },
-            recipient: input.source.recipient ?? owner,
+            recipient: owner,
             ...(input.source.tradeType ? { tradeType: input.source.tradeType } : {}),
           },
           options.relay,
         );
+        if (relayQuote.outputAmount < MIN_CASHOUT_AMOUNT) {
+          throw errors.amountBelowMinimum(relayQuote.outputAmount, MIN_CASHOUT_AMOUNT);
+        }
+        cashoutAmount = relayQuote.outputAmount;
+        const depositInput: CashDepositInput = { amount: cashoutAmount, ...payoutInput };
+        const params = await buildDepositParams(client, depositInput);
+
+        // Spender must be the escrow createDeposit will target - the default can
+        // point at the legacy escrow while deposits go to EscrowV2.
+        const escrow = client.escrowV2Address ?? client.escrowAddress;
+        await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
+
         const executed = await executeRelayQuote(relayQuote.raw, sourceSigner, {
           ...(options.relay ? { relay: options.relay } : {}),
           ...(opts.onSourceProgress ? { onProgress: opts.onSourceProgress } : {}),
@@ -680,16 +705,57 @@ export function createCashClient(options: CashClientOptions): CashClient {
             ? { disableCapabilitiesCheck: opts.disableSourceCapabilitiesCheck }
             : {}),
         });
-        cashoutAmount = relayQuote.outputAmount;
         sourceResult = {
           amount: cashoutAmount,
           ...(executed.requestId ? { requestId: executed.requestId } : {}),
           txHashes: executed.txHashes,
         };
+
+        const attributedParams = { ...params, txOverrides: attribution };
+        // Submit the deposit; one retry for the replica-lag case the allowance
+        // visibility loop cannot fully rule out. All other failures map to typed
+        // errors and a reverted receipt throws - no raw errors, no false success.
+        const send = async (): Promise<`0x${string}`> => {
+          try {
+            return (await client.createDeposit(attributedParams)).hash;
+          } catch (err) {
+            if (err instanceof Error && /exceeds allowance/i.test(err.message)) {
+              await sleep(2_000);
+              return (await client.createDeposit(attributedParams)).hash;
+            }
+            throw err;
+          }
+        };
+
+        let hash: Hash;
+        try {
+          hash = (await send()) as Hash;
+        } catch (err) {
+          throw mapChainError('createDeposit', err);
+        }
+        const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+        if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
+
+        const abi = client.escrowV2Abi ?? client.escrowAbi;
+        const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
+        if (!resolved) throw errors.depositResolutionFailed(hash);
+
+        const order = deriveCashOrder(resolved.compositeId, [], {
+          remainingAmount: depositInput.amount,
+          status: 'ACTIVE',
+        });
+
+        return {
+          depositId: resolved.compositeId,
+          txHash: hash,
+          escrowAddress: resolved.escrowAddress,
+          onchainDepositId: resolved.onchainDepositId,
+          order,
+          source: sourceResult,
+        };
       }
 
-      const depositInput = validateInput({ ...input, amount: cashoutAmount });
-
+      const depositInput = validateInput(input);
       const params = await buildDepositParams(client, depositInput);
 
       // Spender must be the escrow createDeposit will target - the default can

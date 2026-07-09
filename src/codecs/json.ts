@@ -7,6 +7,7 @@ import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
+import { sanitizeRelayQuoteRaw } from '../client/relay';
 import type { CashCapabilities } from '../client/capabilities';
 import type {
   CashPreparedStep,
@@ -133,6 +134,7 @@ export function estimateToJson(estimate: CashEstimate): CashEstimateJson {
             inputAmount: estimate.source.relayQuote.inputAmount.toString(),
             outputAmount: estimate.source.relayQuote.outputAmount.toString(),
             txs: estimate.source.relayQuote.txs.map(preparedTxToJson),
+            raw: sanitizeRelayQuoteRaw(estimate.source.relayQuote.raw),
           },
         }
       : undefined,

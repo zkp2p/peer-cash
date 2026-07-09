@@ -253,6 +253,18 @@ describe('cashout()', () => {
       ],
     };
     const relayClient = {
+      chains: [
+        {
+          id: 10,
+          name: 'optimism',
+          displayName: 'Optimism',
+          currency: {
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'ETH',
+            decimals: 18,
+          },
+        },
+      ],
       actions: {
         getQuote: vi.fn(async () => relayQuote),
         execute: vi.fn(async () => ({
@@ -276,7 +288,7 @@ describe('cashout()', () => {
         source: { chainId: 10, currency: '0xsource' },
         receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
       },
-      { signer },
+      { signer, sourceSigner: signer },
     );
 
     expect(relayClient.actions.getQuote).toHaveBeenCalledWith(
@@ -295,11 +307,245 @@ describe('cashout()', () => {
     expect(mockInstance.ensureAllowance).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 4_900_000n }),
     );
+    expect(mockInstance.ensureAllowance.mock.invocationCallOrder[0]).toBeLessThan(
+      relayClient.actions.execute.mock.invocationCallOrder[0]!,
+    );
     expect(result.source).toEqual({
       amount: 4_900_000n,
       requestId: 'relay-request',
       txHashes: ['0xrelay'],
     });
+  });
+
+  it('requires a source-chain signer for non-Base Relay source cashout', async () => {
+    const relayClient = {
+      actions: { getQuote: vi.fn() },
+    };
+
+    await expect(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'SIGNER_REQUIRED' });
+    expect(relayClient.actions.getQuote).not.toHaveBeenCalled();
+  });
+
+  it('registers the payee before executing a Relay source route', async () => {
+    const relayQuote = {
+      details: {
+        currencyIn: {
+          amount: '1000000',
+          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        },
+        currencyOut: {
+          amount: '4900000',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [],
+    };
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => {
+          throw new Error('execute should not be called');
+        }),
+      },
+    };
+    mockInstance.registerPayeeDetails.mockRejectedValue(new Error('curator 500'));
+
+    await expect(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer, sourceSigner: signer },
+      ),
+    ).rejects.toMatchObject({ code: 'PAYEE_REGISTRATION_FAILED' });
+
+    expect(relayClient.actions.getQuote).toHaveBeenCalledOnce();
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledOnce();
+    expect(relayClient.actions.execute).not.toHaveBeenCalled();
+  });
+
+  it('does not execute a Relay source route when Base approval fails first', async () => {
+    const relayQuote = {
+      details: {
+        currencyIn: {
+          amount: '1000000',
+          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        },
+        currencyOut: {
+          amount: '4900000',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [],
+    };
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => {
+          throw new Error('execute should not be called');
+        }),
+      },
+    };
+    mockInstance.ensureAllowance.mockRejectedValue(new Error('approve rejected'));
+
+    await expect(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer, sourceSigner: signer },
+      ),
+    ).rejects.toMatchObject({ code: 'TRANSACTION_FAILED' });
+
+    expect(relayClient.actions.getQuote).toHaveBeenCalledOnce();
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledOnce();
+    expect(mockInstance.ensureAllowance).toHaveBeenCalledOnce();
+    expect(relayClient.actions.execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Relay source recipient that differs from the depositor', async () => {
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(async () => {
+          throw new Error('quote should not be called');
+        }),
+        execute: vi.fn(async () => {
+          throw new Error('execute should not be called');
+        }),
+      },
+    };
+
+    await expect(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
+        {
+          amount: 1_000_000n,
+          source: {
+            chainId: 10,
+            currency: '0xsource',
+            recipient: '0x3333333333333333333333333333333333333333',
+          },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer, sourceSigner: signer },
+      ),
+    ).rejects.toMatchObject({ code: 'SOURCE_RECIPIENT_MISMATCH' });
+
+    expect(relayClient.actions.getQuote).not.toHaveBeenCalled();
+    expect(relayClient.actions.execute).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('validates the payout before executing a Relay source route', async () => {
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(async () => {
+          throw new Error('quote should not be called');
+        }),
+        execute: vi.fn(async () => {
+          throw new Error('execute should not be called');
+        }),
+      },
+    };
+
+    await expect(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'not-a-platform', currency: 'USD', payee: { offchainId: '@a' } },
+        },
+        { signer, sourceSigner: signer },
+      ),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_PLATFORM' });
+
+    expect(relayClient.actions.getQuote).not.toHaveBeenCalled();
+    expect(relayClient.actions.execute).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects dust Relay output before executing the source route', async () => {
+    const relayQuote = {
+      details: {
+        currencyIn: {
+          amount: '1000000',
+          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        },
+        currencyOut: {
+          amount: '9999',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [],
+    };
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => {
+          throw new Error('execute should not be called');
+        }),
+      },
+    };
+
+    await expect(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer, sourceSigner: signer },
+      ),
+    ).rejects.toMatchObject({ code: 'AMOUNT_BELOW_MINIMUM' });
+
+    expect(relayClient.actions.getQuote).toHaveBeenCalledOnce();
+    expect(relayClient.actions.execute).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
   it('requires a signer', async () => {

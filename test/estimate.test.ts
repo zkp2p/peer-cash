@@ -131,6 +131,26 @@ describe('readEstimate', () => {
     });
   });
 
+  it('keeps the oracle estimate when ETA history is unavailable', async () => {
+    const indexerClient = {
+      indexer: {
+        getDepositsWithRelations: vi.fn(async () => {
+          throw new Error('indexer unavailable');
+        }),
+      },
+    };
+
+    const est = await readEstimate(
+      mockPublicClient(0n),
+      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { indexerClient: indexerClient as never, environment: 'staging' },
+    );
+
+    expect(est.rate).toBe(1);
+    expect(est.receiveAmount).toBe(1);
+    expect(est.eta).toBeUndefined();
+  });
+
   it('quotes a Relay source through the Relay SDK before pricing Base USDC cashout', async () => {
     const getQuote = vi.fn(async () => ({
       details: {

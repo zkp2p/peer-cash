@@ -6,7 +6,7 @@ import {
   type RelayChain,
   type RelayClient,
 } from '@relayprotocol/relay-sdk';
-import { configureDynamicChains } from '@relayprotocol/relay-sdk/chain-utils';
+import { configureDynamicChains, fetchChainConfigs } from '@relayprotocol/relay-sdk/chain-utils';
 import type { WalletClient } from 'viem';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import type { PreparedTransaction } from '../sdk-types';
@@ -160,6 +160,7 @@ function normalizeTx(data: unknown, chainId: number): PreparedTransaction | null
 }
 
 function normalizeChain(chain: RelayChain): CashChain {
+  const row = asRecord(chain);
   const tokenRows = [
     chain.currency,
     ...(chain.featuredTokens ?? []),
@@ -175,7 +176,7 @@ function normalizeChain(chain: RelayChain): CashChain {
     id: chain.id,
     name: chain.name,
     displayName: chain.displayName,
-    disabled: false,
+    disabled: row.disabled === true,
     depositEnabled: chain.depositEnabled ?? false,
     blockProductionLagging: chain.blockProductionLagging ?? false,
     ...(chain.vmType ? { vmType: chain.vmType } : {}),
@@ -183,8 +184,47 @@ function normalizeChain(chain: RelayChain): CashChain {
   };
 }
 
+function isSupportedEvmChain(chain: CashChain): boolean {
+  // RelayChain.vmType is optional in the SDK type and older/custom EVM chain
+  // configs may omit it. Exclude chains only when Relay explicitly marks a
+  // non-EVM VM that a viem WalletClient cannot execute.
+  return chain.vmType === undefined || chain.vmType === 'evm';
+}
+
 function quoteRequestId(quote: Execute): string | undefined {
   return quote.steps.map((step) => step.requestId).find((id): id is string => id !== undefined);
+}
+
+function quoteSourceChainId(quote: Execute): number | undefined {
+  const details = asRecord(quote.details);
+  const currencyIn = asRecord(details.currencyIn);
+  const sourceCurrency = asRecord(currencyIn.currency);
+  return asNumber(sourceCurrency.chainId);
+}
+
+export function sanitizeRelayQuoteRaw(quote: Execute): Execute {
+  if (!quote.request) return quote;
+  const request = { ...quote.request };
+  delete request.headers;
+  return { ...quote, request };
+}
+
+async function resolveRelayChains(
+  options: RelayOptions,
+  client: RelayClient,
+  config: { preferInjectedClientChains?: boolean } = {},
+): Promise<RelayChain[]> {
+  const preferInjectedClientChains = config.preferInjectedClientChains ?? true;
+  const chains =
+    options.chains ??
+    (preferInjectedClientChains && options.client?.chains?.length
+      ? options.client.chains
+      : undefined) ??
+    (options.client
+      ? await fetchChainConfigs(client.baseApiUrl, client.source, client.apiKey)
+      : await configureDynamicChains());
+  client.chains = chains;
+  return chains;
 }
 
 function relayQuoteFromExecute(input: RelayQuoteInput, quote: Execute): RelayQuote {
@@ -205,7 +245,9 @@ function relayQuoteFromExecute(input: RelayQuoteInput, quote: Execute): RelayQuo
       .map((item) => normalizeTx(item.data, input.source.chainId))
       .filter((tx): tx is PreparedTransaction => tx !== null),
   );
-  const outputAmount = BigInt(String(currencyOut.amount ?? input.amount.toString()));
+  const outputAmount = BigInt(
+    String(currencyOut.minimumAmount ?? currencyOut.amount ?? input.amount.toString()),
+  );
   const requestId = quoteRequestId(quote);
   const rate = asNumber(details.rate);
   const timeEstimateSeconds = asNumber(details.timeEstimate);
@@ -219,20 +261,20 @@ function relayQuoteFromExecute(input: RelayQuoteInput, quote: Execute): RelayQuo
     ...(timeEstimateSeconds !== undefined ? { timeEstimateSeconds } : {}),
     ...(quote.fees !== undefined ? { fees: quote.fees } : {}),
     txs,
-    raw: quote,
+    raw: sanitizeRelayQuoteRaw(quote),
   };
 }
 
 export async function readRelaySourceCapabilities(
   options: RelayOptions = {},
 ): Promise<CashSourceCapabilities> {
-  relayClient(options);
-  const chains = options.chains ?? (await configureDynamicChains());
+  const client = relayClient(options);
+  const chains = await resolveRelayChains(options, client);
   return {
     destination: BASE_USDC_ASSET,
     chains: chains
       .map(normalizeChain)
-      .filter((chain) => chain.tokens.length > 0)
+      .filter((chain) => chain.tokens.length > 0 && isSupportedEvmChain(chain))
       .sort((a, b) => a.displayName.localeCompare(b.displayName)),
     source: 'relay-sdk',
     asOf: Math.floor(Date.now() / 1000),
@@ -269,7 +311,15 @@ export async function executeRelayQuote(
     disableCapabilitiesCheck?: boolean;
   } = {},
 ): Promise<RelayExecutionResult> {
-  const { data } = await relayClient(options.relay).actions.execute({
+  const client = relayClient(options.relay);
+  const sourceChainId = quoteSourceChainId(quote);
+  if (
+    sourceChainId !== undefined &&
+    !(client.chains ?? []).some((chain) => chain.id === sourceChainId)
+  ) {
+    await resolveRelayChains(options.relay ?? {}, client, { preferInjectedClientChains: false });
+  }
+  const { data } = await client.actions.execute({
     quote,
     wallet,
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),

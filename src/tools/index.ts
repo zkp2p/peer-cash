@@ -36,13 +36,13 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_capabilities',
     description:
-      'Discover what Peer Cash can do: payout platforms, oracle-priced currencies per platform, Base USDC destination, default Base USDC source, payee handle hints, and amount bounds. Set includeRelaySources=true to fetch live Relay-supported source chains/tokens through the Relay SDK.',
+      'Discover what Peer Cash can do: payout platforms, oracle-priced currencies per platform, Base USDC destination, default Base USDC source, payee handle hints, and amount bounds. Set includeRelaySources=true to fetch live Relay-supported EVM source chains/tokens through the Relay SDK.',
     inputSchema: {
       type: 'object',
       properties: {
         includeRelaySources: {
           type: 'boolean',
-          description: 'Fetch live Relay SDK source chain/token metadata.',
+          description: 'Fetch live Relay SDK EVM source chain/token metadata.',
         },
       },
       additionalProperties: false,
@@ -51,7 +51,7 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_source_quote',
     description:
-      'Quote any Relay-supported source asset into Base USDC through @relayprotocol/relay-sdk. Use this before cash_cashout when the user starts with an asset other than Base USDC.',
+      'Quote any Relay-supported EVM source asset into Base USDC through @relayprotocol/relay-sdk. Use this before cash_cashout when the user starts with an asset other than Base USDC.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -60,7 +60,7 @@ export const cashTools: CashToolDefinition[] = [
         source: {
           type: 'object',
           properties: {
-            chainId: { type: 'number', description: 'Relay-supported source chain id.' },
+            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
             currency: { type: 'string', description: 'Source token/native address.' },
           },
           required: ['chainId', 'currency'],
@@ -98,9 +98,9 @@ export const cashTools: CashToolDefinition[] = [
         },
         source: {
           type: 'object',
-          description: 'Optional Relay source asset. Omit for the Base USDC default path.',
+          description: 'Optional Relay EVM source asset. Omit for the Base USDC default path.',
           properties: {
-            chainId: { type: 'number', description: 'Relay-supported source chain id.' },
+            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
             currency: { type: 'string', description: 'Source token/native address.' },
             user: {
               type: 'string',
@@ -126,16 +126,16 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_cashout',
     description:
-      'Start a cash-out. Default path: Base USDC amount and tool hosts can return UNSIGNED transactions plus same-index steps [approve, createDeposit]. With source: signer-backed clients first execute a Relay SDK route into Base USDC, then register the payee and create the protocol-held cash-out order. Custody-separated hosts should use cash_source_quote/cash_source_status first, then Base USDC cash_cashout.',
+      'Start a cash-out. Default path: Base USDC amount and tool hosts can return UNSIGNED transactions plus same-index steps [approve, createDeposit]. With source: signer-backed clients first execute a Relay SDK EVM route into Base USDC, then register the payee and create the protocol-held cash-out order. Non-Base source chains need a source-chain signer. Custody-separated hosts should use cash_source_quote/cash_source_status first, then Base USDC cash_cashout.',
     inputSchema: {
       type: 'object',
       properties: {
         amount: bigintString,
         source: {
           type: 'object',
-          description: 'Optional Relay source asset. Omit for the Base USDC default path.',
+          description: 'Optional Relay EVM source asset. Omit for the Base USDC default path.',
           properties: {
-            chainId: { type: 'number', description: 'Relay-supported source chain id.' },
+            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
             currency: { type: 'string', description: 'Source token/native address.' },
             recipient: {
               type: 'string',
@@ -269,9 +269,9 @@ export const cashTools: CashToolDefinition[] = [
 /** Manifest wrapper with versioning for host registries. */
 export const cashToolManifest = {
   name: '@zkp2p/cash',
-  version: '0.1.1',
+  version: '0.1.2',
   description:
-    'Peer Cash - offramp-only: route any Relay-supported source asset to Base USDC, then cash out to fiat at the live oracle market rate (0% spread). Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
+    'Peer Cash - offramp-only: route any Relay-supported EVM source asset to Base USDC, then cash out to fiat at the live oracle market rate (0% spread). Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 

@@ -13,7 +13,7 @@ export interface UseCashoutOptions {
   client: CashClient | null;
   /** A viem WalletClient with an account, on Base. */
   signer: WalletClient | null | undefined;
-  /** Optional source-chain signer for Relay source routing. Defaults to signer. */
+  /** Source-chain signer for Relay source routing. Required when the source chain is not Base. */
   sourceSigner?: WalletClient | null | undefined;
   onSourceProgress?: CashoutOptions['onSourceProgress'];
   onCashout?: (result: CashoutResult) => void;
