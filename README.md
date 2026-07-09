@@ -105,7 +105,7 @@ awaiting-buyer ──────────► matched ───────�
   fills. `estimate()` says "approximately"; nothing in this API pretends to
   lock a price.
 - **ETA is historical.** `estimate().eta` is just `{ seconds, label }`, backed
-  by rolling 7-day indexer data from zero-spread (`spreadBps: 0`) market-rate
+  by rolling 30-day indexer data from zero-spread (`spreadBps: 0`) market-rate
   deposits in the same payout corridor, measured from deposit creation to first
   fulfilled fill.
 - **Everything is resumable.** An order is reconstructed from the chain by

@@ -162,6 +162,54 @@ describe('readEstimate', () => {
     });
   });
 
+  it('paginates deposits by creation time when ETA samples are beyond the first page', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const firstPage = Array.from({ length: 250 }, (_, index) => ({
+      ...venmoUsdPricing(25),
+      createdAt: String(now - 1_000 - index),
+      intents: [
+        { status: 'FULFILLED', amount: '1000000', fulfillTimestamp: String(now - 900 - index) },
+      ],
+    }));
+    const secondPage = [
+      {
+        ...venmoUsdPricing(0),
+        createdAt: String(now - 2_000),
+        intents: [
+          { status: 'FULFILLED', amount: '1000000', fulfillTimestamp: String(now - 1_700) },
+        ],
+      },
+    ];
+    const getDepositsWithRelations = vi.fn(async (_filter, pagination) =>
+      pagination?.offset === 0 ? firstPage : secondPage,
+    );
+    const indexerClient = { indexer: { getDepositsWithRelations } };
+
+    const est = await readEstimate(
+      mockPublicClient(0n),
+      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { indexerClient: indexerClient as never, environment: 'staging' },
+    );
+
+    expect(est.eta).toMatchObject({
+      seconds: 300,
+      label: 'Usually starts in about 5 min',
+    });
+    expect(getDepositsWithRelations).toHaveBeenCalledTimes(2);
+    expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
+      1,
+      { chainId: 8453 },
+      { limit: 250, offset: 0, orderBy: 'timestamp', orderDirection: 'desc' },
+      { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
+    );
+    expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
+      2,
+      { chainId: 8453 },
+      { limit: 250, offset: 250, orderBy: 'timestamp', orderDirection: 'desc' },
+      { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
+    );
+  });
+
   it('keeps the oracle estimate when ETA history is unavailable', async () => {
     const indexerClient = {
       indexer: {

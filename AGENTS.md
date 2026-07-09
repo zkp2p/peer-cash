@@ -77,7 +77,7 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
   binding rate resolves at the oracle when a buyer fills. Do not display or
   log it as a locked price.
 - **Do not invent an ETA.** Use `estimate().eta`: `{ seconds, label }` backed
-  by rolling 7-day indexer data from zero-spread (`spreadBps: 0`) market-rate
+  by rolling 30-day indexer data from zero-spread (`spreadBps: 0`) market-rate
   deposits in the same payout corridor, measured from deposit creation to first
   fill. Use `order.explain()` for live order state.
 - **Do not hardcode Relay source assets.** Use Relay SDK-backed EVM

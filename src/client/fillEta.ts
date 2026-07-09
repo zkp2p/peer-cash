@@ -4,9 +4,10 @@ import { BASE_CHAIN_ID } from '../engine/constants';
 import { derivePayouts } from '../engine/payouts';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 
-const ETA_WINDOW_DAYS = 7;
+const ETA_WINDOW_DAYS = 30;
 const ETA_WINDOW_SECONDS = ETA_WINDOW_DAYS * 24 * 60 * 60;
-const ETA_SAMPLE_LIMIT = 250;
+const ETA_PAGE_LIMIT = 250;
+const ETA_MAX_DEPOSIT_SCAN = 2_000;
 
 const FULFILLED = new Set(['FULFILLED', 'MANUALLY_RELEASED']);
 
@@ -92,11 +93,21 @@ export async function readFillEta(
 ): Promise<CashFillEta> {
   const now = Math.floor(Date.now() / 1000);
   const windowStart = now - ETA_WINDOW_SECONDS;
-  const deposits = (await client.indexer.getDepositsWithRelations(
-    { chainId: BASE_CHAIN_ID },
-    { limit: ETA_SAMPLE_LIMIT, orderBy: 'updatedAt', orderDirection: 'desc' },
-    { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
-  )) as DepositLike[];
+  const deposits: DepositLike[] = [];
+  for (let offset = 0; offset < ETA_MAX_DEPOSIT_SCAN; offset += ETA_PAGE_LIMIT) {
+    const page = (await client.indexer.getDepositsWithRelations(
+      { chainId: BASE_CHAIN_ID },
+      { limit: ETA_PAGE_LIMIT, offset, orderBy: 'timestamp', orderDirection: 'desc' },
+      { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
+    )) as DepositLike[];
+    deposits.push(...page);
+
+    if (page.length < ETA_PAGE_LIMIT) break;
+    const oldestCreatedAt = Math.min(
+      ...page.map((deposit) => toUnixSeconds(deposit.createdAt ?? deposit.timestamp) ?? Infinity),
+    );
+    if (oldestCreatedAt < windowStart) break;
+  }
 
   const firstFillLatencies: number[] = [];
   for (const deposit of deposits) {
