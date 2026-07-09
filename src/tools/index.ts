@@ -23,7 +23,8 @@ export interface CashToolDefinition {
 const bigintString = {
   type: 'string',
   pattern: '^[0-9]+$',
-  description: 'USDC base units (6 decimals) as a decimal string, e.g. "1000000000" for 1000 USDC',
+  description:
+    'Base units as a decimal string. For the default path this is USDC 6 decimals; with source it is source-token base units.',
 } as const;
 
 const depositId = {
@@ -35,13 +36,54 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_capabilities',
     description:
-      'Discover what Peer Cash can do: payout platforms, oracle-priced currencies per platform, payee handle format hints, and amount bounds. Static and side-effect free - call this first.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      'Discover what Peer Cash can do: payout platforms, oracle-priced currencies per platform, Base USDC destination, default Base USDC source, payee handle hints, and amount bounds. Set includeRelaySources=true to fetch live Relay-supported EVM source chains/tokens through the Relay SDK.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeRelaySources: {
+          type: 'boolean',
+          description: 'Fetch live Relay SDK EVM source chain/token metadata.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'cash_source_quote',
+    description:
+      'Quote any Relay-supported EVM source asset into Base USDC through @relayprotocol/relay-sdk. Use this before cash_cashout when the user starts with an asset other than Base USDC.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        user: { type: 'string', description: 'Source wallet submitting the Relay transaction.' },
+        amount: bigintString,
+        source: {
+          type: 'object',
+          properties: {
+            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
+            currency: { type: 'string', description: 'Source token/native address.' },
+          },
+          required: ['chainId', 'currency'],
+          additionalProperties: false,
+        },
+        recipient: {
+          type: 'string',
+          description: 'Base recipient for Relay-delivered USDC. Defaults to user.',
+        },
+        tradeType: {
+          type: 'string',
+          enum: ['EXACT_INPUT', 'EXACT_OUTPUT', 'EXPECTED_OUTPUT'],
+          description: 'Relay quote trade type. Defaults to EXACT_INPUT.',
+        },
+      },
+      required: ['user', 'amount', 'source'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'cash_estimate',
     description:
-      'Estimate fiat received for a USDC amount at the live oracle market rate. No payee, no side effects, no expiry - the binding rate resolves at the oracle when a buyer fills, so this is always "approximately", never a committed quote.',
+      'Estimate fiat received at the live oracle market rate and include a simple recent-fill ETA. Without source, amount is Base USDC. With source, the SDK first quotes source->Base USDC through Relay SDK, then estimates the cashout.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -49,6 +91,32 @@ export const cashTools: CashToolDefinition[] = [
         currency: {
           type: 'string',
           description: 'Fiat currency code from cash_capabilities, e.g. "USD"',
+        },
+        platform: {
+          type: 'string',
+          description: 'Optional payout platform for platform-specific ETA sampling.',
+        },
+        source: {
+          type: 'object',
+          description: 'Optional Relay EVM source asset. Omit for the Base USDC default path.',
+          properties: {
+            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
+            currency: { type: 'string', description: 'Source token/native address.' },
+            user: {
+              type: 'string',
+              description: 'Source wallet submitting the Relay transaction.',
+            },
+            recipient: {
+              type: 'string',
+              description: 'Base recipient for Relay-delivered USDC. Defaults to user.',
+            },
+            tradeType: {
+              type: 'string',
+              enum: ['EXACT_INPUT', 'EXACT_OUTPUT', 'EXPECTED_OUTPUT'],
+            },
+          },
+          required: ['chainId', 'currency', 'user'],
+          additionalProperties: false,
         },
       },
       required: ['amount', 'currency'],
@@ -58,11 +126,29 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_cashout',
     description:
-      'Start a cash-out: registers the payee with the curator and returns UNSIGNED transactions plus same-index steps [approve, createDeposit] for the host to sign and submit (prepare path - signing stays host-side). After submission, parse the depositId from the DepositReceived event or find it via cash_orders, then track with cash_order.',
+      'Start a cash-out. Default path: Base USDC amount and tool hosts can return UNSIGNED transactions plus same-index steps [approve, createDeposit]. With source: signer-backed clients first execute a Relay SDK EVM route into Base USDC, then register the payee and create the protocol-held cash-out order. Non-Base source chains need a source-chain signer. Custody-separated hosts should use cash_source_quote/cash_source_status first, then Base USDC cash_cashout.',
     inputSchema: {
       type: 'object',
       properties: {
         amount: bigintString,
+        source: {
+          type: 'object',
+          description: 'Optional Relay EVM source asset. Omit for the Base USDC default path.',
+          properties: {
+            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
+            currency: { type: 'string', description: 'Source token/native address.' },
+            recipient: {
+              type: 'string',
+              description: 'Base recipient for Relay-delivered USDC. Defaults to signer.',
+            },
+            tradeType: {
+              type: 'string',
+              enum: ['EXACT_INPUT', 'EXACT_OUTPUT', 'EXPECTED_OUTPUT'],
+            },
+          },
+          required: ['chainId', 'currency'],
+          additionalProperties: false,
+        },
         receive: {
           type: 'object',
           description: 'Where the fiat should arrive',
@@ -137,6 +223,19 @@ export const cashTools: CashToolDefinition[] = [
     },
   },
   {
+    name: 'cash_source_status',
+    description:
+      'Read Relay request status through the Relay SDK request utility using the requestId returned from cash_source_quote or Relay execution progress.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        requestId: { type: 'string', description: 'Relay request id.' },
+      },
+      required: ['requestId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'cash_withdraw',
     description:
       'Unwind a cash-out: returns UNSIGNED transaction(s) plus same-index steps (prepare path - signing stays host-side). With amount: partial withdrawal of the unlocked balance (a live buyer intent does not block it). Without amount: closes the order fully, state-aware - when the only live intents have expired it includes a pruneExpiredIntents transaction first; while a live buyer intent locks funds it fails with ACTIVE_INTENT_BLOCKS_WITHDRAWAL (retryable - wait for expiry).',
@@ -170,9 +269,9 @@ export const cashTools: CashToolDefinition[] = [
 /** Manifest wrapper with versioning for host registries. */
 export const cashToolManifest = {
   name: '@zkp2p/cash',
-  version: '0.1.1',
+  version: '0.1.2',
   description:
-    'Peer Cash - offramp-only: cash out Base USDC to fiat at the live oracle market rate (0% spread). Eight verbs; mutating tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
+    'Peer Cash - offramp-only: route any Relay-supported EVM source asset to Base USDC, then cash out to fiat at the live oracle market rate (0% spread). Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 

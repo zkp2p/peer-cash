@@ -91,6 +91,47 @@ describe('estimate codec', () => {
     const restored = estimateFromJson(JSON.parse(JSON.stringify(estimateToJson(estimate))));
     expect(restored).toEqual(estimate);
   });
+
+  it('strips Relay request headers when serializing source quotes', () => {
+    const estimate: CashEstimate = {
+      kind: 'oracle-estimate',
+      currency: 'USD',
+      amount: 970_000n,
+      rate: 1,
+      receiveAmount: 0.97,
+      asOf: NOW,
+      source: {
+        kind: 'relay',
+        asset: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        inputAmount: 1_000_000n,
+        relayQuote: {
+          source: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+          destination: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+          inputAmount: 1_000_000n,
+          outputAmount: 970_000n,
+          txs: [],
+          raw: {
+            request: {
+              url: 'https://api.relay.link/quote/v2',
+              headers: { 'x-api-key': 'secret-relay-key', authorization: 'Bearer secret' },
+            },
+            steps: [],
+          },
+        },
+      },
+    };
+
+    const json = estimateToJson(estimate);
+    expect(JSON.stringify(json)).not.toContain('secret');
+    expect(
+      (json.source?.relayQuote.raw as { request?: { headers?: unknown } }).request?.headers,
+    ).toBeUndefined();
+  });
 });
 
 describe('prepared tx + result codecs', () => {
@@ -121,9 +162,11 @@ describe('prepared tx + result codecs', () => {
       escrowAddress: '0xescrow',
       onchainDepositId: 1n,
       order,
+      source: { amount: 1_000_000n, requestId: 'relay-request', txHashes: ['0xrelay'] },
     };
     const restored = cashoutResultFromJson(JSON.parse(JSON.stringify(cashoutResultToJson(result))));
     expect(restored.onchainDepositId).toBe(1n);
+    expect(restored.source?.amount).toBe(1_000_000n);
     expect(restored.order.state).toBe(order.state);
     expect(restored.order.explain()).toBe(order.explain());
   });

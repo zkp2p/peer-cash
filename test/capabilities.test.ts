@@ -10,6 +10,9 @@ describe('buildCapabilities', () => {
       expect(caps.chainId).toBe(8453);
       expect(caps.token.symbol).toBe('USDC');
       expect(caps.token.decimals).toBe(6);
+      expect(caps.destination).toEqual({ chainId: 8453, token: caps.token });
+      expect(caps.source.default).toEqual({ chainId: 8453, token: caps.token });
+      expect(caps.source.relay).toBeUndefined();
       expect(caps.pricing).toEqual({ kind: 'oracle-market-rate', spreadBps: 0 });
       expect(caps.amount.min).toBe(10_000n);
       expect(caps.amount.recommendedMin).toBe(1_000_000n);

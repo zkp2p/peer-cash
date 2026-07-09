@@ -101,6 +101,59 @@ export const cashEstimateJsonSchema = z.object({
   asOf: z.number(),
   oracleUpdatedAt: z.number().optional(),
   stale: z.boolean().optional(),
+  source: z
+    .object({
+      kind: z.literal('relay'),
+      asset: z.object({
+        chainId: z.number(),
+        address: z.string(),
+        symbol: z.string(),
+        decimals: z.number(),
+        name: z.string().optional(),
+        isNative: z.boolean().optional(),
+      }),
+      inputAmount: bigintString,
+      relayQuote: z.object({
+        requestId: z.string().optional(),
+        source: z.object({
+          chainId: z.number(),
+          address: z.string(),
+          symbol: z.string(),
+          decimals: z.number(),
+          name: z.string().optional(),
+          isNative: z.boolean().optional(),
+        }),
+        destination: z.object({
+          chainId: z.number(),
+          address: z.string(),
+          symbol: z.string(),
+          decimals: z.number(),
+          name: z.string().optional(),
+          isNative: z.boolean().optional(),
+        }),
+        inputAmount: bigintString,
+        outputAmount: bigintString,
+        rate: z.number().optional(),
+        timeEstimateSeconds: z.number().optional(),
+        fees: z.unknown().optional(),
+        txs: z.array(
+          z.object({
+            to: z.string(),
+            data: z.string(),
+            value: bigintString,
+            chainId: z.number(),
+          }),
+        ),
+        raw: z.unknown(),
+      }),
+    })
+    .optional(),
+  eta: z
+    .object({
+      seconds: z.number().optional(),
+      label: z.string(),
+    })
+    .optional(),
 });
 
 export const preparedTransactionJsonSchema = z.object({
@@ -128,6 +181,13 @@ export const cashoutResultJsonSchema = z.object({
   escrowAddress: z.string(),
   onchainDepositId: bigintString,
   order: cashOrderJsonSchema,
+  source: z
+    .object({
+      amount: bigintString,
+      requestId: z.string().optional(),
+      txHashes: z.array(z.string()),
+    })
+    .optional(),
 });
 
 export const prepareResultJsonSchema = z.object({
@@ -151,6 +211,51 @@ export const cashCapabilitiesJsonSchema = z.object({
   chainId: z.number(),
   token: z.object({ address: z.string(), symbol: z.literal('USDC'), decimals: z.number() }),
   environment: z.enum(['production', 'preproduction', 'staging']),
+  destination: z.object({
+    chainId: z.number(),
+    token: z.object({ address: z.string(), symbol: z.literal('USDC'), decimals: z.number() }),
+  }),
+  source: z.object({
+    default: z.object({
+      chainId: z.number(),
+      token: z.object({ address: z.string(), symbol: z.literal('USDC'), decimals: z.number() }),
+    }),
+    relay: z
+      .object({
+        destination: z.object({
+          chainId: z.number(),
+          address: z.string(),
+          symbol: z.string(),
+          decimals: z.number(),
+          name: z.string().optional(),
+          isNative: z.boolean().optional(),
+        }),
+        chains: z.array(
+          z.object({
+            id: z.number(),
+            name: z.string(),
+            displayName: z.string(),
+            disabled: z.boolean(),
+            depositEnabled: z.boolean(),
+            blockProductionLagging: z.boolean(),
+            vmType: z.string().optional(),
+            tokens: z.array(
+              z.object({
+                chainId: z.number(),
+                address: z.string(),
+                symbol: z.string(),
+                decimals: z.number(),
+                name: z.string().optional(),
+                isNative: z.boolean().optional(),
+              }),
+            ),
+          }),
+        ),
+        source: z.literal('relay-sdk'),
+        asOf: z.number(),
+      })
+      .optional(),
+  }),
   platforms: z.array(
     z.object({
       platform: z.string(),

@@ -5,9 +5,10 @@ description: Integrate Peer Cash (@zkp2p/cash) into any codebase - React app, No
 
 # Peer Cash integration
 
-Onboard this codebase to `@zkp2p/cash`: an offramp-only SDK that cashes out
-Base USDC to fiat at the live Chainlink market rate (0% spread),
-with protocol-held funds and no custodial off-ramp provider.
+Onboard this codebase to `@zkp2p/cash`: an offramp-only SDK that routes any
+Relay-supported EVM source asset into Base USDC, then cashes out Base USDC to fiat
+at the live Chainlink market rate (0% spread), with protocol-held funds and no
+custodial off-ramp provider.
 
 ## 1. Mental model (read before writing code)
 
@@ -15,14 +16,20 @@ with protocol-held funds and no custodial off-ramp provider.
   a protocol-held deposit. A buyer (taker) pays them fiat and proves it
   with TEE-TLS; the protocol releases the USDC. The protocol runs in its normal
   direction - Peer Cash is a lens on it, not a fork of it.
+- **Source routing.** Destination is always canonical Base USDC. Same-chain
+  Base USDC remains the default/minimal path. Other source chains/tokens come
+  from `@relayprotocol/relay-sdk` metadata and quote execution, filtered to
+  EVM chains this viem SDK can sign. Non-Base source chains require
+  `sourceSigner`.
 - **Oracle-at-fill pricing. There is no quote.** The deposit carries
   `oracleRateConfig { spreadBps: 0 }`; the binding rate is whatever the
   Chainlink feed says when a buyer fills. `estimate()` is deliberately named
   - anything in your UI or agent output implying a locked rate is a bug.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
-- **Honest ETA.** Buyer arrival time is unknowable. Use `order.explain()`;
-  never render a countdown.
+- **Honest ETA.** Use `estimate().eta`: `{ seconds, label }` backed by rolling
+  7-day indexer data from deposit creation to first fill. Do not use
+  signal-to-fulfillment latency and never render it as a guarantee.
 
 ## 2. Decision tree - entry point by runtime
 
@@ -44,7 +51,8 @@ import { createCashClient, usdc } from '@zkp2p/cash';
 const cash = createCashClient({ environment: 'staging' });
 
 const caps = cash.capabilities(); // 0 discover (sync)
-const est = await cash.estimate({ amount: usdc(100), currency: 'USD' }); // 1 estimate
+const relayCaps = await cash.capabilities({ includeRelaySources: true }); // 0b source discovery
+const est = await cash.estimate({ amount: usdc(100), currency: 'USD' }); // 1 estimate + ETA
 const res = await cash.cashout(
   {
     // 2 execute
@@ -64,8 +72,10 @@ await cash.withdraw(res.depositId, { signer }); // 6 unwind (amount: for partial
 await cash.topUp(res.depositId, usdc(50), { signer }); // 7 top up a live order
 ```
 
-Every mutating verb also has an unsigned `prepare*` counterpart, and every
-transaction carries ERC-8021 attribution (`peer-cash` + your
+Base-USDC cashout, withdraw, and top-up also have unsigned `prepare*`
+counterparts. Source-routed cashout runs Relay first; use signed
+`cashout({ source }, { signer, sourceSigner })` for non-Base sources, or bridge first and then use `prepare()`.
+Every protocol transaction carries ERC-8021 attribution (`peer-cash` + your
 `createCashClient({ referrer })` codes).
 
 ## 4. Order management - indexer-native

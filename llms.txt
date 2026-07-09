@@ -1,28 +1,31 @@
 # @zkp2p/cash - Peer Cash
 
-> Offramp-only SDK for the ZKP2P protocol: cash out Base USDC to fiat (Venmo,
-> Revolut, Wise, Zelle, ...) at the live Chainlink oracle market rate with zero
-> spread and no centralized off-ramp provider. The user is the maker,
-> Peer handles the buyer side, and eight verbs expose readable order state.
-> Every operation is available as pure serializable data; a React app, a Node service, and an AI agent are equal
-> consumers.
+> Offramp-only SDK for the ZKP2P protocol: route any Relay-supported EVM source
+> asset to Base USDC, then cash out to fiat (Venmo, Revolut, Wise, Zelle, ...)
+> at the live Chainlink oracle market rate with zero spread and no centralized
+> off-ramp provider. The user is the maker, Peer handles the buyer side, and the
+> SDK exposes readable order state.
+> Base-USDC flows are serializable through prepare paths; source-routed cashout
+> uses Relay execution first. React apps, Node services, and agent hosts use the
+> same typed surface.
 
 Key facts:
 
 - The cashing-out user is the MAKER: their USDC becomes a protocol-held order;
   a buyer pays fiat and proves it with TEE-TLS; the protocol releases the USDC.
-- There is NO quote. estimate() reads the oracle; the binding rate resolves
-  at fill time. Never present a locked price or an ETA.
+- Destination is always Base USDC. Source chains/tokens come from Relay SDK
+  metadata and quote execution, filtered to EVM chains this SDK can sign.
+- There is NO locked fiat quote. estimate() reads the oracle; the binding rate
+  resolves at fill time. ETA is `{ seconds, label }` from recent indexer data,
+  not a guarantee.
 - Resume any order from its depositId alone (composite escrow_onchainId).
 - One unwind verb: withdraw(depositId) - prunes expired intents automatically;
   pass amount for a partial withdrawal of the unlocked balance.
 - topUp(depositId, amount) adds USDC to a live order (same payee, same rate).
-- Mutating verbs have unsigned counterparts (prepare, prepareWithdraw,
-  prepareTopUp) for host-side signing; @zkp2p/cash/tools ships a JSON-schema
-  tool manifest. Prepare results include `txs[]` plus same-index `steps[]`
-  labels so hosts can explain approvals and deposits before signing. Every
-  transaction carries ERC-8021 attribution ('peer-cash' plus integrator
-  referrer codes).
+- Base-USDC mutating verbs have unsigned counterparts (prepare,
+  prepareWithdraw, prepareTopUp) for host-side signing; source-routed cashout
+  needs Relay execution first. @zkp2p/cash/tools ships a JSON-schema tool
+  manifest.
 - Errors are typed: { code, retryable, remediation }.
 - Everything is decoded to human units: platform ids and currency codes from
   their on-chain hashes, plain-number rates from 1e18 precision.
@@ -32,7 +35,9 @@ Key facts:
   verifiable pricing proof (spreadBps: 0, oracle kind) from indexed data.
 - buyer(address) aggregates a buyer's track record (fulfilled/pruned/success
   rate) from their full intent history.
-- v1 is same-chain only: Base USDC in.
+- Default path is same-chain Base USDC. Optional `source` on `cashout()` runs
+  Relay source-to-Base-USDC first; non-Base source chains require
+  `sourceSigner`.
 
 ## Links
 
@@ -45,8 +50,8 @@ Key facts:
 - [README](README.md): quickstart, verb table, lifecycle diagram
 - [AGENTS.md](AGENTS.md): agent integration manual - decision tree,
   prepare-path patterns, error → remediation table
-- [Lifecycle and recovery](docs/lifecycle-and-recovery.md): states, partial
-  fills, honest-ETA principle, unwind, resumability, failure table
+- [Lifecycle and recovery](docs/lifecycle-and-recovery.md): source routing,
+  states, partial fills, ETA principle, unwind, resumability, failure table
 - [Integration skill](skills/peer-cash-integration/SKILL.md): step-by-step
   onboarding for coding agents, with the staging verification checklist
 

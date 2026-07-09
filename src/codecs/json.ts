@@ -7,6 +7,7 @@ import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
+import { sanitizeRelayQuoteRaw } from '../client/relay';
 import type { CashCapabilities } from '../client/capabilities';
 import type {
   CashPreparedStep,
@@ -121,7 +122,23 @@ export function orderFromJson(json: unknown): CashOrder {
 // --- CashEstimate ---
 
 export function estimateToJson(estimate: CashEstimate): CashEstimateJson {
-  return { ...estimate, amount: estimate.amount.toString() };
+  return omitUndefined({
+    ...estimate,
+    amount: estimate.amount.toString(),
+    source: estimate.source
+      ? {
+          ...estimate.source,
+          inputAmount: estimate.source.inputAmount.toString(),
+          relayQuote: {
+            ...estimate.source.relayQuote,
+            inputAmount: estimate.source.relayQuote.inputAmount.toString(),
+            outputAmount: estimate.source.relayQuote.outputAmount.toString(),
+            txs: estimate.source.relayQuote.txs.map(preparedTxToJson),
+            raw: sanitizeRelayQuoteRaw(estimate.source.relayQuote.raw),
+          },
+        }
+      : undefined,
+  }) as CashEstimateJson;
 }
 
 export function estimateFromJson(json: unknown): CashEstimate {
@@ -130,6 +147,18 @@ export function estimateFromJson(json: unknown): CashEstimate {
     ...parsed,
     currency: parsed.currency as CurrencyType,
     amount: BigInt(parsed.amount),
+    source: parsed.source
+      ? {
+          ...parsed.source,
+          inputAmount: BigInt(parsed.source.inputAmount),
+          relayQuote: {
+            ...parsed.source.relayQuote,
+            inputAmount: BigInt(parsed.source.relayQuote.inputAmount),
+            outputAmount: BigInt(parsed.source.relayQuote.outputAmount),
+            txs: parsed.source.relayQuote.txs.map(preparedTxFromJson),
+          },
+        }
+      : undefined,
   }) as unknown as CashEstimate;
 }
 
@@ -160,24 +189,36 @@ export function preparedStepFromJson(json: unknown): CashPreparedStep {
 // --- CashoutResult ---
 
 export function cashoutResultToJson(result: CashoutResult): CashoutResultJson {
-  return {
+  return omitUndefined({
     depositId: result.depositId,
     txHash: result.txHash,
     escrowAddress: result.escrowAddress,
     onchainDepositId: result.onchainDepositId.toString(),
     order: orderToJson(result.order),
-  };
+    source: result.source
+      ? {
+          ...result.source,
+          amount: result.source.amount.toString(),
+        }
+      : undefined,
+  }) as CashoutResultJson;
 }
 
 export function cashoutResultFromJson(json: unknown): CashoutResult {
   const parsed = cashoutResultJsonSchema.parse(json);
-  return {
+  return omitUndefined({
     depositId: parsed.depositId,
     txHash: parsed.txHash as CashoutResult['txHash'],
     escrowAddress: parsed.escrowAddress,
     onchainDepositId: BigInt(parsed.onchainDepositId),
     order: orderFromJson(parsed.order),
-  };
+    source: parsed.source
+      ? {
+          ...parsed.source,
+          amount: BigInt(parsed.source.amount),
+        }
+      : undefined,
+  }) as unknown as CashoutResult;
 }
 
 // --- PrepareResult ---
@@ -256,6 +297,10 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
   const parsed = cashCapabilitiesJsonSchema.parse(json);
   return {
     ...parsed,
+    source: {
+      default: parsed.source.default,
+      ...(parsed.source.relay ? { relay: parsed.source.relay } : {}),
+    },
     platforms: parsed.platforms.map((p) => ({
       ...p,
       currencies: p.currencies as CurrencyType[],
@@ -266,5 +311,5 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
       recommendedMin: BigInt(parsed.amount.recommendedMin),
       max: null,
     },
-  };
+  } as unknown as CashCapabilities;
 }

@@ -7,12 +7,21 @@
  * (USDC ≈ USD). The binding rate resolves on-chain at fill time.
  */
 import type { Address, PublicClient } from 'viem';
+import type { Zkp2pClient } from '@zkp2p/sdk';
 import { CHAINLINK_ORACLE_FEEDS } from '@zkp2p/sdk';
 import type { CurrencyType } from '../sdk-types';
 import { USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
 import { errors } from './errors';
 import { MIN_CASHOUT_AMOUNT } from './capabilities';
+import { readFillEta, type CashFillEta } from './fillEta';
+import {
+  quoteRelayToBaseUsdc,
+  type CashAsset,
+  type RelayOptions,
+  type RelayQuote,
+  type RelaySourceInput,
+} from './relay';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
@@ -33,10 +42,20 @@ const CHAINLINK_LATEST_ROUND_ABI = [
 ] as const;
 
 export interface EstimateInput {
-  /** Amount to cash out, USDC base units (6 decimals). Use `usdc()` to build it. */
+  /** Amount to cash out. Defaults to Base USDC base units; when `source` is set it is source-token base units. */
   amount: bigint;
   /** Target fiat currency. */
   currency: CurrencyType;
+  /** Optional payout platform for platform-specific fill ETA sampling. */
+  platform?: string;
+  /** Optional Relay EVM source asset. Omit for the current Base USDC default path. */
+  source?: RelaySourceInput & {
+    /** Source wallet that will submit Relay's origin transaction. Required by Relay quote. */
+    user: string;
+    /** Base recipient for bridged USDC; defaults to `user`. */
+    recipient?: string;
+    tradeType?: 'EXACT_INPUT' | 'EXACT_OUTPUT' | 'EXPECTED_OUTPUT';
+  };
 }
 
 /**
@@ -51,7 +70,7 @@ export interface CashEstimate {
   /** Always `'oracle-estimate'` - there is no committed quote in Peer Cash. */
   kind: 'oracle-estimate';
   currency: CurrencyType;
-  /** The input amount, USDC base units. */
+  /** Base USDC amount that Peer Cash would deposit after any source routing. */
   amount: bigint;
   /** Target-currency units per 1 USDC at the time of the read. */
   rate: number;
@@ -63,18 +82,48 @@ export interface CashEstimate {
   oracleUpdatedAt?: number;
   /** True when the feed reading is older than a day - treat the rate with caution. */
   stale?: boolean;
+  /** Optional source asset route. Absent means same-chain Base USDC. */
+  source?: {
+    kind: 'relay';
+    asset: CashAsset;
+    inputAmount: bigint;
+    relayQuote: RelayQuote;
+  };
+  /** Simple recent-fill ETA from indexer history. */
+  eta?: CashFillEta;
 }
 
 export async function readEstimate(
   publicClient: PublicClient,
   input: EstimateInput,
+  context: {
+    indexerClient?: Zkp2pClient;
+    environment?: Parameters<typeof readFillEta>[1]['environment'];
+    relay?: RelayOptions;
+  } = {},
 ): Promise<CashEstimate> {
-  const { amount, currency } = input;
-  if (amount < MIN_CASHOUT_AMOUNT) {
-    throw errors.amountBelowMinimum(amount, MIN_CASHOUT_AMOUNT);
-  }
+  const { currency } = input;
   if (!isMarketRateSupported(currency)) {
     throw errors.oracleUnsupportedCurrency(currency);
+  }
+
+  const relayQuote =
+    input.source !== undefined
+      ? await quoteRelayToBaseUsdc(
+          {
+            user: input.source.user,
+            amount: input.amount,
+            source: { chainId: input.source.chainId, currency: input.source.currency },
+            ...(input.source.recipient ? { recipient: input.source.recipient } : {}),
+            ...(input.source.tradeType ? { tradeType: input.source.tradeType } : {}),
+          },
+          context.relay,
+        )
+      : undefined;
+
+  const amount = relayQuote?.outputAmount ?? input.amount;
+  if (amount < MIN_CASHOUT_AMOUNT) {
+    throw errors.amountBelowMinimum(amount, MIN_CASHOUT_AMOUNT);
   }
 
   const feedConfig = CHAINLINK_ORACLE_FEEDS[currency];
@@ -107,7 +156,7 @@ export async function readEstimate(
   const stale =
     oracleUpdatedAt !== undefined && asOf - oracleUpdatedAt > DEFAULT_MAX_STALENESS_SECONDS;
 
-  return {
+  const estimate: CashEstimate = {
     kind: 'oracle-estimate',
     currency,
     amount,
@@ -116,5 +165,29 @@ export async function readEstimate(
     asOf,
     ...(oracleUpdatedAt !== undefined ? { oracleUpdatedAt } : {}),
     ...(stale ? { stale: true } : {}),
+    ...(relayQuote
+      ? {
+          source: {
+            kind: 'relay',
+            asset: relayQuote.source,
+            inputAmount: relayQuote.inputAmount,
+            relayQuote,
+          },
+        }
+      : {}),
   };
+
+  if (context.indexerClient && context.environment) {
+    try {
+      estimate.eta = await readFillEta(context.indexerClient, {
+        environment: context.environment,
+        currency,
+        ...(input.platform ? { platform: input.platform } : {}),
+      });
+    } catch {
+      // ETA is historical garnish; the oracle estimate remains usable without it.
+    }
+  }
+
+  return estimate;
 }

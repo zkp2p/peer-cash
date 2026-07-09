@@ -3,6 +3,7 @@ import type { PublicClient } from 'viem';
 import { CHAINLINK_ORACLE_FEEDS } from '@zkp2p/sdk';
 import { readEstimate } from '../src/client/estimate';
 import { isCashError } from '../src/client/errors';
+import type { RelayClient } from '@relayprotocol/relay-sdk';
 
 function mockPublicClient(answer: bigint, updatedAt = 0n): PublicClient {
   return {
@@ -85,5 +86,139 @@ describe('readEstimate', () => {
     await expect(
       readEstimate(pc, { amount: 1_000_000_000n, currency: 'EUR' }),
     ).rejects.toMatchObject({ code: 'ORACLE_UNSUPPORTED_CURRENCY' });
+  });
+
+  it('adds rolling first-fill and full-fill ETA from deposit creation timestamps', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const indexerClient = {
+      indexer: {
+        getDepositsWithRelations: vi.fn(async () => [
+          {
+            createdAt: String(now - 1_000),
+            remainingDeposits: '0',
+            outstandingIntentAmount: '0',
+            totalAmountTaken: '1000000',
+            totalWithdrawn: '0',
+            intents: [
+              { status: 'FULFILLED', amount: '500000', fulfillTimestamp: String(now - 900) },
+              { status: 'FULFILLED', amount: '500000', fulfillTimestamp: String(now - 600) },
+            ],
+          },
+          {
+            createdAt: String(now - 2_000),
+            remainingDeposits: '0',
+            outstandingIntentAmount: '0',
+            totalAmountTaken: '1000000',
+            totalWithdrawn: '0',
+            intents: [
+              { status: 'FULFILLED', amount: '250000', fulfillTimestamp: String(now - 1_800) },
+              { status: 'FULFILLED', amount: '750000', fulfillTimestamp: String(now - 1_400) },
+            ],
+          },
+        ]),
+      },
+    };
+
+    const est = await readEstimate(
+      mockPublicClient(0n),
+      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { indexerClient: indexerClient as never, environment: 'staging' },
+    );
+
+    expect(est.eta).toMatchObject({
+      seconds: 150,
+      label: 'Usually starts in about 3 min',
+    });
+  });
+
+  it('keeps the oracle estimate when ETA history is unavailable', async () => {
+    const indexerClient = {
+      indexer: {
+        getDepositsWithRelations: vi.fn(async () => {
+          throw new Error('indexer unavailable');
+        }),
+      },
+    };
+
+    const est = await readEstimate(
+      mockPublicClient(0n),
+      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { indexerClient: indexerClient as never, environment: 'staging' },
+    );
+
+    expect(est.rate).toBe(1);
+    expect(est.receiveAmount).toBe(1);
+    expect(est.eta).toBeUndefined();
+  });
+
+  it('quotes a Relay source through the Relay SDK before pricing Base USDC cashout', async () => {
+    const getQuote = vi.fn(async () => ({
+      details: {
+        currencyIn: {
+          amount: '1230000000000000000',
+          currency: {
+            chainId: 1,
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'ETH',
+            decimals: 18,
+          },
+        },
+        currencyOut: {
+          amount: '2000000',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [
+        {
+          action: 'bridge',
+          description: 'Bridge to Base',
+          kind: 'transaction',
+          id: 'deposit',
+          requestId: 'relay-request',
+          items: [
+            {
+              status: 'incomplete',
+              data: { to: '0x1111111111111111111111111111111111111111', data: '0x', value: '1' },
+            },
+          ],
+        },
+      ],
+    }));
+    const relayClient = { actions: { getQuote } } as unknown as RelayClient;
+
+    const est = await readEstimate(
+      mockPublicClient(0n),
+      {
+        amount: 1_230_000_000_000_000_000n,
+        currency: 'USD',
+        source: {
+          chainId: 1,
+          currency: '0x0000000000000000000000000000000000000000',
+          user: '0x2222222222222222222222222222222222222222',
+        },
+      },
+      { relay: { client: relayClient } },
+    );
+
+    expect(getQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chainId: 1,
+        toChainId: 8453,
+        toCurrency: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+        amount: '1230000000000000000',
+        tradeType: 'EXACT_INPUT',
+      }),
+      false,
+    );
+    expect(est.amount).toBe(2_000_000n);
+    expect(est.receiveAmount).toBe(2);
+    expect(est.source?.kind).toBe('relay');
+    expect(est.source?.relayQuote.requestId).toBe('relay-request');
+    expect(est.source?.relayQuote.txs[0]).toMatchObject({ chainId: 1, value: 1n });
   });
 });

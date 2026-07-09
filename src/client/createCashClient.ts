@@ -43,6 +43,20 @@ import {
 } from './capabilities';
 import { readEstimate, type CashEstimate, type EstimateInput } from './estimate';
 import { CashError, errors, isCashError, mapChainError } from './errors';
+import {
+  readRelaySourceCapabilities,
+  readRelayStatus,
+  quoteRelayToBaseUsdc,
+  executeRelayQuote,
+  type CashSourceCapabilities,
+  type RelayOptions,
+  type RelayExecutionResult,
+  type RelayQuote,
+  type RelayQuoteInput,
+  type RelaySourceInput,
+  type RelayStatus,
+} from './relay';
+import type { Execute, ProgressData } from '@relayprotocol/relay-sdk';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
 
@@ -82,6 +96,8 @@ export interface CashClientOptions {
   curatorUrl?: string;
   /** Optional ZKP2P API key. */
   apiKey?: string;
+  /** Relay API configuration for source assets outside Base USDC. */
+  relay?: RelayOptions;
   /**
    * Your own ERC-8021 attribution code(s), appended after
    * {@link CASH_ATTRIBUTION_CODE} on every transaction (e.g. `'acme-app'`).
@@ -100,8 +116,17 @@ export interface CashLeg {
 }
 
 export interface CashoutInput {
-  /** Amount to cash out, USDC base units. Use `usdc()` to build it. */
+  /**
+   * Amount to cash out. Defaults to Base USDC base units. When `source` is set,
+   * this is source-token base units and Relay routes it into Base USDC first.
+   */
   amount: bigint;
+  /** Optional Relay source asset. Omit for the Base USDC default path. */
+  source?: RelaySourceInput & {
+    /** Base recipient for bridged USDC; defaults to the signer address. */
+    recipient?: string;
+    tradeType?: 'EXACT_INPUT' | 'EXACT_OUTPUT' | 'EXPECTED_OUTPUT';
+  };
   /** Where the fiat should arrive. Multi-payout is a deliberate v1 cut. */
   receive: CashLeg;
   /** Per-order min/max override (USDC base units). */
@@ -111,6 +136,15 @@ export interface CashoutInput {
 export interface SignerOptions {
   /** A viem WalletClient with an account, on Base. */
   signer: WalletClient;
+}
+
+export interface CashoutOptions extends SignerOptions {
+  /** Source-chain signer for Relay. Required when `input.source.chainId` is not Base. */
+  sourceSigner?: WalletClient;
+  /** Relay execution progress callback when `input.source` is present. */
+  onSourceProgress?: (data: ProgressData) => void;
+  /** Forwarded to Relay SDK for wallets with broken EIP-5792 capability calls. */
+  disableSourceCapabilitiesCheck?: boolean;
 }
 
 export interface WithdrawOptions extends SignerOptions {
@@ -150,6 +184,8 @@ export interface CashoutResult {
   onchainDepositId: bigint;
   /** Optimistic snapshot (`awaiting-buyer`); poll `order(depositId)` for live state. */
   order: CashOrder;
+  /** Present when `cashout()` first routed a source asset through Relay. */
+  source?: { amount: bigint; requestId?: string; txHashes: string[] };
 }
 
 export interface PrepareResult {
@@ -188,10 +224,26 @@ export interface OrdersOptions {
 export interface CashClient {
   /** 0 - Discovery: sync, static. */
   capabilities(): CashCapabilities;
+  /** 0b - Discovery with live Relay-supported EVM source chains/tokens. */
+  capabilities(options: { includeRelaySources: true }): Promise<CashCapabilities>;
+  /** Relay-only source discovery helper. */
+  sourceCapabilities(): Promise<CashSourceCapabilities>;
+  /** Quote any Relay-supported EVM source asset into Base USDC. */
+  quoteSource(input: RelayQuoteInput): Promise<RelayQuote>;
+  /** Execute a Relay SDK quote into Base USDC before starting the Peer Cash order. */
+  executeSourceQuote(
+    quote: Execute,
+    opts: SignerOptions & {
+      onProgress?: (data: ProgressData) => void;
+      disableCapabilitiesCheck?: boolean;
+    },
+  ): Promise<RelayExecutionResult>;
+  /** Track Relay execution status by quote/request id. */
+  relayStatus(requestId: string): Promise<RelayStatus>;
   /** 1 - Estimate: currency + amount only. No payee, no side effects, no expiry. */
   estimate(input: EstimateInput): Promise<CashEstimate>;
   /** 2 - Cash out: payee registration + deposit params + submission happen here. */
-  cashout(input: CashoutInput, opts: SignerOptions): Promise<CashoutResult>;
+  cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult>;
   /** 2b - Unsigned path: `txs[]` for agent wallets, AA, server keys, policy layers. */
   prepare(input: CashoutInput): Promise<PrepareResult>;
   /** 3 - Observe: resumable from `depositId` alone; no session state anywhere. */
@@ -356,9 +408,8 @@ export function createCashClient(options: CashClientOptions): CashClient {
     return client;
   }
 
-  function validateInput(input: CashoutInput): CashDepositInput {
-    const { amount, receive } = input;
-    if (amount < MIN_CASHOUT_AMOUNT) throw errors.amountBelowMinimum(amount, MIN_CASHOUT_AMOUNT);
+  function validatePayout(input: CashoutInput): Omit<CashDepositInput, 'amount'> {
+    const { receive } = input;
     const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
     if (!catalog[receive.platform]) throw errors.unsupportedPlatform(receive.platform);
     if (!isMarketRateSupported(receive.currency)) {
@@ -373,7 +424,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
       throw errors.payeeVerificationRequired(receive.platform);
     }
     return {
-      amount,
       payouts: [
         {
           processorName: receive.platform,
@@ -383,6 +433,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
       ],
       ...(input.intentAmountRange ? { intentAmountRange: input.intentAmountRange } : {}),
     };
+  }
+
+  function validateInput(input: CashoutInput): CashDepositInput {
+    if (input.amount < MIN_CASHOUT_AMOUNT) {
+      throw errors.amountBelowMinimum(input.amount, MIN_CASHOUT_AMOUNT);
+    }
+    return { amount: input.amount, ...validatePayout(input) };
   }
 
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
@@ -503,6 +560,21 @@ export function createCashClient(options: CashClientOptions): CashClient {
     return escrowContext(depositId);
   }
 
+  function capabilities(): CashCapabilities;
+  function capabilities(capabilityOptions: {
+    includeRelaySources: true;
+  }): Promise<CashCapabilities>;
+  function capabilities(capabilityOptions?: {
+    includeRelaySources?: true;
+  }): CashCapabilities | Promise<CashCapabilities> {
+    const baseCapabilities = buildCapabilities(environment);
+    if (!capabilityOptions?.includeRelaySources) return baseCapabilities;
+    return readRelaySourceCapabilities(options.relay).then((relay) => ({
+      ...baseCapabilities,
+      source: { ...baseCapabilities.source, relay },
+    }));
+  }
+
   /**
    * Ensure the escrow can pull the deposit amount, and make the allowance
    * durable before returning: `ensureAllowance` sends the approve without
@@ -549,24 +621,146 @@ export function createCashClient(options: CashClientOptions): CashClient {
   }
 
   return {
-    capabilities(): CashCapabilities {
-      return buildCapabilities(environment);
+    capabilities,
+
+    async sourceCapabilities(): Promise<CashSourceCapabilities> {
+      return readRelaySourceCapabilities(options.relay);
+    },
+
+    async quoteSource(input: RelayQuoteInput): Promise<RelayQuote> {
+      return quoteRelayToBaseUsdc(input, options.relay);
+    },
+
+    async executeSourceQuote(
+      quote: Execute,
+      opts: SignerOptions & {
+        onProgress?: (data: ProgressData) => void;
+        disableCapabilitiesCheck?: boolean;
+      },
+    ): Promise<RelayExecutionResult> {
+      return executeRelayQuote(quote, opts.signer, {
+        ...(options.relay ? { relay: options.relay } : {}),
+        ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+        ...(opts.disableCapabilitiesCheck !== undefined
+          ? { disableCapabilitiesCheck: opts.disableCapabilitiesCheck }
+          : {}),
+      });
+    },
+
+    async relayStatus(requestId: string): Promise<RelayStatus> {
+      return readRelayStatus(requestId, options.relay);
     },
 
     async estimate(input: EstimateInput): Promise<CashEstimate> {
-      return readEstimate(readClient.publicClient, input);
+      return readEstimate(readClient.publicClient, input, {
+        indexerClient: readClient,
+        environment,
+        ...(options.relay ? { relay: options.relay } : {}),
+      });
     },
 
-    async cashout(input: CashoutInput, opts: SignerOptions): Promise<CashoutResult> {
-      const depositInput = validateInput(input);
+    async cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult> {
       const client = signingClient('cashout', opts);
+      const owner = opts.signer.account!.address;
+      const payoutInput = validatePayout(input);
 
+      let sourceResult: CashoutResult['source'];
+      let cashoutAmount = input.amount;
+      if (input.source) {
+        const sourceSigner =
+          opts.sourceSigner ?? (input.source.chainId === BASE_CHAIN_ID ? opts.signer : undefined);
+        if (!sourceSigner?.account) throw errors.signerRequired('source cashout');
+        if (
+          input.source.recipient !== undefined &&
+          input.source.recipient.toLowerCase() !== owner.toLowerCase()
+        ) {
+          throw errors.sourceRecipientMismatch(input.source.recipient, owner);
+        }
+        const relayQuote = await quoteRelayToBaseUsdc(
+          {
+            user: sourceSigner.account.address,
+            amount: input.amount,
+            source: { chainId: input.source.chainId, currency: input.source.currency },
+            recipient: owner,
+            ...(input.source.tradeType ? { tradeType: input.source.tradeType } : {}),
+          },
+          options.relay,
+        );
+        if (relayQuote.outputAmount < MIN_CASHOUT_AMOUNT) {
+          throw errors.amountBelowMinimum(relayQuote.outputAmount, MIN_CASHOUT_AMOUNT);
+        }
+        cashoutAmount = relayQuote.outputAmount;
+        const depositInput: CashDepositInput = { amount: cashoutAmount, ...payoutInput };
+        const params = await buildDepositParams(client, depositInput);
+
+        // Spender must be the escrow createDeposit will target - the default can
+        // point at the legacy escrow while deposits go to EscrowV2.
+        const escrow = client.escrowV2Address ?? client.escrowAddress;
+        await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
+
+        const executed = await executeRelayQuote(relayQuote.raw, sourceSigner, {
+          ...(options.relay ? { relay: options.relay } : {}),
+          ...(opts.onSourceProgress ? { onProgress: opts.onSourceProgress } : {}),
+          ...(opts.disableSourceCapabilitiesCheck !== undefined
+            ? { disableCapabilitiesCheck: opts.disableSourceCapabilitiesCheck }
+            : {}),
+        });
+        sourceResult = {
+          amount: cashoutAmount,
+          ...(executed.requestId ? { requestId: executed.requestId } : {}),
+          txHashes: executed.txHashes,
+        };
+
+        const attributedParams = { ...params, txOverrides: attribution };
+        // Submit the deposit; one retry for the replica-lag case the allowance
+        // visibility loop cannot fully rule out. All other failures map to typed
+        // errors and a reverted receipt throws - no raw errors, no false success.
+        const send = async (): Promise<`0x${string}`> => {
+          try {
+            return (await client.createDeposit(attributedParams)).hash;
+          } catch (err) {
+            if (err instanceof Error && /exceeds allowance/i.test(err.message)) {
+              await sleep(2_000);
+              return (await client.createDeposit(attributedParams)).hash;
+            }
+            throw err;
+          }
+        };
+
+        let hash: Hash;
+        try {
+          hash = (await send()) as Hash;
+        } catch (err) {
+          throw mapChainError('createDeposit', err);
+        }
+        const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+        if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
+
+        const abi = client.escrowV2Abi ?? client.escrowAbi;
+        const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
+        if (!resolved) throw errors.depositResolutionFailed(hash);
+
+        const order = deriveCashOrder(resolved.compositeId, [], {
+          remainingAmount: depositInput.amount,
+          status: 'ACTIVE',
+        });
+
+        return {
+          depositId: resolved.compositeId,
+          txHash: hash,
+          escrowAddress: resolved.escrowAddress,
+          onchainDepositId: resolved.onchainDepositId,
+          order,
+          source: sourceResult,
+        };
+      }
+
+      const depositInput = validateInput(input);
       const params = await buildDepositParams(client, depositInput);
 
       // Spender must be the escrow createDeposit will target - the default can
       // point at the legacy escrow while deposits go to EscrowV2.
       const escrow = client.escrowV2Address ?? client.escrowAddress;
-      const owner = opts.signer.account!.address;
       await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
 
       const attributedParams = { ...params, txOverrides: attribution };
@@ -609,10 +803,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
         escrowAddress: resolved.escrowAddress,
         onchainDepositId: resolved.onchainDepositId,
         order,
+        ...(sourceResult ? { source: sourceResult } : {}),
       };
     },
 
     async prepare(input: CashoutInput): Promise<PrepareResult> {
+      if (input.source) throw errors.sourceRouteUnsupportedInPrepare();
       const depositInput = validateInput(input);
       const params = await buildDepositParams(readClient, depositInput);
 

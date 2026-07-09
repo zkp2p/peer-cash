@@ -1,22 +1,29 @@
 # @zkp2p/cash - contributor guide
 
-Peer Cash is an offramp-only SDK: eight verbs to cash out Base USDC to fiat at
-the live Chainlink oracle market rate (0% spread, always). It is a thin facade
-over the published `@zkp2p/sdk`. Minimal is judged at the API surface, not
-the dependency tree.
+Peer Cash is an offramp-only SDK: route any Relay-supported source asset into
+Base USDC, then cash out Base USDC to fiat at the live Chainlink oracle market
+rate (0% spread, always). It is a thin facade over the published `@zkp2p/sdk`
+plus `@relayprotocol/relay-sdk`. Minimal is judged at the API surface, not the
+dependency tree.
 
 ## Ground rules
 
 - **Offramp only.** `cashout` is the only mutating product verb. No onramp
   vocabulary anywhere in code, types, or docs.
+- **Base USDC is the only destination.** The default path is same-chain Base
+  USDC. Source assets come from Relay SDK metadata and quote execution; do not
+  add static chain/token allowlists.
 - **No rate control.** `spreadBps: 0` is a constant, not a parameter. The API
   must remain physically unable to express rate/spread configuration,
   buyer-side operations, disputes, SAR, vaults/DRM, or corridor gating.
 - **`estimate`, never `quote`.** There is no committed rate; the binding rate
   resolves at the Chainlink oracle when a buyer fills. Anything that implies a
   locked price is a bug.
-- **Everything serializable.** Every wire type has a zod schema and JSON codec
-  in `src/codecs/`. New public types must ship with both.
+- **ETA is indexer-derived.** `estimate().eta` is `{ seconds, label }` backed
+  by rolling 7-day data from deposit creation to first fill. Do not use
+  signal-to-fulfillment latency as the ETA.
+- **Serializable wire types.** Every public wire type has a zod schema and
+  JSON codec in `src/codecs/`. New public types must ship with both.
 - **One unwind verb.** `withdraw(depositId)` is state-aware (prunes expired
   intents first when needed). Never split it back into cancel/recover.
 - **The chain is the database.** No storage layer. Orders derive from the
@@ -28,7 +35,7 @@ the dependency tree.
   construction, receipt parsing). No I/O. Ported from the reviewed reference
   implementation; keep it dependency-light and fully unit-tested.
 - `src/client/` — `createCashClient` facade over a read-only `Zkp2pClient`,
-  the verbs, typed errors.
+  Relay SDK source routing, the verbs, typed errors.
 - `src/codecs/` — zod schemas + JSON (de)serialization for every wire type.
 - `src/tools/` — JSON-schema tool manifest of the verbs for agent runtimes.
 - `src/react/` — optional hooks (`useEstimate`, `useCashout`, `useOrder`,

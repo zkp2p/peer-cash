@@ -1,10 +1,11 @@
 # @zkp2p/cash - agent integration manual
 
-You are integrating Peer Cash: an offramp that converts Base USDC to fiat
-(Venmo, Revolut, Wise, Zelle, ...) at the live Chainlink market rate. The user
-whose USDC you manage is the **maker**; a buyer pays them fiat and proves it
-with TEE-TLS; the protocol releases the USDC. Funds are held by the protocol,
-and only the maker can withdraw an unmatched deposit.
+You are integrating Peer Cash: an offramp that routes any Relay-supported EVM
+source asset into Base USDC, then converts Base USDC to fiat (Venmo, Revolut,
+Wise, Zelle, ...) at the live Chainlink market rate. The user whose USDC you
+manage is the **maker**; a buyer pays them fiat and proves it with TEE-TLS; the
+protocol releases the USDC. Funds are held by the protocol, and only the maker
+can withdraw an unmatched deposit.
 
 ## Decision tree: pick your entry point
 
@@ -17,8 +18,9 @@ and only the maker can withdraw an unmatched deposit.
    (`{ to, data, value, chainId }`) plus same-index `steps[]` labels; inspect
    the plan, submit the transactions in order, and wait for each receipt.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
-   `@zkp2p/cash/tools` and map the tool names to the verbs above. Mutating
-   tools return unsigned transactions; keep signing host-side.
+   `@zkp2p/cash/tools` and map the tool names to the verbs above. Base-USDC
+   mutating tools return unsigned transactions; source routing should use
+   `cash_source_quote` / `cash_source_status`, then a Base-USDC cashout.
 
 Every transaction (including approves) carries ERC-8021 attribution:
 `peer-cash`, then any `referrer` codes from `createCashClient` options, then
@@ -41,10 +43,12 @@ import { createCashClient, usdc, isCashError } from '@zkp2p/cash';
 
 const cash = createCashClient({ environment: 'production' });
 
-// 1. Discover - static and side-effect free, do this once.
+// 1. Discover - Base USDC default path is sync.
 const caps = cash.capabilities();
+// Optional: live Relay EVM source chains/tokens.
+const relayCaps = await cash.capabilities({ includeRelaySources: true });
 
-// 2. Estimate - idempotent, cacheable, no side effects.
+// 2. Estimate - idempotent, cacheable, no side effects. Includes rolling ETA.
 const est = await cash.estimate({ amount: usdc(500), currency: 'EUR' });
 
 // 3. Execute.
@@ -72,8 +76,12 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
 - **Never promise a rate.** `estimate()` is `kind: 'oracle-estimate'`; the
   binding rate resolves at the oracle when a buyer fills. Do not display or
   log it as a locked price.
-- **Never invent an ETA.** Use `order.explain()` - one honest sentence from
-  live data. Buyer arrival time is not knowable.
+- **Do not invent an ETA.** Use `estimate().eta`: `{ seconds, label }` backed
+  by rolling 7-day indexer data from deposit creation to first fill. Use
+  `order.explain()` for live order state.
+- **Do not hardcode Relay source assets.** Use Relay SDK-backed EVM
+  `capabilities({ includeRelaySources: true })` and `cashout({ source, ... })`.
+  Destination is always Base USDC. Non-Base source chains require `sourceSigner`.
 - **`ORDER_NOT_FOUND` seconds after `cashout()` is indexer lag**, not a lost
   deposit. The tx receipt you hold is the truth. Retry; `watch()` absorbs
   this automatically.
@@ -93,25 +101,26 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
 
 Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 
-| Code                              | Retryable | Agent action                                                                                    |
-| --------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
-| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Re-pick currency from `capabilities()`                                                          |
-| `UNSUPPORTED_PLATFORM`            | no        | Re-pick platform from `capabilities()`                                                          |
-| `AMOUNT_BELOW_MINIMUM`            | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)                                           |
-| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation - register the payee via the Peer app first      |
-| `PAYEE_REGISTRATION_FAILED`       | yes       | Validate handle against `payeeHint`, retry with backoff (curator caps at 20 registrations/min)  |
-| `ALLOWANCE_NOT_VISIBLE`           | yes       | Approve mined but a stale RPC replica hid it; retry the same call in a few seconds              |
-| `TRANSACTION_FAILED`              | no        | The on-chain call reverted or was mapped from a raw error; surface to operator; funds unchanged |
-| `DEPOSIT_RESOLUTION_FAILED`       | no        | Extract depositId from the `DepositReceived` log in the receipt                                 |
-| `ORDER_NOT_FOUND`                 | yes       | Retry (indexer lag) unless the id is provably wrong                                             |
-| `INDEXER_LAG`                     | yes       | Retry after a few seconds                                                                       |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | Wait; retry full `withdraw()` after intent expiry (or withdraw the unlocked part with `amount`) |
-| `INSUFFICIENT_AVAILABLE_FUNDS`    | yes       | Partial amount exceeds the unlocked balance; lower it or close fully later                      |
-| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal; reconcile your records                                                       |
-| `ORDER_NOT_ACTIVE`                | no        | Top-up target is closed; start a new `cashout()` instead                                        |
-| `SIGNER_REQUIRED`                 | no        | Provide `{ signer }` or switch to the prepare path                                              |
-| `WATCH_TIMEOUT`                   | yes       | Resume `watch(depositId)` whenever convenient                                                   |
-| `ESCROW_PAUSED`                   | yes       | Back off; existing funds remain withdrawable                                                    |
+| Code                                  | Retryable | Agent action                                                                                                            |
+| ------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `ORACLE_UNSUPPORTED_CURRENCY`         | no        | Re-pick currency from `capabilities()`                                                                                  |
+| `UNSUPPORTED_PLATFORM`                | no        | Re-pick platform from `capabilities()`                                                                                  |
+| `AMOUNT_BELOW_MINIMUM`                | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)                                                                   |
+| `PAYEE_VERIFICATION_REQUIRED`         | no        | Wise/PayPal need a signed identity attestation - register the payee via the Peer app first                              |
+| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE` | no        | Use signer-backed `cashout({ source })` with a source signer, or bridge with Relay first and then `prepare()` Base USDC |
+| `PAYEE_REGISTRATION_FAILED`           | yes       | Validate handle against `payeeHint`, retry with backoff (curator caps at 20 registrations/min)                          |
+| `ALLOWANCE_NOT_VISIBLE`               | yes       | Approve mined but a stale RPC replica hid it; retry the same call in a few seconds                                      |
+| `TRANSACTION_FAILED`                  | no        | The on-chain call reverted or was mapped from a raw error; surface to operator; funds unchanged                         |
+| `DEPOSIT_RESOLUTION_FAILED`           | no        | Extract depositId from the `DepositReceived` log in the receipt                                                         |
+| `ORDER_NOT_FOUND`                     | yes       | Retry (indexer lag) unless the id is provably wrong                                                                     |
+| `INDEXER_LAG`                         | yes       | Retry after a few seconds                                                                                               |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`     | yes       | Wait; retry full `withdraw()` after intent expiry (or withdraw the unlocked part with `amount`)                         |
+| `INSUFFICIENT_AVAILABLE_FUNDS`        | yes       | Partial amount exceeds the unlocked balance; lower it or close fully later                                              |
+| `NOTHING_TO_WITHDRAW`                 | no        | Order is terminal; reconcile your records                                                                               |
+| `ORDER_NOT_ACTIVE`                    | no        | Top-up target is closed; start a new `cashout()` instead                                                                |
+| `SIGNER_REQUIRED`                     | no        | Provide `{ signer }` or switch to the prepare path                                                                      |
+| `WATCH_TIMEOUT`                       | yes       | Resume `watch(depositId)` whenever convenient                                                                           |
+| `ESCROW_PAUSED`                       | yes       | Back off; existing funds remain withdrawable                                                                            |
 
 `isCashError(err)` narrows unknown errors; `err.toJSON()` is safe for logs
 and tool results.

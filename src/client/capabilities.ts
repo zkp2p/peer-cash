@@ -6,6 +6,7 @@ import { getPaymentMethodsCatalog, getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
+import type { CashSourceCapabilities } from './relay';
 
 /** Hard floor: below one cent a deposit is dust and can never fill. */
 export const MIN_CASHOUT_AMOUNT = 10_000n; // $0.01
@@ -63,6 +64,16 @@ export interface CashCapabilities {
   chainId: number;
   token: { address: string; symbol: 'USDC'; decimals: number };
   environment: RuntimeEnv;
+  /** Destination asset for every Peer Cash order. */
+  destination: { chainId: number; token: { address: string; symbol: 'USDC'; decimals: number } };
+  /**
+   * Source discovery. The sync default is Base USDC only; pass
+   * `{ includeRelaySources: true }` to `capabilities()` for live Relay EVM sources.
+   */
+  source: {
+    default: { chainId: number; token: { address: string; symbol: 'USDC'; decimals: number } };
+    relay?: CashSourceCapabilities;
+  };
   /** Every payout corridor: platform × oracle-priced currencies. */
   platforms: CashPlatformCapability[];
   /** All oracle-priced (market-rate) currencies across platforms. */
@@ -96,10 +107,14 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
 
   const currencies = [...new Set(platforms.flatMap((p) => p.currencies))].sort();
 
+  const baseUsdc = { address: BASE_USDC_ADDRESS, symbol: 'USDC' as const, decimals: USDC_DECIMALS };
+
   return {
     chainId: BASE_CHAIN_ID,
-    token: { address: BASE_USDC_ADDRESS, symbol: 'USDC', decimals: USDC_DECIMALS },
+    token: baseUsdc,
     environment,
+    destination: { chainId: BASE_CHAIN_ID, token: baseUsdc },
+    source: { default: { chainId: BASE_CHAIN_ID, token: baseUsdc } },
     platforms,
     currencies,
     amount: { min: MIN_CASHOUT_AMOUNT, recommendedMin: RECOMMENDED_MIN_CASHOUT_AMOUNT, max: null },

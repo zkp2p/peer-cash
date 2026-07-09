@@ -1,12 +1,12 @@
 # Lifecycle and recovery
 
-The one deep guide: what states exist, how partial fills work, why there is no
-ETA, how unwinding works, and why every order survives a crash.
+The one deep guide: what states exist, how source routing works, how partial
+fills and ETA work, how unwinding works, and why every order survives a crash.
 
 ## The model: you are the maker
 
 A Peer Cash order is a **deposit** in the ZKP2P protocol. When you
-`cashout()`, your USDC becomes protocol-held funds priced at the live Chainlink
+`cashout()`, Base USDC becomes protocol-held funds priced at the live Chainlink
 oracle rate with zero spread. A buyer (a standard protocol taker) _signals an
 intent_ against your deposit, pays you fiat offchain (Venmo, Revolut, Wise,
 ...), and proves the payment via TEE-TLS. The protocol then releases your USDC
@@ -16,6 +16,29 @@ special-cased.
 
 Because your deposit is priced at market with no spread, it is the best price
 a rational maker can offer. That is the fill incentive.
+
+## Source routing
+
+The cashout destination is always canonical Base USDC. The minimal/default path
+is still same-chain Base USDC: pass USDC base units to `estimate()` and
+`cashout()`.
+
+For any other EVM source asset, Peer Cash uses `@relayprotocol/relay-sdk`:
+
+1. `capabilities({ includeRelaySources: true })` or `sourceCapabilities()`
+   fetches live Relay-supported EVM chains and tokens.
+2. `quoteSource()` calls Relay SDK `actions.getQuote` for source to Base USDC.
+3. `cashout({ amount, source, receive }, { signer, sourceSigner })` settles
+   Base allowance, calls Relay SDK `actions.execute`, then creates the Peer Cash
+   order with the delivered Base USDC amount. Non-Base source chains require
+   `sourceSigner`.
+   `executeSourceQuote()` remains available for apps that want a separate
+   bridge step.
+
+There is no static chain/token allowlist in Peer Cash. Relay decides source
+support through its metadata and quote execution, filtered to the viem/EVM
+execution surface this SDK can sign. Peer Cash hardcodes only the Base USDC
+destination constant.
 
 ## States
 
@@ -42,20 +65,24 @@ Three buyers can take 400 + 350 + 250. The order shows each as a `fill` and
 passes through `delivering` until the last one completes. `filledAmount`,
 `pendingAmount`, and `totalAmount` always add up against the chain.
 
-## The honest-ETA principle
+## The ETA principle
 
-`order.explain()` returns one sentence built from live data. It will never
-show a countdown, a progress percentage, or an "estimated arrival" - because
-none of those are knowable:
+`estimate().eta` is historical, not a promise. It uses rolling 7-day indexer
+data from deposit/order creation to the first fulfilled fill. It deliberately
+does **not** measure buyer signal to fulfillment; that would miss the
+buyer-arrival wait that users actually care about. The public shape is small:
+`{ seconds, label }`.
 
 - **Buyer arrival time is market-driven.** A deposit at market rate should
-  fill fast, but "should" is not a number we can print.
+  fill fast, but the ETA is only a recent historical sample.
 - **The binding rate resolves at fill time.** `estimate()` reads the same
   Chainlink feed the escrow will read, but between estimate and fill the
   market moves. `kind: 'oracle-estimate'` is the API telling you this.
+- **The label is display-ready.** Use `eta.label` in simple UIs; use
+  `eta.seconds` only if you need your own formatting.
 
-Anything that looks like a committed quote or a delivery timer in a UI built
-on this SDK is a bug in that UI.
+Anything that looks like a committed quote or guaranteed delivery timer in a
+UI built on this SDK is a bug in that UI.
 
 ## Managing a live order
 
@@ -164,22 +191,23 @@ whole life. Two things to know for long-lived orders:
 
 ## Failure table
 
-| Code                              | Retryable | What happened / what to do                                                                                        |
-| --------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------- |
-| `ORACLE_UNSUPPORTED_CURRENCY`     | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                       |
-| `UNSUPPORTED_PLATFORM`            | no        | Platform not in this environment's catalog. Pick from `capabilities()`.                                           |
-| `AMOUNT_BELOW_MINIMUM`            | no        | Below the $0.01 hard floor. Recommended minimum is 1 USDC.                                                        |
-| `PAYEE_VERIFICATION_REQUIRED`     | no        | Wise/PayPal need a signed identity attestation; register the payee via the Peer app first.                        |
-| `PAYEE_REGISTRATION_FAILED`       | yes       | Curator rejected or was unreachable. Check the handle hint, retry (curator caps at 20 registrations/min per IP).  |
-| `ALLOWANCE_NOT_VISIBLE`           | yes       | Approve mined but a stale RPC replica hid it. Retry the same call in a few seconds.                               |
-| `TRANSACTION_FAILED`              | no        | An on-chain call reverted (or a raw error was wrapped). Funds unchanged if it reverted pre-acceptance.            |
-| `DEPOSIT_RESOLUTION_FAILED`       | no        | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually.                        |
-| `ORDER_NOT_FOUND`                 | yes       | Unknown id or indexer lag. Verify the id; retry within seconds of creation.                                       |
-| `INDEXER_LAG`                     | yes       | Indexer behind the chain. Retry shortly.                                                                          |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` | yes       | A buyer may still deliver. Wait for fill or expiry, withdraw again - or withdraw the unlocked part with `amount`. |
-| `INSUFFICIENT_AVAILABLE_FUNDS`    | yes       | Partial amount exceeds the unlocked balance. Lower it.                                                            |
-| `NOTHING_TO_WITHDRAW`             | no        | Order is terminal. Check `order(depositId).state`.                                                                |
-| `ORDER_NOT_ACTIVE`                | no        | Cannot top up a closed order. Start a new `cashout()`.                                                            |
-| `SIGNER_REQUIRED`                 | no        | Pass `{ signer }` or use the `prepare*` path.                                                                     |
-| `WATCH_TIMEOUT`                   | yes       | Order still live; resume `watch()`/`order()` any time.                                                            |
-| `ESCROW_PAUSED`                   | yes       | Protocol paused deposits. Existing funds stay withdrawable.                                                       |
+| Code                                  | Retryable | What happened / what to do                                                                                                            |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `ORACLE_UNSUPPORTED_CURRENCY`         | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                                           |
+| `UNSUPPORTED_PLATFORM`                | no        | Platform not in this environment's catalog. Pick from `capabilities()`.                                                               |
+| `AMOUNT_BELOW_MINIMUM`                | no        | Below the $0.01 hard floor. Recommended minimum is 1 USDC.                                                                            |
+| `PAYEE_VERIFICATION_REQUIRED`         | no        | Wise/PayPal need a signed identity attestation; register the payee via the Peer app first.                                            |
+| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE` | no        | Source routing needs Relay execution. Use signer-backed `cashout({ source })` with a source signer, or bridge first then `prepare()`. |
+| `PAYEE_REGISTRATION_FAILED`           | yes       | Curator rejected or was unreachable. Check the handle hint, retry (curator caps at 20 registrations/min per IP).                      |
+| `ALLOWANCE_NOT_VISIBLE`               | yes       | Approve mined but a stale RPC replica hid it. Retry the same call in a few seconds.                                                   |
+| `TRANSACTION_FAILED`                  | no        | An on-chain call reverted (or a raw error was wrapped). Funds unchanged if it reverted pre-acceptance.                                |
+| `DEPOSIT_RESOLUTION_FAILED`           | no        | Tx succeeded but no `DepositReceived` found. Recover the id from the receipt log manually.                                            |
+| `ORDER_NOT_FOUND`                     | yes       | Unknown id or indexer lag. Verify the id; retry within seconds of creation.                                                           |
+| `INDEXER_LAG`                         | yes       | Indexer behind the chain. Retry shortly.                                                                                              |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`     | yes       | A buyer may still deliver. Wait for fill or expiry, withdraw again - or withdraw the unlocked part with `amount`.                     |
+| `INSUFFICIENT_AVAILABLE_FUNDS`        | yes       | Partial amount exceeds the unlocked balance. Lower it.                                                                                |
+| `NOTHING_TO_WITHDRAW`                 | no        | Order is terminal. Check `order(depositId).state`.                                                                                    |
+| `ORDER_NOT_ACTIVE`                    | no        | Cannot top up a closed order. Start a new `cashout()`.                                                                                |
+| `SIGNER_REQUIRED`                     | no        | Pass `{ signer }` or use the `prepare*` path.                                                                                         |
+| `WATCH_TIMEOUT`                       | yes       | Order still live; resume `watch()`/`order()` any time.                                                                                |
+| `ESCROW_PAUSED`                       | yes       | Protocol paused deposits. Existing funds stay withdrawable.                                                                           |
