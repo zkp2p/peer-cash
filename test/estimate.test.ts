@@ -1,9 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PublicClient } from 'viem';
-import { CHAINLINK_ORACLE_FEEDS } from '@zkp2p/sdk';
+import { CHAINLINK_ORACLE_FEEDS, currencyInfo, getPaymentMethodsCatalog } from '@zkp2p/sdk';
 import { readEstimate } from '../src/client/estimate';
 import { isCashError } from '../src/client/errors';
 import type { RelayClient } from '@relayprotocol/relay-sdk';
+
+const catalog = getPaymentMethodsCatalog(8453, 'staging');
+const venmoHash = catalog['venmo']!.paymentMethodHash;
+const USD_HASH = currencyInfo['USD']!.currencyCodeHash;
+
+function venmoUsdPricing(spreadBps: number) {
+  return {
+    paymentMethods: [{ paymentMethodHash: venmoHash, payeeDetailsHash: '0xpayee', active: true }],
+    currencies: [
+      {
+        paymentMethodHash: venmoHash,
+        currencyCode: USD_HASH,
+        spreadBps,
+        kind: 'oracle_chainlink',
+      },
+    ],
+  };
+}
 
 function mockPublicClient(answer: bigint, updatedAt = 0n): PublicClient {
   return {
@@ -88,12 +106,13 @@ describe('readEstimate', () => {
     ).rejects.toMatchObject({ code: 'ORACLE_UNSUPPORTED_CURRENCY' });
   });
 
-  it('adds rolling first-fill and full-fill ETA from deposit creation timestamps', async () => {
+  it('adds rolling first-fill ETA from zero-spread market-rate cash-out deposits', async () => {
     const now = Math.floor(Date.now() / 1000);
     const indexerClient = {
       indexer: {
         getDepositsWithRelations: vi.fn(async () => [
           {
+            ...venmoUsdPricing(0),
             createdAt: String(now - 1_000),
             remainingDeposits: '0',
             outstandingIntentAmount: '0',
@@ -105,6 +124,7 @@ describe('readEstimate', () => {
             ],
           },
           {
+            ...venmoUsdPricing(0),
             createdAt: String(now - 2_000),
             remainingDeposits: '0',
             outstandingIntentAmount: '0',
@@ -113,6 +133,17 @@ describe('readEstimate', () => {
             intents: [
               { status: 'FULFILLED', amount: '250000', fulfillTimestamp: String(now - 1_800) },
               { status: 'FULFILLED', amount: '750000', fulfillTimestamp: String(now - 1_400) },
+            ],
+          },
+          {
+            ...venmoUsdPricing(25),
+            createdAt: String(now - 3_000),
+            remainingDeposits: '0',
+            outstandingIntentAmount: '0',
+            totalAmountTaken: '1000000',
+            totalWithdrawn: '0',
+            intents: [
+              { status: 'FULFILLED', amount: '1000000', fulfillTimestamp: String(now - 2_990) },
             ],
           },
         ]),

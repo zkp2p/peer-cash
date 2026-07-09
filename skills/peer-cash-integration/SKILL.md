@@ -28,8 +28,9 @@ custodial off-ramp provider.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
 - **Honest ETA.** Use `estimate().eta`: `{ seconds, label }` backed by rolling
-  7-day indexer data from deposit creation to first fill. Do not use
-  signal-to-fulfillment latency and never render it as a guarantee.
+  7-day indexer data from zero-spread (`spreadBps: 0`) market-rate deposits in
+  the same payout corridor, measured from deposit creation to first fill. Do
+  not use signal-to-fulfillment latency and never render it as a guarantee.
 
 ## 2. Decision tree - entry point by runtime
 

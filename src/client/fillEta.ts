@@ -77,9 +77,10 @@ function matchesPayout(
     (deposit.currencies ?? []) as never,
     getPaymentMethodsCatalog(BASE_CHAIN_ID, environment),
   );
-  if (payouts.length === 0) return true;
   return payouts.some(
     (payout) =>
+      payout.pricing.marketRate &&
+      payout.pricing.spreadBps === 0 &&
       (platform === undefined || payout.platform === platform) &&
       (currency === undefined || payout.currency === currency),
   );
