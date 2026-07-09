@@ -1,8 +1,8 @@
 # @zkp2p/cash
 
-Cash out Base USDC to fiat on Venmo, Revolut, Wise, Zelle, and more at the
-live Chainlink market rate, with zero spread and no centralized off-ramp
-provider.
+Route any Relay-supported source asset into Base USDC, then cash out to fiat
+on Venmo, Revolut, Wise, Zelle, and more at the live Chainlink market rate,
+with zero spread and no centralized off-ramp provider.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. The cashing-out user is the maker: their USDC becomes a
@@ -18,7 +18,8 @@ import { createCashClient, usdc } from '@zkp2p/cash';
 const cash = createCashClient({ environment: 'production' });
 
 const est = await cash.estimate({ amount: usdc(1000), currency: 'USD' });
-// { rate: 1, receiveAmount: 1000, kind: 'oracle-estimate' } - "≈", never a locked quote
+// { rate: 1, receiveAmount: 1000, kind: 'oracle-estimate', eta: { seconds, label } }
+// "≈", never a locked quote. Base USDC remains the default source.
 
 const { depositId } = await cash.cashout(
   {
@@ -34,26 +35,53 @@ for await (const order of cash.watch(depositId)) {
 }
 ```
 
-## The eight verbs
+Source asset path:
 
-| Verb                                       | What it does                                                                                                                    |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `capabilities()`                           | Sync discovery: platforms × currencies × payee format hints × amount bounds                                                     |
-| `estimate({ amount, currency })`           | Live oracle rate - no payee, no side effects, idempotent                                                                        |
-| `cashout(input, { signer })`               | Registers your payee, creates the protocol-held order, returns the `depositId`                                                  |
-| `order(depositId)` / `orders(owner)`       | Resume any order from its id alone; list all orders for a wallet                                                                |
-| `watch(depositId)`                         | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
-| `withdraw(depositId, { signer, amount? })` | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
-| `topUp(depositId, amount, { signer })`     | Add USDC to a live order - same payee, same market rate                                                                         |
-| `buyer(address)`                           | A buyer's track record from their intent history - who just matched your order?                                                 |
+```ts
+const { depositId, source } = await cash.cashout(
+  {
+    amount: 100000n, // source-token base units
+    source: { chainId: 1, currency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' },
+    receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@you' } },
+  },
+  { signer },
+);
+// source.amount is the Base USDC amount Relay delivered before the cash-out order.
+```
 
-Every mutating verb has an unsigned counterpart (`prepare`, `prepareWithdraw`,
-`prepareTopUp`). The unsigned path returns raw `txs[]` plus a same-index
-`steps[]` plan such as `approve`, `createDeposit`, or `withdrawDeposit`, so
-wallets, AA systems, and agents can show what each transaction does before
-signing. Every transaction - including approves - carries ERC-8021
-attribution: `peer-cash` first, your own `referrer` code(s) after it, so
-onchain analytics can segment cash flow end to end.
+## The core verbs
+
+| Verb                                                           | What it does                                                                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
+| `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK source chains/tokens                                                                       |
+| `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK source routing into Base USDC before cashout                                                                          |
+| `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
+| `estimate({ amount, currency })`                               | Base USDC oracle estimate plus simple recent-fill ETA                                                                           |
+| `cashout(input, { signer })`                                   | Registers your payee, creates the protocol-held order, returns the `depositId`                                                  |
+| `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
+| `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
+| `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
+| `topUp(depositId, amount, { signer })`                         | Add USDC to a live order - same payee, same market rate                                                                         |
+| `buyer(address)`                                               | A buyer's track record from their intent history - who just matched your order?                                                 |
+
+Base-USDC cashout, withdraw, and top-up have unsigned counterparts (`prepare`,
+`prepareWithdraw`, `prepareTopUp`). The unsigned path returns raw `txs[]` plus
+a same-index `steps[]` plan such as `approve`, `createDeposit`, or
+`withdrawDeposit`, so wallets, AA systems, and agents can show what each
+transaction does before signing. Source-routed cashout runs Relay first, so it
+uses the signed `cashout({ source }, { signer })` path or an explicit
+`quoteSource()` / `executeSourceQuote()` pre-step. Every Peer Cash transaction
+including approves carries ERC-8021 attribution: `peer-cash` first, your own
+`referrer` code(s) after it.
+
+The default/minimal flow is unchanged: pass Base USDC base units to
+`estimate()` and `cashout()`. For any other source asset, pass `source` to
+`cashout()` and the SDK first executes the Relay route into Base USDC, then
+creates the Peer Cash order. The destination is always canonical Base USDC
+(`8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913`); source support is
+discovered and quoted by `@relayprotocol/relay-sdk`, not a static token
+allowlist.
 
 `capabilities()` tells you which platforms need a verified identity to
 register a payee (`requiresIdentityAttestation` - Wise and PayPal today); a
@@ -76,6 +104,8 @@ awaiting-buyer ──────────► matched ───────�
 - **There is no quote.** The binding rate resolves at the oracle when a buyer
   fills. `estimate()` says "approximately"; nothing in this API pretends to
   lock a price.
+- **ETA is historical.** `estimate().eta` is just `{ seconds, label }`, backed
+  by rolling 7-day indexer data from deposit creation to first fulfilled fill.
 - **Everything is resumable.** An order is reconstructed from the chain by
   `depositId` alone. Close the tab, switch devices, crash the process - then
   call `order(depositId)`.
@@ -116,8 +146,9 @@ React is an optional peer dependency - the root entry never imports it.
 ## Environments
 
 `production` | `preproduction` | `staging` - selects contracts, curator, and
-indexer. Indexer and curator URLs are overridable via `createCashClient`
-options. v1 is same-chain only: Base USDC in.
+indexer. Indexer, curator, and Relay options are overridable via
+`createCashClient` options. Base USDC on Base is the default source and the
+only destination asset for cashout orders.
 
 ## Install
 

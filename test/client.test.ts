@@ -20,6 +20,7 @@ const mockInstance = {
   },
   indexer: {
     getDeposits: vi.fn(),
+    getDepositsWithRelations: vi.fn(),
     getDepositsByIdsWithRelations: vi.fn(),
     getIntentsForDeposits: vi.fn(),
     getOwnerIntents: vi.fn(),
@@ -211,6 +212,96 @@ describe('cashout()', () => {
     expect(result.order.state).toBe('awaiting-buyer');
   });
 
+  it('can route a Relay source to Base USDC before creating the cash-out', async () => {
+    const relayQuote = {
+      details: {
+        currencyIn: {
+          amount: '1000000',
+          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        },
+        currencyOut: {
+          amount: '4900000',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [
+        {
+          action: 'bridge',
+          description: 'Bridge',
+          kind: 'transaction',
+          id: 'deposit',
+          requestId: 'relay-request',
+          items: [],
+        },
+      ],
+    };
+    const relayExecuted = {
+      steps: [
+        {
+          action: 'bridge',
+          description: 'Bridge',
+          kind: 'transaction',
+          id: 'deposit',
+          requestId: 'relay-request',
+          items: [{ status: 'complete', txHashes: [{ txHash: '0xrelay', chainId: 10 }] }],
+        },
+      ],
+    };
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => ({
+          data: relayExecuted,
+          abortController: new AbortController(),
+        })),
+      },
+    };
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    const result = await createCashClient({
+      environment: 'staging',
+      relay: { client: relayClient as never },
+    }).cashout(
+      {
+        amount: 1_000_000n,
+        source: { chainId: 10, currency: '0xsource' },
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+      },
+      { signer },
+    );
+
+    expect(relayClient.actions.getQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chainId: 10,
+        toChainId: 8453,
+        amount: '1000000',
+        user: '0xmaker',
+        recipient: '0xmaker',
+      }),
+      false,
+    );
+    expect(relayClient.actions.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ quote: relayQuote, wallet: signer }),
+    );
+    expect(mockInstance.ensureAllowance).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 4_900_000n }),
+    );
+    expect(result.source).toEqual({
+      amount: 4_900_000n,
+      requestId: 'relay-request',
+      txHashes: ['0xrelay'],
+    });
+  });
+
   it('requires a signer', async () => {
     await expect(
       client().cashout(
@@ -300,6 +391,17 @@ describe('prepare()', () => {
     // No signing surface touched.
     expect(mockInstance.createDeposit).not.toHaveBeenCalled();
     expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+  });
+
+  it('rejects Relay source routing because prepare cannot execute the bridge pre-step', async () => {
+    await expect(
+      client().prepare({
+        amount: 1_000_000n,
+        source: { chainId: 10, currency: '0xsource' },
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+      }),
+    ).rejects.toMatchObject({ code: 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE' });
+    expect(mockInstance.prepareCreateDeposit).not.toHaveBeenCalled();
   });
 });
 

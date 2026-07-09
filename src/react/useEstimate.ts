@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CurrencyType } from '../sdk-types';
 import type { CashClient } from '../client/createCashClient';
-import type { CashEstimate } from '../client/estimate';
+import type { CashEstimate, EstimateInput } from '../client/estimate';
 
 export interface UseEstimateOptions {
   client: CashClient | null;
   /** Amount to convert, USDC base units. Estimate is skipped while null/0. */
   amount: bigint | null | undefined;
   currency: CurrencyType | null | undefined;
+  /** Optional payout platform for platform-specific ETA sampling. */
+  platform?: string | null | undefined;
+  /** Optional Relay source. Omit for the Base USDC default path. */
+  source?: EstimateInput['source'] | null | undefined;
   /** Re-fetch interval (ms) so the displayed rate tracks the market. 0 = no auto-refresh. */
   refreshIntervalMs?: number;
 }
@@ -21,6 +25,8 @@ export function useEstimate({
   client,
   amount,
   currency,
+  platform,
+  source,
   refreshIntervalMs = 0,
 }: UseEstimateOptions) {
   const [estimate, setEstimate] = useState<CashEstimate | null>(null);
@@ -37,7 +43,12 @@ export function useEstimate({
     setIsLoading(true);
     setError(null);
     try {
-      const result = await client.estimate({ amount, currency });
+      const result = await client.estimate({
+        amount,
+        currency,
+        ...(platform ? { platform } : {}),
+        ...(source ? { source } : {}),
+      });
       if (mountedRef.current) setEstimate(result);
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -48,7 +59,7 @@ export function useEstimate({
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [client, currency, amount]);
+  }, [client, currency, amount, platform, source]);
 
   useEffect(() => {
     mountedRef.current = true;

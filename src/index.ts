@@ -17,6 +17,7 @@ export type {
   CashPreparedStep,
   CashPreparedStepKind,
   CashoutInput,
+  CashoutOptions,
   CashoutResult,
   PrepareResult,
   WithdrawResult,
@@ -35,6 +36,18 @@ export {
 } from './client/capabilities';
 export type { CashCapabilities, CashPlatformCapability } from './client/capabilities';
 export type { CashEstimate, EstimateInput } from './client/estimate';
+export type {
+  CashAsset,
+  CashChain,
+  CashSourceCapabilities,
+  RelayExecutionResult,
+  RelayOptions,
+  RelayQuote,
+  RelayQuoteInput,
+  RelaySourceInput,
+  RelayStatus,
+} from './client/relay';
+export type { CashFillEta } from './client/fillEta';
 
 // Typed errors
 export { CashError, isCashError, errors } from './client/errors';

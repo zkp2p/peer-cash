@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import type { WalletClient } from 'viem';
 import type {
   CashClient,
+  CashoutOptions,
   CashoutInput,
   CashoutResult,
   TopUpResult,
@@ -12,6 +13,9 @@ export interface UseCashoutOptions {
   client: CashClient | null;
   /** A viem WalletClient with an account, on Base. */
   signer: WalletClient | null | undefined;
+  /** Optional source-chain signer for Relay source routing. Defaults to signer. */
+  sourceSigner?: WalletClient | null | undefined;
+  onSourceProgress?: CashoutOptions['onSourceProgress'];
   onCashout?: (result: CashoutResult) => void;
   onError?: (error: Error) => void;
 }
@@ -24,7 +28,14 @@ export interface UseCashoutOptions {
  *   amount, full close without. The caller never chooses between
  *   cancel/recover - expired intents are pruned automatically.
  */
-export function useCashout({ client, signer, onCashout, onError }: UseCashoutOptions) {
+export function useCashout({
+  client,
+  signer,
+  sourceSigner,
+  onSourceProgress,
+  onCashout,
+  onError,
+}: UseCashoutOptions) {
   const [pending, setPending] = useState<null | 'cashout' | 'withdraw' | 'topUp'>(null);
   const [result, setResult] = useState<CashoutResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -41,7 +52,11 @@ export function useCashout({ client, signer, onCashout, onError }: UseCashoutOpt
       setError(null);
       setResult(null);
       try {
-        const cashoutResult = await client.cashout(input, { signer });
+        const cashoutResult = await client.cashout(input, {
+          signer,
+          ...(sourceSigner ? { sourceSigner } : {}),
+          ...(onSourceProgress ? { onSourceProgress } : {}),
+        });
         setResult(cashoutResult);
         onCashout?.(cashoutResult);
         return cashoutResult;
@@ -54,7 +69,7 @@ export function useCashout({ client, signer, onCashout, onError }: UseCashoutOpt
         setPending(null);
       }
     },
-    [client, signer, onCashout, onError],
+    [client, signer, sourceSigner, onSourceProgress, onCashout, onError],
   );
 
   const withdraw = useCallback(

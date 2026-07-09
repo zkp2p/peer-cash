@@ -15,6 +15,7 @@ export type CashErrorCode =
   | 'ORDER_NOT_FOUND'
   | 'PAYEE_REGISTRATION_FAILED'
   | 'PAYEE_VERIFICATION_REQUIRED'
+  | 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE'
   | 'DEPOSIT_RESOLUTION_FAILED'
   | 'ALLOWANCE_NOT_VISIBLE'
   | 'SIGNER_REQUIRED'
@@ -141,6 +142,13 @@ export const errors = {
       },
       { cause },
     ),
+  sourceRouteUnsupportedInPrepare: () =>
+    new CashError({
+      code: 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE',
+      message: `prepare() cannot execute a Relay source route before creating the Base USDC cash-out.`,
+      retryable: false,
+      remediation: `Use cashout(inputWithSource, { signer }) for the one-call bridge-then-cashout flow, or call quoteSource()/executeSourceQuote() first and then prepare() a Base USDC cash-out.`,
+    }),
   allowanceNotVisible: (amount: bigint) =>
     new CashError({
       code: 'ALLOWANCE_NOT_VISIBLE',

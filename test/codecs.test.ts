@@ -121,9 +121,11 @@ describe('prepared tx + result codecs', () => {
       escrowAddress: '0xescrow',
       onchainDepositId: 1n,
       order,
+      source: { amount: 1_000_000n, requestId: 'relay-request', txHashes: ['0xrelay'] },
     };
     const restored = cashoutResultFromJson(JSON.parse(JSON.stringify(cashoutResultToJson(result))));
     expect(restored.onchainDepositId).toBe(1n);
+    expect(restored.source?.amount).toBe(1_000_000n);
     expect(restored.order.state).toBe(order.state);
     expect(restored.order.explain()).toBe(order.explain());
   });

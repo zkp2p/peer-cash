@@ -17,26 +17,64 @@ import {
   preparedTxToJson,
 } from '@zkp2p/cash';
 import { cashToolManifest } from '@zkp2p/cash/tools';
+import type { PreparedTransaction, RelayQuote, RelayStatus } from '@zkp2p/cash';
 
 const cash = createCashClient({ environment: 'staging' });
+
+function txToJson(tx: PreparedTransaction) {
+  return { ...tx, value: tx.value.toString() };
+}
+
+function relayQuoteToJson(quote: RelayQuote) {
+  return {
+    ...quote,
+    inputAmount: quote.inputAmount.toString(),
+    outputAmount: quote.outputAmount.toString(),
+    txs: quote.txs.map(txToJson),
+    raw: quote.raw,
+  };
+}
+
+function relayStatusToJson(status: RelayStatus) {
+  return { ...status };
+}
 
 /** The host's tool executor: tool name + JSON args in, JSON result out. */
 async function executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   try {
     switch (name) {
       case 'cash_capabilities':
-        return capabilitiesToJson(cash.capabilities());
+        return capabilitiesToJson(
+          args.includeRelaySources
+            ? await cash.capabilities({ includeRelaySources: true })
+            : cash.capabilities(),
+        );
+      case 'cash_source_quote':
+        return relayQuoteToJson(
+          await cash.quoteSource({
+            user: args.user as string,
+            amount: BigInt(args.amount as string),
+            source: args.source as never,
+            ...(args.recipient ? { recipient: args.recipient as string } : {}),
+            ...(args.tradeType ? { tradeType: args.tradeType as never } : {}),
+          }),
+        );
       case 'cash_estimate':
         return estimateToJson(
           await cash.estimate({
             amount: BigInt(args.amount as string),
             currency: args.currency as never,
+            ...(args.platform ? { platform: args.platform as string } : {}),
+            ...(args.source ? { source: args.source as never } : {}),
           }),
         );
       case 'cash_cashout': {
-        // Prepare path: return unsigned txs; the host signs and submits.
+        // Prepare path: return unsigned txs for Base USDC. Source-routed
+        // cashout needs Relay execution first, so prepare() returns a typed
+        // SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE error for source inputs.
         const input = {
           amount: BigInt(args.amount as string),
+          ...(args.source ? { source: args.source as never } : {}),
           receive: args.receive as never,
         };
         return prepareResultToJson(await cash.prepare(input));
@@ -51,6 +89,8 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       }
       case 'cash_buyer':
         return buyerProfileToJson(await cash.buyer(args.address as string));
+      case 'cash_source_status':
+        return relayStatusToJson(await cash.relayStatus(args.requestId as string));
       case 'cash_withdraw': {
         const amount = args.amount !== undefined ? BigInt(args.amount as string) : undefined;
         const { txs, steps } = await cash.prepareWithdraw(args.depositId as string, {
