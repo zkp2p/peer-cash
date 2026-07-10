@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { cashToolManifest, cashTools } from '../src/tools';
+import {
+  cashToolManifest,
+  cashTools,
+  type BuiltInCashToolName,
+  type CashToolDefinition,
+  type CashToolName,
+} from '../src/tools';
+import packageJson from '../package.json';
 
 describe('tools manifest', () => {
+  it('keeps the extensible 0.1.x tool types while exposing built-in literals', () => {
+    const customName: CashToolName = 'merchant_custom_tool';
+    const builtInName: BuiltInCashToolName = 'cash_order';
+    const mutableRegistry: CashToolDefinition[] = cashTools;
+
+    // @ts-expect-error Unknown names are not part of the package's built-in set.
+    const invalidBuiltInName: BuiltInCashToolName = 'cash_unknown';
+
+    expect(customName).toBe('merchant_custom_tool');
+    expect(builtInName).toBe('cash_order');
+    expect(invalidBuiltInName).toBe('cash_unknown');
+    expect(mutableRegistry).toBe(cashTools);
+  });
+
   it('covers the verbs', () => {
     expect(cashTools.map((t) => t.name)).toEqual([
       'cash_capabilities',
@@ -30,6 +51,8 @@ describe('tools manifest', () => {
       const tool = cashTools.find((t) => t.name === name);
       expect(tool?.description).toMatch(/UNSIGNED/);
     }
+    const cashout = cashTools.find((tool) => tool.name === 'cash_cashout');
+    expect(cashout?.inputSchema.properties).not.toHaveProperty('source');
   });
 
   it('is JSON-serializable as-is', () => {
@@ -37,6 +60,6 @@ describe('tools manifest', () => {
     const parsed = JSON.parse(JSON.stringify(cashToolManifest));
     expect(parsed.tools).toHaveLength(10);
     expect(parsed.name).toBe('@zkp2p/cash');
-    expect(parsed.version).toBe('0.1.2');
+    expect(parsed.version).toBe(packageJson.version);
   });
 });
