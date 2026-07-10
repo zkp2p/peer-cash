@@ -652,19 +652,17 @@ describe('cashout()', () => {
         request: vi.fn().mockResolvedValueOnce('0x54').mockResolvedValue('0x55'),
       },
     } as unknown as WalletClient;
-    const batchSourceSigner = {
-      ...signer,
-      getCallsStatus: vi
-        .fn()
-        .mockRejectedValueOnce(new Error('wallet temporarily unavailable'))
-        .mockResolvedValueOnce({ status: 'pending', statusCode: 100 })
-        .mockResolvedValueOnce({ status: 'success', statusCode: 200 })
-        .mockResolvedValue({
-          status: 'success',
-          statusCode: 200,
-          receipts: [{ transactionHash: '0xbatchtx' }],
-        }),
-    } as unknown as WalletClient;
+    const getCallsStatus = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('wallet temporarily unavailable'))
+      .mockResolvedValueOnce({ status: 'pending', statusCode: 100 })
+      .mockResolvedValueOnce({ status: 'success', statusCode: 200 })
+      .mockResolvedValue({
+        status: 'success',
+        statusCode: 200,
+        receipts: [{ transactionHash: '0xbatchtx' }],
+      });
+    const batchSourceSigner = { ...signer, getCallsStatus } as unknown as WalletClient;
 
     const cash = createCashClient({
       environment: 'staging',
@@ -688,15 +686,15 @@ describe('cashout()', () => {
     });
 
     expect(mockInstance.publicClient.getTransaction).toHaveBeenCalledWith({ hash: '0xbatchtx' });
-    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledTimes(4);
-    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledWith({ id: '0xbundle-id' });
+    expect(getCallsStatus).toHaveBeenCalledTimes(4);
+    expect(getCallsStatus).toHaveBeenCalledWith({ id: '0xbundle-id' });
     expect(batchSigner.transport.request).toHaveBeenCalledTimes(2);
     expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
     expect(result.source?.transactions?.origin).toEqual([
       { hash: '0xbundle-id', chainId: 8453, isBatchTx: true },
     ]);
 
-    batchSourceSigner.getCallsStatus.mockReset().mockResolvedValue({
+    getCallsStatus.mockReset().mockResolvedValue({
       status: 'failure',
       statusCode: 500,
     });
@@ -715,7 +713,7 @@ describe('cashout()', () => {
         txHashes: ['0xbundle-id'],
       },
     });
-    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledOnce();
+    expect(getCallsStatus).toHaveBeenCalledOnce();
     expect(mockInstance.createDeposit).not.toHaveBeenCalled();
   });
 
