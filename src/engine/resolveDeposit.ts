@@ -6,7 +6,7 @@
  * receipt logs using the real escrow ABI so the order can be keyed on the
  * composite id (`escrow_onchainId`) the indexer uses.
  */
-import { parseEventLogs, type Abi, type Log } from 'viem';
+import { isAddress, parseEventLogs, type Abi, type Log } from 'viem';
 import { createCompositeDepositId } from '@zkp2p/sdk';
 
 export interface ResolvedCashDeposit {
@@ -53,11 +53,17 @@ export function parseCompositeDepositId(compositeId: string): {
   onchainDepositId: bigint;
 } {
   const idx = compositeId.lastIndexOf('_');
-  if (idx === -1) {
-    // No escrow prefix - treat the whole string as the on-chain id.
-    return { escrowAddress: '', onchainDepositId: BigInt(compositeId) };
-  }
   const escrowAddress = compositeId.slice(0, idx);
-  const onchainDepositId = BigInt(compositeId.slice(idx + 1) || '0');
-  return { escrowAddress, onchainDepositId };
+  const rawDepositId = compositeId.slice(idx + 1);
+  if (
+    idx <= 0 ||
+    compositeId.indexOf('_') !== idx ||
+    !isAddress(escrowAddress, { strict: false }) ||
+    !/^\d+$/.test(rawDepositId)
+  ) {
+    throw new Error(`Invalid deposit id: '${compositeId}'`);
+  }
+  const canonicalEscrowAddress = escrowAddress.toLowerCase();
+  const onchainDepositId = BigInt(rawDepositId);
+  return { escrowAddress: canonicalEscrowAddress, onchainDepositId };
 }

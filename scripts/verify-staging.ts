@@ -13,7 +13,7 @@
  * Never waits on a buyer — buyer-side is known-working and out of scope.
  *
  * Run: bun --env-file=../.env scripts/verify-staging.ts
- * Needs TEST_WALLET_PRIVATE_KEY (funded: ≥1.1 USDC + Base ETH gas); optional ALCHEMY_API_KEY.
+ * Needs TEST_WALLET_PRIVATE_KEY (funded: ≥1.5 USDC + Base ETH gas); optional ALCHEMY_API_KEY.
  */
 import { createWalletClient, createPublicClient, erc20Abi, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';

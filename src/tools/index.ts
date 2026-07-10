@@ -13,6 +13,8 @@
  *   other work instead of holding a streaming connection open.
  */
 
+import packageJson from '../../package.json';
+
 export interface CashToolDefinition {
   name: string;
   description: string;
@@ -22,17 +24,29 @@ export interface CashToolDefinition {
 
 const bigintString = {
   type: 'string',
-  pattern: '^[0-9]+$',
+  pattern: '^0*[1-9][0-9]*$',
   description:
     'Base units as a decimal string. For the default path this is USDC 6 decimals; with source it is source-token base units.',
 } as const;
 
 const depositId = {
   type: 'string',
+  pattern: '^0x[0-9a-fA-F]{40}_[0-9]+$',
   description: 'Composite deposit id (escrow_onchainId) returned by cash_cashout - the resume key',
 } as const;
 
-export const cashTools: CashToolDefinition[] = [
+const address = {
+  type: 'string',
+  pattern: '^0x[0-9a-fA-F]{40}$',
+} as const;
+
+const chainId = {
+  type: 'integer',
+  minimum: 1,
+  maximum: Number.MAX_SAFE_INTEGER,
+} as const;
+
+const builtInCashTools = [
   {
     name: 'cash_capabilities',
     description:
@@ -51,23 +65,23 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_source_quote',
     description:
-      'Quote any Relay-supported EVM source asset into Base USDC through @relayprotocol/relay-sdk. Use this before cash_cashout when the user starts with an asset other than Base USDC.',
+      'Quote any Relay-supported EVM source asset into Base USDC through @relayprotocol/relay-sdk. A custody-capable host must submit the returned route, poll cash_source_status to success, then call Base-USDC cash_cashout with the guaranteed output amount. Never submit the route twice.',
     inputSchema: {
       type: 'object',
       properties: {
-        user: { type: 'string', description: 'Source wallet submitting the Relay transaction.' },
+        user: { ...address, description: 'Source wallet submitting the Relay transaction.' },
         amount: bigintString,
         source: {
           type: 'object',
           properties: {
-            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
-            currency: { type: 'string', description: 'Source token/native address.' },
+            chainId: { ...chainId, description: 'Relay-supported EVM source chain id.' },
+            currency: { ...address, description: 'Source token/native address.' },
           },
           required: ['chainId', 'currency'],
           additionalProperties: false,
         },
         recipient: {
-          type: 'string',
+          ...address,
           description: 'Base recipient for Relay-delivered USDC. Defaults to user.',
         },
         tradeType: {
@@ -100,14 +114,14 @@ export const cashTools: CashToolDefinition[] = [
           type: 'object',
           description: 'Optional Relay EVM source asset. Omit for the Base USDC default path.',
           properties: {
-            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
-            currency: { type: 'string', description: 'Source token/native address.' },
+            chainId: { ...chainId, description: 'Relay-supported EVM source chain id.' },
+            currency: { ...address, description: 'Source token/native address.' },
             user: {
-              type: 'string',
+              ...address,
               description: 'Source wallet submitting the Relay transaction.',
             },
             recipient: {
-              type: 'string',
+              ...address,
               description: 'Base recipient for Relay-delivered USDC. Defaults to user.',
             },
             tradeType: {
@@ -126,29 +140,11 @@ export const cashTools: CashToolDefinition[] = [
   {
     name: 'cash_cashout',
     description:
-      'Start a cash-out. Default path: Base USDC amount and tool hosts can return UNSIGNED transactions plus same-index steps [approve, createDeposit]. With source: signer-backed clients first execute a Relay SDK EVM route into Base USDC, then register the payee and create the protocol-held cash-out order. Non-Base source chains need a source-chain signer. Custody-separated hosts should use cash_source_quote/cash_source_status first, then Base USDC cash_cashout.',
+      'Start a Base-USDC cash-out using the custody-separated prepare path. Returns UNSIGNED transactions plus same-index steps [approve, createDeposit]; signing and ordered submission stay host-side. For another source asset, complete cash_source_quote and cash_source_status first, then pass the guaranteed Base USDC output amount here.',
     inputSchema: {
       type: 'object',
       properties: {
         amount: bigintString,
-        source: {
-          type: 'object',
-          description: 'Optional Relay EVM source asset. Omit for the Base USDC default path.',
-          properties: {
-            chainId: { type: 'number', description: 'Relay-supported EVM source chain id.' },
-            currency: { type: 'string', description: 'Source token/native address.' },
-            recipient: {
-              type: 'string',
-              description: 'Base recipient for Relay-delivered USDC. Defaults to signer.',
-            },
-            tradeType: {
-              type: 'string',
-              enum: ['EXACT_INPUT', 'EXACT_OUTPUT', 'EXPECTED_OUTPUT'],
-            },
-          },
-          required: ['chainId', 'currency'],
-          additionalProperties: false,
-        },
         receive: {
           type: 'object',
           description: 'Where the fiat should arrive',
@@ -198,12 +194,17 @@ export const cashTools: CashToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        owner: { type: 'string', description: 'The maker wallet address (0x...)' },
+        owner: { ...address, description: 'The maker wallet address (0x...)' },
         inFlight: {
           type: 'boolean',
           description: 'Only awaiting-buyer / matched / delivering orders',
         },
-        limit: { type: 'number', description: 'Max deposits to scan (default 100)' },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 1_000,
+          description: 'Max deposits to scan (default 100)',
+        },
       },
       required: ['owner'],
       additionalProperties: false,
@@ -216,7 +217,7 @@ export const cashTools: CashToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        address: { type: 'string', description: 'The buyer (taker) wallet address (0x...)' },
+        address: { ...address, description: 'The buyer (taker) wallet address (0x...)' },
       },
       required: ['address'],
       additionalProperties: false,
@@ -264,15 +265,27 @@ export const cashTools: CashToolDefinition[] = [
       additionalProperties: false,
     },
   },
-];
+] as const satisfies readonly CashToolDefinition[];
+
+/** Literal names shipped by this package. Use this for exhaustive built-in dispatch. */
+export type BuiltInCashToolName = (typeof builtInCashTools)[number]['name'];
+
+/**
+ * Mutable tool registry for hosts that append their own definitions.
+ *
+ * This was part of the 0.1.x public contract: keep the element name open as a
+ * string rather than narrowing consumers to only the built-in verbs.
+ */
+export const cashTools: CashToolDefinition[] = [...builtInCashTools];
 
 /** Manifest wrapper with versioning for host registries. */
 export const cashToolManifest = {
   name: '@zkp2p/cash',
-  version: '0.1.2',
+  version: packageJson.version,
   description:
     'Peer Cash - offramp-only: route any Relay-supported EVM source asset to Base USDC, then cash out to fiat at the live oracle market rate (0% spread). Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 
-export type CashToolName = (typeof cashTools)[number]['name'];
+/** Tool names accepted by an extensible host registry, including custom tools. */
+export type CashToolName = string;

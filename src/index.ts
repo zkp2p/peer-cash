@@ -1,9 +1,9 @@
 /**
  * `@zkp2p/cash` - Peer Cash: an offramp-only SDK for the ZKP2P protocol.
  *
- * Eight verbs, every operation available as pure serializable data, a thin
+ * A resumable maker lifecycle, serializable wire formats, and a thin
  * opinionated facade over `@zkp2p/sdk`. A React app, a Node service, and an
- * AI agent are equal consumers.
+ * agent host are equal consumers.
  *
  * @packageDocumentation
  */
@@ -46,12 +46,13 @@ export type {
   RelayQuoteInput,
   RelaySourceInput,
   RelayStatus,
+  RelayTransaction,
 } from './client/relay';
 export type { CashFillEta } from './client/fillEta';
 
 // Typed errors
 export { CashError, isCashError, errors } from './client/errors';
-export type { CashErrorCode, CashErrorShape } from './client/errors';
+export type { CashErrorCode, CashErrorRecovery, CashErrorShape } from './client/errors';
 
 // Amount helpers
 export { usdc, formatUsdc } from './engine/amounts';

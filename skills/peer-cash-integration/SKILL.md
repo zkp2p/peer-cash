@@ -20,7 +20,9 @@ custodial off-ramp provider.
   Base USDC remains the default/minimal path. Other source chains/tokens come
   from `@relayprotocol/relay-sdk` metadata and quote execution, filtered to
   EVM chains this viem SDK can sign. Non-Base source chains require
-  `sourceSigner`.
+  `sourceSigner`. Use `EXACT_INPUT` for high-level cash-out flows: `amount` is
+  source-token base units, while `source.amount` is Relay's guaranteed minimum
+  Base USDC output and the exact order deposit amount, not actual route output.
 - **Oracle-at-fill pricing. There is no quote.** The deposit carries
   `oracleRateConfig { spreadBps: 0 }`; the binding rate is whatever the
   Chainlink feed says when a buyer fills. `estimate()` is deliberately named
@@ -34,11 +36,11 @@ custodial off-ramp provider.
 
 ## 2. Decision tree - entry point by runtime
 
-| Runtime                   | Entry                                                             | Signer pattern                                                                      |
-| ------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| React app                 | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider  | wagmi/viem `WalletClient` from the connected wallet                                 |
-| Node service              | `createCashClient` + `cashout()`/`withdraw()`                     | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
-| Agent host / policy layer | `prepare()` / `prepareWithdraw()` -> unsigned `txs[]` + `steps[]` | Host signs; see `@zkp2p/cash/tools` for the JSON-schema tool manifest               |
+| Runtime                   | Entry                                                            | Signer pattern                                                                      |
+| ------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| React app                 | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider | wagmi/viem `WalletClient` from the connected wallet                                 |
+| Node service              | `createCashClient` + `cashout()`/`withdraw()`                    | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
+| Agent host / policy layer | Base-USDC `prepare*()` -> unsigned `txs[]` + `steps[]`           | Host signs; source quote/status tools do not execute Relay                          |
 
 ## 3. Recipes - the verbs
 
@@ -48,7 +50,8 @@ not copy types from here; import them.
 ```ts
 import { createCashClient, usdc } from '@zkp2p/cash';
 
-// env: 'production' | 'preproduction' | 'staging'
+// env: 'production' | 'preproduction' | 'staging'. Preproduction and staging
+// select api-preprod.zkp2p.xyz and api-staging.zkp2p.xyz curators by default.
 const cash = createCashClient({ environment: 'staging' });
 
 const caps = cash.capabilities(); // 0 discover (sync)
@@ -73,11 +76,43 @@ await cash.withdraw(res.depositId, { signer }); // 6 unwind (amount: for partial
 await cash.topUp(res.depositId, usdc(50), { signer }); // 7 top up a live order
 ```
 
+Signer-backed exact-input source path:
+
+```ts
+const routed = await cash.cashout(
+  {
+    amount: sourceAmount,
+    source: {
+      chainId: sourceChainId,
+      currency: sourceToken,
+      tradeType: 'EXACT_INPUT',
+    },
+    receive,
+  },
+  { signer, sourceSigner },
+);
+
+persist({
+  depositId: routed.depositId,
+  guaranteedBaseUsdc: routed.source?.amount,
+  requestId: routed.source?.requestId,
+  transactions: routed.source?.transactions,
+});
+```
+
 Base-USDC cashout, withdraw, and top-up also have unsigned `prepare*`
-counterparts. Source-routed cashout runs Relay first; use signed
-`cashout({ source }, { signer, sourceSigner })` for non-Base sources, or bridge first and then use `prepare()`.
+counterparts. `prepare()` rejects `source`. Source-routed cashout runs Relay
+first; use signed `cashout({ source }, { signer, sourceSigner })`, or execute
+and confirm Relay in the host before preparing a Base-USDC cashout.
+`cash_source_quote` and `cash_source_status` are quote/read tools, not a
+host-side execution path.
 Every protocol transaction carries ERC-8021 attribution (`peer-cash` + your
 `createCashClient({ referrer })` codes).
+
+Wise and PayPal require an identity attestation for a new payee registration.
+Do not disable them outright: a previously registered handle can be reused
+with bare payee data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration
+is still needed.
 
 ## 4. Order management - indexer-native
 
@@ -94,12 +129,33 @@ Every protocol transaction carries ERC-8021 attribution (`peer-cash` + your
 
 Every error is a `CashError` with `code`, `retryable`, `remediation`. The
 full table lives in `AGENTS.md` and `docs/lifecycle-and-recovery.md` - quote
-those, don't re-derive. The three that matter most in practice:
+those, don't re-derive. The recovery boundaries that matter most in practice:
 
 - `ORDER_NOT_FOUND` seconds after `cashout()` = indexer lag. The receipt is
   the truth; retry. `watch()` and the React hooks absorb it.
 - `ACTIVE_INTENT_BLOCKS_WITHDRAWAL` = a buyer may still deliver. Retry
   `withdraw()` after their intent expires; it prunes automatically.
+- `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` = Relay completed but the Base
+  cashout did not. Never repeat Relay; retry Base-only with
+  `BigInt(error.recovery.amount)`.
+- `SOURCE_CASHOUT_SUBMISSION_UNKNOWN` = Relay completed but Base submission
+  returned no hash. Inspect Base wallet activity and
+  `orders(error.recovery.depositor)` before any retry.
+- `SOURCE_CASHOUT_STATUS_UNKNOWN` = Relay completed and a Base transaction was
+  submitted, but its receipt is unknown. Inspect
+  `error.recovery.depositTxHash`; do not route or submit again until it is
+  known.
+- `TRANSACTION_STATUS_UNKNOWN` = a Base transaction may already have
+  succeeded. Inspect `error.recovery.transactionHash` before resubmitting.
+- `TRANSACTION_SUBMISSION_UNKNOWN` = a Base mutation returned no hash but may
+  have broadcast. Follow `error.recovery`, inspect Base wallet/protocol state,
+  and do not retry until absence is proven.
+- `INDEXER_UNAVAILABLE` / `ORACLE_READ_FAILED` = retry the read only. Do not
+  repeat the transaction that produced the id or balance being inspected.
+- `SIGNER_CHAIN_MISMATCH` = switch to the required chain and obtain a fresh
+  Relay quote before retrying.
+- `SIGNER_CHAIN_UNAVAILABLE` = reconnect the wallet and verify its live chain
+  before any quote or mutation.
 - Buyer never pays → nothing to do: the intent expires, `nextActions` gains
   `'withdraw'`, one `withdraw()` call returns the funds (prune + withdraw).
 
@@ -108,13 +164,19 @@ those, don't re-derive. The three that matter most in practice:
 Run against `environment: 'staging'` with a small funded wallet.
 **Maker-side only - never wait on a buyer.**
 
-1. Create a real 1–2 USDC deposit via `cashout()`; capture `depositId`.
-2. Assert `order(depositId).state === 'awaiting-buyer'` (retry through
-   indexer lag for up to ~60s).
-3. Assert `orders(owner)` contains the deposit.
-4. `withdraw(depositId, { signer })` succeeds.
-5. Assert `order(depositId).state === 'returned'` and the wallet balance is
-   restored minus gas.
+Prove both routes without waiting for a buyer:
+
+1. Create a real 1–2 USDC Base-USDC deposit; retain `depositId` and Base tx.
+2. Retry through indexer lag until `order(depositId)` is `awaiting-buyer`, and
+   assert `orders(owner)` contains it.
+3. Withdraw it; assert `returned` and the Base USDC balance is restored minus
+   gas.
+4. Select a live supported source from capabilities and create a real
+   exact-input route whose guaranteed Base USDC output is at least 1 USDC.
+   Retain Relay `requestId`, origin/destination transaction hashes, Base tx,
+   and `depositId`.
+5. Assert the routed order becomes `awaiting-buyer` and appears in
+   `orders(owner)`, then withdraw and confirm `returned` plus restored balance.
 
 If withdrawal fails with funds stuck: stop, do not retry blindly, escalate to
 a human with the `depositId` and tx hashes.

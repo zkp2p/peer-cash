@@ -1,10 +1,15 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CASH_ORDER_POLL_INTERVAL_MS } from '../engine/constants';
 import type { CashOrder } from '../engine/types';
 import type { CashClient } from '../client/createCashClient';
 import { isCashError } from '../client/errors';
 import { usePoll } from './usePoll';
 import { useMountedRef } from './useMountedRef';
+
+interface OrderIdentity {
+  client: CashClient;
+  depositId: string;
+}
 
 export interface UseOrderOptions {
   client: CashClient | null;
@@ -34,15 +39,38 @@ export function useOrder({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const mounted = useMountedRef();
+  const latestRequest = useRef(0);
+  const orderIdentity = useRef<OrderIdentity | null>(null);
+  const loadingIdentity = useRef<OrderIdentity | null>(null);
+  const errorIdentity = useRef<OrderIdentity | null>(null);
+
+  useEffect(() => {
+    latestRequest.current += 1;
+    orderIdentity.current = null;
+    loadingIdentity.current = null;
+    errorIdentity.current = null;
+    setOrder(null);
+    setIsLoading(false);
+    setError(null);
+  }, [client, depositId]);
 
   const fetchOrder = useCallback(
     async (isActive: () => boolean = () => true): Promise<CashOrder | null> => {
       if (!client || !depositId) return null;
-      setIsLoading(true);
-      setError(null);
+      const requestId = ++latestRequest.current;
+      const identity: OrderIdentity = { client, depositId };
+      const isCurrent = () => mounted.current && isActive() && requestId === latestRequest.current;
+      if (isCurrent()) {
+        loadingIdentity.current = identity;
+        errorIdentity.current = null;
+        setIsLoading(true);
+        setError(null);
+      }
       try {
         const derived = await client.order(depositId);
-        if (isActive()) setOrder(derived);
+        if (!isCurrent()) return null;
+        orderIdentity.current = identity;
+        setOrder(derived);
         return derived;
       } catch (err) {
         if (isCashError(err) && err.code === 'ORDER_NOT_FOUND') {
@@ -50,13 +78,16 @@ export function useOrder({
           return null;
         }
         const e = err instanceof Error ? err : new Error(String(err));
-        if (isActive()) setError(e);
+        if (isCurrent()) {
+          errorIdentity.current = identity;
+          setError(e);
+        }
         return null;
       } finally {
-        if (isActive()) setIsLoading(false);
+        if (isCurrent()) setIsLoading(false);
       }
     },
-    [client, depositId],
+    [client, depositId, mounted],
   );
 
   usePoll(
@@ -74,5 +105,13 @@ export function useOrder({
 
   const refresh = useCallback(() => fetchOrder(() => mounted.current), [fetchOrder, mounted]);
 
-  return { order, isLoading, error, refresh };
+  const matchesCurrentIdentity = (identity: OrderIdentity | null) =>
+    identity?.client === client && identity.depositId === depositId;
+
+  return {
+    order: matchesCurrentIdentity(orderIdentity.current) ? order : null,
+    isLoading: matchesCurrentIdentity(loadingIdentity.current) ? isLoading : false,
+    error: matchesCurrentIdentity(errorIdentity.current) ? error : null,
+    refresh,
+  };
 }

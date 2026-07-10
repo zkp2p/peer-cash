@@ -15,18 +15,32 @@ Key facts:
   a buyer pays fiat and proves it with TEE-TLS; the protocol releases the USDC.
 - Destination is always Base USDC. Source chains/tokens come from Relay SDK
   metadata and quote execution, filtered to EVM chains this SDK can sign.
+- High-level source cashout uses EXACT_INPUT: amount is source-token base units.
+  source.amount is Relay's guaranteed minimum Base USDC output and the exact
+  order deposit amount, not the route's actual output.
 - There is NO locked fiat quote. estimate() reads the oracle; the binding rate
-  resolves at fill time. ETA is `{ seconds, label }` from recent zero-spread
-  market-rate deposits in the same payout corridor, not a guarantee.
+  resolves at fill time. ETA is `{ seconds, label }` from rolling 30-day,
+  zero-spread market-rate deposits in the same payout corridor, not a
+  guarantee.
 - Resume any order from its depositId alone (composite escrow_onchainId).
 - One unwind verb: withdraw(depositId) - prunes expired intents automatically;
   pass amount for a partial withdrawal of the unlocked balance.
 - topUp(depositId, amount) adds USDC to a live order (same payee, same rate).
 - Base-USDC mutating verbs have unsigned counterparts (prepare,
   prepareWithdraw, prepareTopUp) for host-side signing; source-routed cashout
-  needs Relay execution first. @zkp2p/cash/tools ships a JSON-schema tool
-  manifest.
-- Errors are typed: { code, retryable, remediation }.
+  needs signer-backed Relay execution first. prepare() and the cash_cashout tool
+  are Base-USDC-only; cash_source_quote/status do not execute the route.
+  @zkp2p/cash/tools ships a JSON-schema tool manifest.
+- Errors are typed: { code, retryable, remediation, recovery? }. Completed
+  Relay routes retain requestId, flat hashes, and origin/destination
+  transactions. Retry Base-only after SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED;
+  inspect Base activity/orders after SOURCE_CASHOUT_SUBMISSION_UNKNOWN; inspect
+  depositTxHash before any action after SOURCE_CASHOUT_STATUS_UNKNOWN. Treat
+  TRANSACTION_SUBMISSION_UNKNOWN as potentially broadcast. Retry
+  INDEXER_UNAVAILABLE and ORACLE_READ_FAILED reads without repeating a
+  transaction; fix SIGNER_CHAIN_MISMATCH or SIGNER_CHAIN_UNAVAILABLE before
+  quoting or submitting. TRANSACTION_STATUS_UNKNOWN carries the submitted
+  hash in recovery.transactionHash.
 - Everything is decoded to human units: platform ids and currency codes from
   their on-chain hashes, plain-number rates from 1e18 precision.
 - Fills are receipts: locked rate + fiat owed at signal; verified fiat paid,
@@ -38,6 +52,10 @@ Key facts:
 - Default path is same-chain Base USDC. Optional `source` on `cashout()` runs
   Relay source-to-Base-USDC first; non-Base source chains require
   `sourceSigner`.
+- Wise and PayPal require attestation for a new payee registration; a
+  previously registered bare handle can be reused.
+- Preproduction uses https://api-preprod.zkp2p.xyz by default; staging uses
+  https://api-staging.zkp2p.xyz. curatorUrl can override either.
 
 ## Links
 
