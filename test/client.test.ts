@@ -652,42 +652,91 @@ describe('cashout()', () => {
         request: vi.fn().mockResolvedValueOnce('0x54').mockResolvedValue('0x55'),
       },
     } as unknown as WalletClient;
-    const batchSourceSigner = {
-      ...signer,
-      getCallsStatus: vi
-        .fn()
-        .mockRejectedValueOnce(new Error('wallet temporarily unavailable'))
-        .mockResolvedValueOnce({ status: 'pending', statusCode: 100 })
-        .mockResolvedValue({
-          status: 'success',
-          statusCode: 200,
-          receipts: [{ transactionHash: '0xbatchtx' }],
-        }),
-    } as unknown as WalletClient;
+    const getCallsStatus = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('wallet temporarily unavailable'))
+      .mockResolvedValueOnce({ status: 'pending', statusCode: 100 })
+      .mockResolvedValue({
+        status: 'success',
+        statusCode: 200,
+        receipts: [{ transactionHash: '0xbatchtx' }],
+      });
+    const batchSourceSigner = { ...signer, getCallsStatus } as unknown as WalletClient;
 
-    const result = await createCashClient({
+    const cash = createCashClient({
       environment: 'staging',
       relay: { client: relayClient as never },
-    }).cashout(
-      {
-        amount: 50_000_000_000_000n,
-        source: {
-          chainId: 8453,
-          currency: '0x0000000000000000000000000000000000000000',
-        },
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+    });
+    const input = {
+      amount: 50_000_000_000_000n,
+      source: {
+        chainId: 8453,
+        currency: '0x0000000000000000000000000000000000000000',
       },
-      { signer: batchSigner, sourceSigner: batchSourceSigner },
-    );
+      receive: {
+        platform: 'venmo' as const,
+        currency: 'USD' as const,
+        payee: { offchainId: '@andrew' },
+      },
+    };
+    const result = await cash.cashout(input, {
+      signer: batchSigner,
+      sourceSigner: batchSourceSigner,
+    });
 
     expect(mockInstance.publicClient.getTransaction).toHaveBeenCalledWith({ hash: '0xbatchtx' });
-    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledTimes(3);
-    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledWith({ id: '0xbundle-id' });
+    expect(getCallsStatus).toHaveBeenCalledTimes(3);
+    expect(getCallsStatus).toHaveBeenCalledWith({ id: '0xbundle-id' });
     expect(batchSigner.transport.request).toHaveBeenCalledTimes(2);
     expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
     expect(result.source?.transactions?.origin).toEqual([
       { hash: '0xbundle-id', chainId: 8453, isBatchTx: true },
     ]);
+
+    getCallsStatus.mockReset().mockResolvedValue({
+      status: 'success',
+      statusCode: 200,
+    });
+    mockInstance.createDeposit.mockClear();
+
+    const receiptless = await cash
+      .cashout(input, { signer: batchSigner, sourceSigner: batchSourceSigner })
+      .catch((error) => error);
+
+    expect(receiptless).toMatchObject({
+      code: 'SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED',
+      retryable: false,
+      recovery: {
+        kind: 'retry-base-usdc-cashout',
+        amount: '88800',
+        requestId: 'relay-base-request',
+        txHashes: ['0xbundle-id'],
+      },
+    });
+    expect(getCallsStatus).toHaveBeenCalledOnce();
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+
+    getCallsStatus.mockReset().mockResolvedValue({
+      status: 'failure',
+      statusCode: 500,
+    });
+    mockInstance.createDeposit.mockClear();
+
+    const failed = await cash
+      .cashout(input, { signer: batchSigner, sourceSigner: batchSourceSigner })
+      .catch((error) => error);
+
+    expect(failed).toMatchObject({
+      code: 'SOURCE_EXECUTION_FAILED',
+      retryable: false,
+      recovery: {
+        kind: 'inspect-relay-route',
+        requestId: 'relay-base-request',
+        txHashes: ['0xbundle-id'],
+      },
+    });
+    expect(getCallsStatus).toHaveBeenCalledOnce();
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
   });
 
   it.each([

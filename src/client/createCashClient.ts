@@ -718,32 +718,52 @@ export function createCashClient(options: CashClientOptions): CashClient {
     const batchIds = baseTransactions
       .filter((transaction) => transaction.isBatchTx === true)
       .map((transaction) => transaction.hash);
+    const batchExecutionFailed = (cause: unknown) =>
+      errors.sourceExecutionFailed(cause, {
+        ...(executed.requestId ? { requestId: executed.requestId } : {}),
+        txHashes: executed.txHashes,
+        ...(executed.transactions ? { transactions: executed.transactions } : {}),
+      });
     let batchTransactionHashes: Hash[] = [];
     if (batchIds.length > 0) {
       let batchError: unknown;
       let batchesComplete = false;
+      let batchesSucceededWithoutReceipts = false;
       for (let attempt = 0; attempt < 20; attempt++) {
         try {
           const statuses = await Promise.all(
             batchIds.map((id) => sourceSigner.getCallsStatus({ id })),
           );
           if (statuses.some((status) => status.status === 'failure')) {
-            throw new Error('Relay wallet call bundle failed');
+            throw batchExecutionFailed(new Error('Relay wallet call bundle failed'));
           }
           if (statuses.every((status) => status.status === 'success')) {
-            batchTransactionHashes = statuses.flatMap((status) =>
-              (status.receipts ?? []).map((receipt) => receipt.transactionHash),
-            );
-            batchesComplete = true;
-            break;
+            const receiptGroups = statuses.map((status) => status.receipts ?? []);
+            if (receiptGroups.some((receipts) => receipts.length === 0)) {
+              batchError = new Error(
+                'Relay wallet call bundle did not include transaction receipts',
+              );
+              batchesSucceededWithoutReceipts = true;
+              break;
+            } else {
+              batchTransactionHashes = receiptGroups.flatMap((receipts) =>
+                receipts.map((receipt) => receipt.transactionHash),
+              );
+              batchesComplete = true;
+              break;
+            }
           }
         } catch (err) {
+          if (isCashError(err)) throw err;
           batchError = err;
         }
         await sleep(250);
       }
       if (!batchesComplete) {
-        throw batchError ?? new Error('Relay wallet call bundle did not complete');
+        if (batchesSucceededWithoutReceipts) throw batchError;
+        throw batchExecutionFailed(
+          batchError ?? new Error('Relay wallet call bundle did not complete'),
+        );
       }
     }
 
@@ -902,6 +922,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
             executed,
           );
         } catch (err) {
+          if (isCashError(err)) throw err;
           throw errors.sourceRouteCompletedCashoutFailed(
             routedSource,
             mapChainError('resolve same-chain Relay nonce', err),
