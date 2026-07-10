@@ -106,6 +106,18 @@ describe('readEstimate', () => {
     ).rejects.toMatchObject({ code: 'ORACLE_UNSUPPORTED_CURRENCY' });
   });
 
+  it('wraps oracle transport failures instead of leaking raw RPC errors', async () => {
+    const pc = {
+      readContract: vi.fn(async () => {
+        throw new Error('RPC timeout');
+      }),
+    } as unknown as PublicClient;
+
+    await expect(
+      readEstimate(pc, { amount: 1_000_000_000n, currency: 'EUR' }),
+    ).rejects.toMatchObject({ code: 'ORACLE_READ_FAILED', retryable: true });
+  });
+
   it('adds rolling first-fill ETA from zero-spread market-rate cash-out deposits', async () => {
     const now = Math.floor(Date.now() / 1000);
     const indexerClient = {
@@ -233,6 +245,8 @@ describe('readEstimate', () => {
   it('quotes a Relay source through the Relay SDK before pricing Base USDC cashout', async () => {
     const getQuote = vi.fn(async () => ({
       details: {
+        sender: '0x2222222222222222222222222222222222222222',
+        recipient: '0x2222222222222222222222222222222222222222',
         currencyIn: {
           amount: '1230000000000000000',
           currency: {

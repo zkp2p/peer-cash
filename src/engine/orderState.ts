@@ -227,12 +227,15 @@ export function deriveCashOrder(
   // is CLOSED (never a 'WITHDRAWN' status - that value exists only on the
   // fund-activity log). 'WITHDRAWN' is tolerated here purely for forward-compat.
   const isTerminal = status === 'CLOSED' || status === 'WITHDRAWN';
-  const hasLiveFunds = remaining > DUST_THRESHOLD || outstanding > 0n;
+  const hasLiveFunds = remaining >= DUST_THRESHOLD || outstanding > 0n;
 
   let state: CashOrderState;
   if (outstanding > 0n) {
     // A buyer is signaled right now (funds locked, mid-delivery).
     state = taken > 0n ? 'delivering' : 'matched';
+  } else if (!hasLiveFunds && withdrawn > 0n) {
+    // A terminal unwind is still a return even when earlier fills delivered.
+    state = 'returned';
   } else if (taken > 0n && !hasLiveFunds) {
     state = 'delivered';
   } else if (taken > 0n && hasLiveFunds) {
@@ -288,6 +291,6 @@ export function deriveCashOrder(
     ...(options.payouts !== undefined ? { payouts: options.payouts } : {}),
     ...(options.successRateBps !== undefined ? { successRateBps: options.successRateBps } : {}),
     isInFlight,
-    withdrawn: isTerminal,
+    withdrawn: state === 'returned' && withdrawn > 0n,
   });
 }

@@ -119,7 +119,7 @@ describe('deriveCashOrder - state transitions', () => {
     expect(order.state).toBe('delivered');
     expect(order.isInFlight).toBe(false);
     expect(order.nextActions).toEqual([]);
-    expect(order.withdrawn).toBe(true);
+    expect(order.withdrawn).toBe(false);
   });
 
   it('returned: withdrawn without any fill', () => {
@@ -164,11 +164,36 @@ describe('deriveCashOrder - state transitions', () => {
         nowSeconds: NOW,
       },
     );
-    // taken > 0 and no live funds → delivered wins over returned in the derivation
-    expect(order.state).toBe('delivered');
+    expect(order.state).toBe('returned');
     expect(order.filledAmount).toBe(2_000_000n);
     expect(order.returnedAmount).toBe(3_000_000n);
     expect(order.totalAmount).toBe(5_000_000n);
+    expect(order.explain()).toContain('remaining 3 USDC was returned');
+  });
+
+  it('does not mark a still-live partial withdrawal as terminally withdrawn', () => {
+    const order = deriveCashOrder('esc_1', [], {
+      remainingAmount: 4_000_000n,
+      withdrawnAmount: 1_000_000n,
+      status: 'ACTIVE',
+      nowSeconds: NOW,
+    });
+
+    expect(order.state).toBe('awaiting-buyer');
+    expect(order.returnedAmount).toBe(1_000_000n);
+    expect(order.withdrawn).toBe(false);
+  });
+
+  it('does not invent a withdrawal for an empty returned row', () => {
+    const order = deriveCashOrder('esc_1', [], {
+      remainingAmount: 0n,
+      withdrawnAmount: 0n,
+      status: 'CLOSED',
+      nowSeconds: NOW,
+    });
+
+    expect(order.state).toBe('returned');
+    expect(order.withdrawn).toBe(false);
   });
 
   it('MANUALLY_RELEASED counts as fulfilled', () => {
@@ -183,6 +208,17 @@ describe('deriveCashOrder - state transitions', () => {
 });
 
 describe('deriveCashOrder - dust and fallbacks', () => {
+  it('treats the minimum valid cash-out as live, not dust', () => {
+    const order = deriveCashOrder('esc_1', [], {
+      remainingAmount: 10_000n,
+      status: 'ACTIVE',
+      nowSeconds: NOW,
+    });
+
+    expect(order.state).toBe('awaiting-buyer');
+    expect(order.nextActions).toEqual(['wait', 'withdraw']);
+  });
+
   it('dust remainder is not treated as live funds', () => {
     const order = deriveCashOrder('esc_1', [], {
       remainingAmount: 9_999n, // below $0.01 dust threshold

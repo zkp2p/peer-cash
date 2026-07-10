@@ -38,10 +38,20 @@ const mockInstance = {
 vi.mock('@zkp2p/sdk', async (importOriginal) => {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   const actual = await importOriginal<typeof import('@zkp2p/sdk')>();
-  return { ...actual, Zkp2pClient: vi.fn(() => mockInstance) };
+  return {
+    ...actual,
+    Zkp2pClient: vi.fn(function MockZkp2pClient() {
+      return mockInstance;
+    }),
+  };
 });
 
-import { getAttributionDataSuffix } from '@zkp2p/sdk';
+import {
+  currencyInfo,
+  getAttributionDataSuffix,
+  getPaymentMethodsCatalog,
+  Zkp2pClient,
+} from '@zkp2p/sdk';
 import { createCashClient, CASH_ATTRIBUTION_CODE } from '../src/client/createCashClient';
 import { isCashError } from '../src/client/errors';
 
@@ -84,9 +94,19 @@ function depositReceivedLog(depositId: bigint): Log {
   } as unknown as Log;
 }
 
-const signer = { account: { address: '0xmaker' } } as unknown as WalletClient;
+const signer = {
+  account: { address: '0xmaker' },
+  chain: { id: 8453 },
+  getChainId: vi.fn(async () => 8453),
+} as unknown as WalletClient;
+const sourceSigner = {
+  account: { address: '0xmaker' },
+  chain: { id: 10 },
+  getChainId: vi.fn(async () => 10),
+} as unknown as WalletClient;
 
 function depositRow(overrides: Record<string, unknown> = {}) {
+  const paymentMethodHash = getPaymentMethodsCatalog(8453, 'staging')['venmo']!.paymentMethodHash;
   return {
     id: DEPOSIT_ID,
     remainingDeposits: '5000000',
@@ -94,9 +114,20 @@ function depositRow(overrides: Record<string, unknown> = {}) {
     totalAmountTaken: '0',
     totalWithdrawn: '0',
     status: 'ACTIVE',
+    chainId: 8453,
+    token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     totalIntents: 0,
     updatedAt: String(NOW - 30),
     intents: [],
+    paymentMethods: [{ paymentMethodHash, payeeDetailsHash: '0xpayee', active: true }],
+    currencies: [
+      {
+        paymentMethodHash,
+        currencyCode: currencyInfo['USD']!.currencyCodeHash,
+        spreadBps: 0,
+        kind: 'oracle_chainlink',
+      },
+    ],
     ...overrides,
   };
 }
@@ -115,7 +146,41 @@ beforeEach(() => {
   mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: true });
 });
 
+describe('environment routing', () => {
+  it('uses the preproduction curator with preproduction contracts and indexer', () => {
+    createCashClient({ environment: 'preproduction' });
+
+    expect(Zkp2pClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeEnv: 'preproduction',
+        baseApiUrl: 'https://api-preprod.zkp2p.xyz',
+      }),
+    );
+  });
+});
+
 describe('order()', () => {
+  it('rejects a bare on-chain id before querying the composite-id index', async () => {
+    await expect(client().order('123')).rejects.toMatchObject({ code: 'INVALID_DEPOSIT_ID' });
+    expect(mockInstance.indexer.getDepositsByIdsWithRelations).not.toHaveBeenCalled();
+  });
+
+  it('canonicalizes a valid composite id before querying the indexer', async () => {
+    const checksummedEscrow = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+    const canonicalId = `${checksummedEscrow.toLowerCase()}_5`;
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({ id: canonicalId }),
+    ]);
+
+    const order = await client().order(`${checksummedEscrow}_0005`);
+
+    expect(mockInstance.indexer.getDepositsByIdsWithRelations).toHaveBeenCalledWith(
+      [canonicalId],
+      expect.any(Object),
+    );
+    expect(order.depositId).toBe(canonicalId);
+  });
+
   it('derives from deposit aggregates + intents', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
       depositRow({
@@ -156,11 +221,53 @@ describe('order()', () => {
       retryable: true,
     });
   });
+
+  it('wraps indexer transport failures instead of leaking raw errors', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockRejectedValue(
+      new Error('indexer gateway timeout'),
+    );
+
+    await expect(client().order(DEPOSIT_ID)).rejects.toMatchObject({
+      code: 'INDEXER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
 });
 
 describe('orders()', () => {
+  it('excludes deposits that do not satisfy Peer Cash market-rate invariants', async () => {
+    const paymentMethodHash = getPaymentMethodsCatalog(8453, 'staging')['venmo']!.paymentMethodHash;
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
+      depositRow({
+        id: 'a_fixed_rate',
+        currencies: [
+          {
+            paymentMethodHash,
+            currencyCode: currencyInfo['USD']!.currencyCodeHash,
+            spreadBps: 100,
+            kind: 'fixed',
+          },
+        ],
+      }),
+    ]);
+
+    const orders = await client().orders('0xmaker');
+
+    expect(orders).toEqual([]);
+  });
+
+  it('includes a cash-out at the exact minimum amount', async () => {
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
+      depositRow({ id: 'a_min', remainingDeposits: '10000' }),
+    ]);
+
+    const orders = await client().orders('0xmaker');
+
+    expect(orders.map((order) => order.depositId)).toEqual(['a_min']);
+  });
+
   it('filters dust and sorts most-recent-first', async () => {
-    mockInstance.indexer.getDeposits.mockResolvedValue([
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
       depositRow({ id: 'a_1', updatedAt: String(NOW - 100) }),
       depositRow({ id: 'a_2', remainingDeposits: '5', updatedAt: String(NOW - 10) }), // dust
       depositRow({ id: 'a_3', updatedAt: String(NOW - 50) }),
@@ -170,7 +277,7 @@ describe('orders()', () => {
   });
 
   it('inFlight filters to live orders only', async () => {
-    mockInstance.indexer.getDeposits.mockResolvedValue([
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
       depositRow({ id: 'a_1' }),
       depositRow({
         id: 'a_2',
@@ -182,6 +289,17 @@ describe('orders()', () => {
     const orders = await client().orders('0xmaker', { inFlight: true });
     expect(orders.map((o) => o.depositId)).toEqual(['a_1']);
     expect(orders[0]?.isInFlight).toBe(true);
+  });
+
+  it('wraps list-query transport failures instead of leaking raw errors', async () => {
+    mockInstance.indexer.getDepositsWithRelations.mockRejectedValue(
+      new Error('indexer gateway timeout'),
+    );
+
+    await expect(client().orders('0xmaker')).rejects.toMatchObject({
+      code: 'INDEXER_UNAVAILABLE',
+      retryable: true,
+    });
   });
 });
 
@@ -212,9 +330,36 @@ describe('cashout()', () => {
     expect(result.order.state).toBe('awaiting-buyer');
   });
 
+  it('does not invite duplicate Base cashouts when submission returns no hash', async () => {
+    mockInstance.createDeposit.mockRejectedValue(new Error('RPC timed out after broadcast'));
+
+    const err = await client()
+      .cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer },
+      )
+      .catch((error) => error);
+
+    expect(err).toMatchObject({
+      code: 'TRANSACTION_SUBMISSION_UNKNOWN',
+      retryable: false,
+      recovery: {
+        kind: 'inspect-base-cashout-submission',
+        amount: '5000000',
+        depositor: '0xmaker',
+        txHashes: [],
+      },
+    });
+  });
+
   it('can route a Relay source to Base USDC before creating the cash-out', async () => {
     const relayQuote = {
       details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
         currencyIn: {
           amount: '1000000',
           currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
@@ -288,7 +433,7 @@ describe('cashout()', () => {
         source: { chainId: 10, currency: '0xsource' },
         receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
       },
-      { signer, sourceSigner: signer },
+      { signer, sourceSigner },
     );
 
     expect(relayClient.actions.getQuote).toHaveBeenCalledWith(
@@ -302,7 +447,7 @@ describe('cashout()', () => {
       false,
     );
     expect(relayClient.actions.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ quote: relayQuote, wallet: signer }),
+      expect.objectContaining({ quote: relayQuote, wallet: sourceSigner }),
     );
     expect(mockInstance.ensureAllowance).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 4_900_000n }),
@@ -314,6 +459,175 @@ describe('cashout()', () => {
       amount: 4_900_000n,
       requestId: 'relay-request',
       txHashes: ['0xrelay'],
+      transactions: {
+        origin: [{ hash: '0xrelay', chainId: 10 }],
+        destination: [],
+      },
+    });
+  });
+
+  it.each([
+    {
+      name: 'treats a provider timeout as an indeterminate Base submission',
+      message: 'RPC timed out after sending transaction',
+      code: 'SOURCE_CASHOUT_SUBMISSION_UNKNOWN',
+      kind: 'inspect-base-cashout-submission',
+    },
+    {
+      name: 'permits Base-only retry after an explicit wallet rejection',
+      message: 'User rejected the request',
+      code: 'SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED',
+      kind: 'retry-base-usdc-cashout',
+    },
+  ] as const)('$name', async ({ message, code, kind }) => {
+    const relayQuote = {
+      details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
+        currencyIn: {
+          amount: '1000000',
+          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        },
+        currencyOut: {
+          minimumAmount: '990000',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [],
+    };
+    const relayExecuted = {
+      details: { currencyIn: { currency: { chainId: 10 } } },
+      steps: [
+        {
+          action: 'bridge',
+          description: 'Bridge',
+          kind: 'transaction',
+          id: 'deposit',
+          requestId: 'relay-request',
+          items: [{ status: 'complete', txHashes: [{ txHash: '0xrelay', chainId: 10 }] }],
+        },
+      ],
+    };
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => ({
+          data: relayExecuted,
+          abortController: new AbortController(),
+        })),
+      },
+    };
+    mockInstance.createDeposit.mockRejectedValue(new Error(message));
+
+    const err = await createCashClient({
+      environment: 'staging',
+      relay: { client: relayClient as never },
+    })
+      .cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer, sourceSigner },
+      )
+      .catch((error) => error);
+
+    expect(err).toMatchObject({
+      code,
+      retryable: false,
+      recovery: {
+        kind,
+        amount: '990000',
+        requestId: 'relay-request',
+        txHashes: ['0xrelay'],
+      },
+    });
+    if (kind === 'inspect-base-cashout-submission') {
+      expect(err.recovery.depositor).toBe('0xmaker');
+    }
+    expect(err.toJSON()).toMatchObject({ recovery: { amount: '990000' } });
+  });
+
+  it('preserves both Relay and Base hashes when deposit receipt status is unknown', async () => {
+    const relayQuote = {
+      details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
+        currencyIn: {
+          amount: '1000000',
+          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        },
+        currencyOut: {
+          minimumAmount: '990000',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [],
+    };
+    const relayExecuted = {
+      details: { currencyIn: { currency: { chainId: 10 } } },
+      steps: [
+        {
+          action: 'bridge',
+          description: 'Bridge',
+          kind: 'transaction',
+          id: 'deposit',
+          requestId: 'relay-request',
+          items: [{ status: 'complete', txHashes: [{ txHash: '0xrelay', chainId: 10 }] }],
+        },
+      ],
+    };
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => ({
+          data: relayExecuted,
+          abortController: new AbortController(),
+        })),
+      },
+    };
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xbase-deposit' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockRejectedValue(
+      new Error('RPC unavailable'),
+    );
+
+    const err = await createCashClient({
+      environment: 'staging',
+      relay: { client: relayClient as never },
+    })
+      .cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        },
+        { signer, sourceSigner },
+      )
+      .catch((error) => error);
+
+    expect(err).toMatchObject({
+      code: 'SOURCE_CASHOUT_STATUS_UNKNOWN',
+      retryable: false,
+      recovery: {
+        kind: 'inspect-base-cashout-transaction',
+        amount: '990000',
+        requestId: 'relay-request',
+        txHashes: ['0xrelay'],
+        depositTxHash: '0xbase-deposit',
+      },
     });
   });
 
@@ -341,6 +655,8 @@ describe('cashout()', () => {
   it('registers the payee before executing a Relay source route', async () => {
     const relayQuote = {
       details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
         currencyIn: {
           amount: '1000000',
           currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
@@ -377,7 +693,7 @@ describe('cashout()', () => {
           source: { chainId: 10, currency: '0xsource' },
           receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
         },
-        { signer, sourceSigner: signer },
+        { signer, sourceSigner },
       ),
     ).rejects.toMatchObject({ code: 'PAYEE_REGISTRATION_FAILED' });
 
@@ -389,6 +705,8 @@ describe('cashout()', () => {
   it('does not execute a Relay source route when Base approval fails first', async () => {
     const relayQuote = {
       details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
         currencyIn: {
           amount: '1000000',
           currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
@@ -425,7 +743,7 @@ describe('cashout()', () => {
           source: { chainId: 10, currency: '0xsource' },
           receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
         },
-        { signer, sourceSigner: signer },
+        { signer, sourceSigner },
       ),
     ).rejects.toMatchObject({ code: 'TRANSACTION_FAILED' });
 
@@ -461,7 +779,7 @@ describe('cashout()', () => {
           },
           receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
         },
-        { signer, sourceSigner: signer },
+        { signer, sourceSigner },
       ),
     ).rejects.toMatchObject({ code: 'SOURCE_RECIPIENT_MISMATCH' });
 
@@ -492,7 +810,7 @@ describe('cashout()', () => {
           source: { chainId: 10, currency: '0xsource' },
           receive: { platform: 'not-a-platform', currency: 'USD', payee: { offchainId: '@a' } },
         },
-        { signer, sourceSigner: signer },
+        { signer, sourceSigner },
       ),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_PLATFORM' });
 
@@ -504,6 +822,8 @@ describe('cashout()', () => {
   it('rejects dust Relay output before executing the source route', async () => {
     const relayQuote = {
       details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
         currencyIn: {
           amount: '1000000',
           currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
@@ -539,7 +859,7 @@ describe('cashout()', () => {
           source: { chainId: 10, currency: '0xsource' },
           receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
         },
-        { signer, sourceSigner: signer },
+        { signer, sourceSigner },
       ),
     ).rejects.toMatchObject({ code: 'AMOUNT_BELOW_MINIMUM' });
 
@@ -558,6 +878,93 @@ describe('cashout()', () => {
         { signer: {} as WalletClient },
       ),
     ).rejects.toMatchObject({ code: 'SIGNER_REQUIRED' });
+  });
+
+  it('rejects a Base mutation signer that is connected to another chain', async () => {
+    const wrongChainSigner = {
+      account: { address: '0xmaker' },
+      chain: { id: 10 },
+      getChainId: vi.fn(async () => 10),
+    } as unknown as WalletClient;
+
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        },
+        { signer: wrongChainSigner },
+      ),
+    ).rejects.toMatchObject({
+      code: 'SIGNER_CHAIN_MISMATCH',
+      retryable: false,
+    });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('checks the live chain id for a chainless Base wallet before any side effect', async () => {
+    const chainlessWrongSigner = {
+      account: { address: '0xmaker' },
+      chain: undefined,
+      getChainId: vi.fn(async () => 10),
+    } as unknown as WalletClient;
+
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        },
+        { signer: chainlessWrongSigner },
+      ),
+    ).rejects.toMatchObject({ code: 'SIGNER_CHAIN_MISMATCH' });
+    expect(chainlessWrongSigner.getChainId).toHaveBeenCalledOnce();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('returns a typed error when a chainless wallet cannot report its chain', async () => {
+    const disconnectedSigner = {
+      account: { address: '0xmaker' },
+      chain: undefined,
+      getChainId: vi.fn(async () => {
+        throw new Error('wallet disconnected');
+      }),
+    } as unknown as WalletClient;
+
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        },
+        { signer: disconnectedSigner },
+      ),
+    ).rejects.toMatchObject({ code: 'SIGNER_CHAIN_UNAVAILABLE', retryable: true });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Relay source signer connected to a different source chain', async () => {
+    const relayClient = { actions: { getQuote: vi.fn() } };
+    const wrongSourceSigner = {
+      account: { address: '0xmaker' },
+      chain: { id: 42161 },
+      getChainId: vi.fn(async () => 42161),
+    } as unknown as WalletClient;
+
+    await expect(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        },
+        { signer, sourceSigner: wrongSourceSigner },
+      ),
+    ).rejects.toMatchObject({ code: 'SIGNER_CHAIN_MISMATCH' });
+    expect(relayClient.actions.getQuote).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported platform before any network call', async () => {
@@ -583,6 +990,33 @@ describe('cashout()', () => {
         { signer },
       ),
     ).rejects.toMatchObject({ code: 'ORACLE_UNSUPPORTED_CURRENCY' });
+  });
+
+  it('rejects an oracle-supported currency that the payout platform cannot receive', async () => {
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'venmo', currency: 'EUR', payee: { offchainId: '@a' } },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_PLATFORM_CURRENCY', retryable: false });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid intent amount range before registering the payee', async () => {
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          intentAmountRange: { min: 4_000_000n, max: 3_000_000n },
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_INTENT_AMOUNT_RANGE', retryable: false });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
   it('maps curator failures to PAYEE_REGISTRATION_FAILED', async () => {
@@ -652,6 +1086,31 @@ describe('prepare()', () => {
 });
 
 describe('withdraw()', () => {
+  it('rejects a malformed deposit id before any indexer or chain call', async () => {
+    await expect(client().withdraw(`${ESCROW}_`, { signer })).rejects.toMatchObject({
+      code: 'INVALID_DEPOSIT_ID',
+      retryable: false,
+    });
+    expect(mockInstance.indexer.getDepositsByIdsWithRelations).not.toHaveBeenCalled();
+    expect(mockInstance.withdrawDeposit).not.toHaveBeenCalled();
+  });
+
+  it('blocks conservatively when the indexer reports locked funds without intent detail', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        remainingDeposits: '4000000',
+        outstandingIntentAmount: '1000000',
+        intents: [],
+      }),
+    ]);
+
+    await expect(client().withdraw(DEPOSIT_ID, { signer })).rejects.toMatchObject({
+      code: 'ACTIVE_INTENT_BLOCKS_WITHDRAWAL',
+      retryable: true,
+    });
+    expect(mockInstance.withdrawDeposit).not.toHaveBeenCalled();
+  });
+
   it('blocks while a live buyer intent locks funds', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
       depositRow({
@@ -849,6 +1308,15 @@ describe('buyer()', () => {
       pruned: 1,
       signaled: 1,
       successRateBps: 5000,
+    });
+  });
+
+  it('wraps profile-query transport failures instead of leaking raw errors', async () => {
+    mockInstance.indexer.getOwnerIntents.mockRejectedValue(new Error('indexer unavailable'));
+
+    await expect(client().buyer('0xBuyer')).rejects.toMatchObject({
+      code: 'INDEXER_UNAVAILABLE',
+      retryable: true,
     });
   });
 });
@@ -1096,6 +1564,25 @@ describe('prepareWithdraw()', () => {
 });
 
 describe('withdraw() - receipt safety and error mapping', () => {
+  it('does not invite a duplicate submission when receipt status is unknown', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.withdrawDeposit.mockResolvedValue('0xw');
+    mockInstance.publicClient.waitForTransactionReceipt.mockRejectedValue(
+      new Error('RPC unavailable'),
+    );
+
+    await expect(client().withdraw(DEPOSIT_ID, { signer })).rejects.toMatchObject({
+      code: 'TRANSACTION_STATUS_UNKNOWN',
+      retryable: false,
+      message: expect.stringContaining('0xw'),
+      recovery: {
+        kind: 'inspect-base-transaction',
+        transactionHash: '0xw',
+        operation: 'withdrawDeposit',
+      },
+    });
+  });
+
   it('throws TRANSACTION_FAILED when the full withdraw reverts (never false success)', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
     mockInstance.withdrawDeposit.mockResolvedValue('0xw');
@@ -1127,18 +1614,39 @@ describe('withdraw() - receipt safety and error mapping', () => {
     });
   });
 
-  it('maps any other raw revert to a wrapped TRANSACTION_FAILED (no raw leak)', async () => {
+  it('treats an ambiguous mutation submission as indeterminate (no blind retry)', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
     mockInstance.withdrawDeposit.mockRejectedValue(new Error('nonce too low'));
     const err = await client()
       .withdraw(DEPOSIT_ID, { signer })
       .catch((e) => e);
     expect(isCashError(err)).toBe(true);
-    expect(err.code).toBe('TRANSACTION_FAILED');
+    expect(err.code).toBe('TRANSACTION_SUBMISSION_UNKNOWN');
+    expect(err.retryable).toBe(false);
+    expect(err.recovery).toMatchObject({
+      kind: 'inspect-base-operation-submission',
+      operation: 'withdrawDeposit',
+    });
   });
 });
 
 describe('cashout() - allowance visibility', () => {
+  it('does not misclassify an insufficient token balance as stale allowance', async () => {
+    mockInstance.ensureAllowance.mockRejectedValue(
+      new Error('ERC20: transfer amount exceeds balance'),
+    );
+
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_TOKEN_BALANCE', retryable: false });
+  });
+
   it('throws retryable ALLOWANCE_NOT_VISIBLE when the approve never surfaces', async () => {
     vi.useFakeTimers();
     try {
@@ -1166,11 +1674,38 @@ describe('cashout() - allowance visibility', () => {
       vi.useRealTimers();
     }
   });
+
+  it('wraps allowance-read RPC failures after a mined approval', async () => {
+    vi.useFakeTimers();
+    try {
+      mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: false, hash: '0xapprove' });
+      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+      mockInstance.publicClient.readContract.mockRejectedValue(new Error('RPC read failed'));
+
+      const promise = client()
+        .cashout(
+          {
+            amount: 5_000_000n,
+            receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          },
+          { signer },
+        )
+        .catch((error) => error);
+      await vi.runAllTimersAsync();
+      const err = await promise;
+
+      expect(err).toMatchObject({ code: 'ALLOWANCE_NOT_VISIBLE', retryable: true });
+      expect(isCashError(err)).toBe(true);
+      expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('orders() - list-row nextActions honesty', () => {
   it('does NOT offer withdraw on a matched row (outstanding lock, no fill detail)', async () => {
-    mockInstance.indexer.getDeposits.mockResolvedValue([
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
       depositRow({
         id: 'a_1',
         remainingDeposits: '4000000',
@@ -1185,17 +1720,40 @@ describe('orders() - list-row nextActions honesty', () => {
 });
 
 describe('cashout() - verified platforms', () => {
-  it('rejects wise with PAYEE_VERIFICATION_REQUIRED before any network call', async () => {
+  it('reuses a pre-registered Wise payee without requiring a new attestation', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'wise', currency: 'USD', payee: { offchainId: 'wisetag' } },
+      },
+      { signer },
+    );
+
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledOnce();
+  });
+
+  it('maps a missing Wise identity attestation reported by the curator', async () => {
+    mockInstance.registerPayeeDetails.mockRejectedValue(
+      new Error('identityAttestation is required for unregistered Wise payees'),
+    );
+
     await expect(
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'wise', currency: 'USD', payee: { offchainId: 'wisetag' } },
+          receive: { platform: 'wise', currency: 'USD', payee: { offchainId: 'new-wisetag' } },
         },
         { signer },
       ),
     ).rejects.toMatchObject({ code: 'PAYEE_VERIFICATION_REQUIRED', retryable: false });
-    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledOnce();
+    expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
   });
 
   it('allows wise when an identity attestation is supplied', async () => {

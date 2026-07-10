@@ -65,10 +65,22 @@ describe('parseCompositeDepositId', () => {
     expect(onchainDepositId).toBe(7n);
   });
 
-  it('treats a bare number as the on-chain id', () => {
-    const { escrowAddress, onchainDepositId } = parseCompositeDepositId('123');
-    expect(escrowAddress).toBe('');
-    expect(onchainDepositId).toBe(123n);
+  it('canonicalizes address casing and leading zeroes for indexer reads', () => {
+    const checksummedEscrow = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+    const parsed = parseCompositeDepositId(`${checksummedEscrow}_0007`);
+
+    expect(parsed).toEqual({
+      escrowAddress: checksummedEscrow.toLowerCase(),
+      onchainDepositId: 7n,
+    });
+  });
+
+  it('rejects a bare on-chain id because it cannot cold-hydrate without its escrow', () => {
+    expect(() => parseCompositeDepositId('123')).toThrow(/invalid deposit id/i);
+  });
+
+  it('rejects malformed composite ids instead of coercing them to deposit zero', () => {
+    expect(() => parseCompositeDepositId(`${ESCROW}_`)).toThrow(/invalid deposit id/i);
   });
 
   it('round-trips with resolveCashDepositId output', () => {

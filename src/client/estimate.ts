@@ -42,7 +42,10 @@ const CHAINLINK_LATEST_ROUND_ABI = [
 ] as const;
 
 export interface EstimateInput {
-  /** Amount to cash out. Defaults to Base USDC base units; when `source` is set it is source-token base units. */
+  /**
+   * Without `source`, Base USDC base units. With `source`, Relay interprets
+   * this according to `tradeType`; default `EXACT_INPUT` uses source-token units.
+   */
   amount: bigint;
   /** Target fiat currency. */
   currency: CurrencyType;
@@ -54,6 +57,7 @@ export interface EstimateInput {
     user: string;
     /** Base recipient for bridged USDC; defaults to `user`. */
     recipient?: string;
+    /** Relay amount mode. Omit for the recommended exact source-input estimate. */
     tradeType?: 'EXACT_INPUT' | 'EXACT_OUTPUT' | 'EXPECTED_OUTPUT';
   };
 }
@@ -135,11 +139,16 @@ export async function readEstimate(
     // USD passthrough - USDC ≈ USD.
     rate = 1;
   } else {
-    const result = (await publicClient.readContract({
-      address: feedConfig.feed as Address,
-      abi: CHAINLINK_LATEST_ROUND_ABI,
-      functionName: 'latestRoundData',
-    })) as readonly [bigint, bigint, bigint, bigint, bigint];
+    let result: readonly [bigint, bigint, bigint, bigint, bigint];
+    try {
+      result = (await publicClient.readContract({
+        address: feedConfig.feed as Address,
+        abi: CHAINLINK_LATEST_ROUND_ABI,
+        functionName: 'latestRoundData',
+      })) as readonly [bigint, bigint, bigint, bigint, bigint];
+    } catch (err) {
+      throw errors.oracleReadFailed(currency, err);
+    }
 
     const answer = Number(result[1]);
     const price = answer / 10 ** feedConfig.decimals;

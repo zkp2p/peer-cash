@@ -7,6 +7,14 @@ import {
   readRelaySourceCapabilities,
   readRelayStatus,
 } from '../src/client/relay';
+import type { RelayQuote } from '../src/client/relay';
+
+const USER = '0x2222222222222222222222222222222222222222';
+const WALLET = {
+  account: { address: USER },
+  chain: { id: 10 },
+  getChainId: vi.fn(async () => 10),
+} as unknown as WalletClient;
 
 describe('Relay SDK adapter', () => {
   it('normalizes dynamic Relay chain/token metadata without a static source allowlist', async () => {
@@ -15,7 +23,7 @@ describe('Relay SDK adapter', () => {
         id: 1,
         name: 'ethereum',
         displayName: 'Ethereum',
-        disabled: true,
+        disabled: false,
         depositEnabled: true,
         blockProductionLagging: false,
         vmType: 'evm',
@@ -54,7 +62,7 @@ describe('Relay SDK adapter', () => {
     expect(caps.source).toBe('relay-sdk');
     expect(caps.destination).toMatchObject({ chainId: 8453, symbol: 'USDC' });
     expect(caps.chains).toHaveLength(1);
-    expect(caps.chains[0]?.disabled).toBe(true);
+    expect(caps.chains[0]?.disabled).toBe(false);
     expect(caps.chains[0]?.tokens.map((token) => token.symbol)).toEqual(['ETH', 'USDC']);
   });
 
@@ -122,6 +130,36 @@ describe('Relay SDK adapter', () => {
     expect(caps.chains.map((chain) => chain.id)).toEqual([10]);
   });
 
+  it('exposes only healthy, deposit-enabled Relay source chains', async () => {
+    const chain = (overrides: Partial<RelayChain> & { disabled?: boolean }): RelayChain =>
+      ({
+        id: 10,
+        name: 'optimism',
+        displayName: 'Optimism',
+        disabled: false,
+        depositEnabled: true,
+        blockProductionLagging: false,
+        vmType: 'evm',
+        currency: {
+          address: '0x0000000000000000000000000000000000000000',
+          symbol: 'ETH',
+          decimals: 18,
+        },
+        ...overrides,
+      }) as RelayChain;
+
+    const caps = await readRelaySourceCapabilities({
+      chains: [
+        chain({ id: 10 }),
+        chain({ id: 1923, disabled: true }),
+        chain({ id: 543210, depositEnabled: false }),
+        chain({ id: 888888888, blockProductionLagging: true }),
+      ],
+    });
+
+    expect(caps.chains.map((candidate) => candidate.id)).toEqual([10]);
+  });
+
   it('quotes source-to-Base-USDC through Relay SDK actions.getQuote', async () => {
     const quote = {
       request: {
@@ -129,6 +167,8 @@ describe('Relay SDK adapter', () => {
         headers: { 'x-api-key': 'secret-relay-key', authorization: 'Bearer secret' },
       },
       details: {
+        sender: USER,
+        recipient: USER,
         currencyIn: {
           amount: '1000000',
           currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
@@ -165,7 +205,7 @@ describe('Relay SDK adapter', () => {
 
     const result = await quoteRelayToBaseUsdc(
       {
-        user: '0x2222222222222222222222222222222222222222',
+        user: USER,
         amount: 1_000_000n,
         source: { chainId: 10, currency: '0xsource' },
       },
@@ -182,6 +222,8 @@ describe('Relay SDK adapter', () => {
   it('uses Relay minimum output as the deposit amount when slippage can apply', async () => {
     const quote = {
       details: {
+        sender: USER,
+        recipient: USER,
         currencyIn: {
           amount: '1000000',
           currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
@@ -205,7 +247,7 @@ describe('Relay SDK adapter', () => {
 
     const result = await quoteRelayToBaseUsdc(
       {
-        user: '0x2222222222222222222222222222222222222222',
+        user: USER,
         amount: 1_000_000n,
         source: { chainId: 10, currency: '0xsource' },
       },
@@ -215,11 +257,143 @@ describe('Relay SDK adapter', () => {
     expect(result.outputAmount).toBe(970_000n);
   });
 
+  it('rejects a quote that does not return canonical Base USDC', async () => {
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(
+          async () =>
+            ({
+              details: {
+                sender: USER,
+                recipient: USER,
+                currencyIn: {
+                  amount: '1000000',
+                  currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+                },
+                currencyOut: {
+                  minimumAmount: '990000',
+                  currency: {
+                    chainId: 1,
+                    address: '0xwrongdestination',
+                    symbol: 'USDC',
+                    decimals: 6,
+                  },
+                },
+              },
+              steps: [],
+            }) as Execute,
+        ),
+      },
+    } as unknown as RelayClient;
+
+    await expect(
+      quoteRelayToBaseUsdc(
+        {
+          user: USER,
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+        },
+        { client: relayClient },
+      ),
+    ).rejects.toMatchObject({ code: 'SOURCE_QUOTE_FAILED', retryable: true });
+  });
+
+  it('rejects a quote whose source metadata does not match the requested asset', async () => {
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(
+          async () =>
+            ({
+              details: {
+                sender: USER,
+                recipient: USER,
+                currencyIn: {
+                  amount: '1000000',
+                  currency: { chainId: 1, address: '0xother', symbol: 'USDC', decimals: 6 },
+                },
+                currencyOut: {
+                  minimumAmount: '990000',
+                  currency: {
+                    chainId: 8453,
+                    address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+                    symbol: 'USDC',
+                    decimals: 6,
+                  },
+                },
+              },
+              steps: [],
+            }) as Execute,
+        ),
+      },
+    } as unknown as RelayClient;
+
+    await expect(
+      quoteRelayToBaseUsdc(
+        {
+          user: USER,
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+        },
+        { client: relayClient },
+      ),
+    ).rejects.toMatchObject({ code: 'SOURCE_QUOTE_FAILED' });
+  });
+
+  it('rejects a canonical Base-USDC quote that routes to another recipient', async () => {
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(
+          async () =>
+            ({
+              details: {
+                sender: USER,
+                recipient: '0x9999999999999999999999999999999999999999',
+                currencyIn: {
+                  amount: '1000000',
+                  currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+                },
+                currencyOut: {
+                  minimumAmount: '990000',
+                  currency: {
+                    chainId: 8453,
+                    address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+                    symbol: 'USDC',
+                    decimals: 6,
+                  },
+                },
+              },
+              steps: [],
+            }) as Execute,
+        ),
+      },
+    } as unknown as RelayClient;
+
+    await expect(
+      quoteRelayToBaseUsdc(
+        {
+          user: USER,
+          recipient: USER,
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+        },
+        { client: relayClient },
+      ),
+    ).rejects.toMatchObject({ code: 'SOURCE_QUOTE_FAILED' });
+  });
+
   it('executes a Relay quote through Relay SDK actions.execute', async () => {
     const executed = {
       details: {
+        sender: USER,
+        recipient: USER,
         currencyIn: {
           currency: { chainId: 10 },
+        },
+        currencyOut: {
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+          },
         },
       },
       steps: [
@@ -229,7 +403,17 @@ describe('Relay SDK adapter', () => {
           kind: 'transaction',
           id: 'deposit',
           requestId: 'req-1',
-          items: [{ status: 'complete', txHashes: [{ txHash: '0xabc', chainId: 1 }] }],
+          items: [
+            {
+              status: 'complete',
+              receipt: { gasUsed: 21_000n },
+              internalTxHashes: [{ txHash: '0xdestination-internal', chainId: 8453 }],
+              txHashes: [
+                { txHash: '0xorigin', chainId: 10 },
+                { txHash: '0xdestination', chainId: 8453 },
+              ],
+            },
+          ],
         },
       ],
     } as Execute;
@@ -248,13 +432,268 @@ describe('Relay SDK adapter', () => {
     const execute = vi.fn(async () => ({ data: executed, abortController: new AbortController() }));
     const relayClient = { chains: [], actions: { execute } } as unknown as RelayClient;
 
-    const result = await executeRelayQuote(executed, {} as WalletClient, {
+    const result = await executeRelayQuote(executed, WALLET, {
       relay: { client: relayClient, chains },
     });
 
     expect(execute).toHaveBeenCalledOnce();
     expect(relayClient.chains).toBe(chains);
-    expect(result).toMatchObject({ requestId: 'req-1', txHashes: ['0xabc'] });
+    expect(result).toMatchObject({
+      requestId: 'req-1',
+      txHashes: ['0xorigin', '0xdestination-internal', '0xdestination'],
+      transactions: {
+        origin: [{ hash: '0xorigin', chainId: 10 }],
+        destination: [
+          { hash: '0xdestination-internal', chainId: 8453 },
+          { hash: '0xdestination', chainId: 8453 },
+        ],
+      },
+    });
+    expect(
+      (result.quote.steps[0]?.items[0]?.receipt as { gasUsed?: bigint } | undefined)?.gasUsed,
+    ).toBe(21_000n);
+  });
+
+  it('does not let a progress observer interrupt Relay execution', async () => {
+    const executed = {
+      details: {
+        sender: USER,
+        recipient: USER,
+        currencyIn: { currency: { chainId: 10 } },
+        currencyOut: {
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+          },
+        },
+      },
+      steps: [],
+    } as Execute;
+    const execute = vi.fn(async ({ onProgress }: { onProgress?: (data: never) => void }) => {
+      onProgress?.({} as never);
+      return { data: executed, abortController: new AbortController() };
+    });
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: { execute },
+    } as unknown as RelayClient;
+
+    await expect(
+      executeRelayQuote(executed, WALLET, {
+        relay: { client: relayClient },
+        onProgress: () => {
+          throw new Error('render failed');
+        },
+      }),
+    ).resolves.toMatchObject({ txHashes: [] });
+  });
+
+  it('preserves request and transaction evidence when Relay fails after broadcast', async () => {
+    const rawQuote = {
+      details: {
+        sender: USER,
+        recipient: USER,
+        currencyIn: { currency: { chainId: 10 } },
+        currencyOut: {
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+          },
+        },
+      },
+      steps: [
+        {
+          action: 'bridge',
+          description: 'Bridge',
+          kind: 'transaction',
+          id: 'deposit',
+          requestId: 'req-broadcast',
+          items: [],
+        },
+      ],
+    } as Execute;
+    const progress = {
+      ...rawQuote,
+      steps: [
+        {
+          ...rawQuote.steps[0]!,
+          items: [
+            {
+              status: 'incomplete',
+              txHashes: [{ txHash: '0xorigin', chainId: 10 }],
+            },
+          ],
+        },
+      ],
+    } as unknown as Execute;
+    const execute = vi.fn(
+      async ({ onProgress }: { onProgress?: (data: { steps: Execute['steps'] }) => void }) => {
+        onProgress?.({ steps: progress.steps });
+        throw new Error('status websocket disconnected');
+      },
+    );
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: { execute },
+    } as unknown as RelayClient;
+
+    const err = await executeRelayQuote(rawQuote, WALLET, {
+      relay: { client: relayClient },
+    }).catch((error) => error);
+
+    expect(err).toMatchObject({
+      code: 'SOURCE_EXECUTION_FAILED',
+      retryable: false,
+      recovery: {
+        kind: 'inspect-relay-route',
+        requestId: 'req-broadcast',
+        txHashes: ['0xorigin'],
+        transactions: { origin: [{ hash: '0xorigin', chainId: 10 }], destination: [] },
+      },
+    });
+  });
+
+  it('composes quoteSource output directly into executeSourceQuote', async () => {
+    const executed = {
+      details: {
+        sender: USER,
+        recipient: USER,
+        currencyIn: { currency: { chainId: 10 } },
+        currencyOut: {
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+          },
+        },
+      },
+      steps: [],
+    } as Execute;
+    const execute = vi.fn(async () => ({ data: executed, abortController: new AbortController() }));
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: { execute },
+    } as unknown as RelayClient;
+    const publicQuote = { raw: executed } as RelayQuote;
+
+    await executeRelayQuote(publicQuote, WALLET, { relay: { client: relayClient } });
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ quote: executed }));
+  });
+
+  it('will not execute a raw quote that routes somewhere other than Base USDC', async () => {
+    const execute = vi.fn();
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: { execute },
+    } as unknown as RelayClient;
+    const rawQuote = {
+      details: {
+        currencyIn: { currency: { chainId: 10 } },
+        currencyOut: { currency: { chainId: 1, address: '0xother' } },
+      },
+      steps: [],
+    } as Execute;
+
+    await expect(
+      executeRelayQuote(rawQuote, WALLET, { relay: { client: relayClient } }),
+    ).rejects.toMatchObject({ code: 'SOURCE_EXECUTION_FAILED' });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['raw Execute', 'tampered RelayQuote'] as const)(
+    'will not execute a %s whose Base recipient differs from the signer',
+    async (shape) => {
+      const execute = vi.fn();
+      const relayClient = {
+        chains: [{ id: 10 }],
+        actions: { execute },
+      } as unknown as RelayClient;
+      const rawQuote = {
+        details: {
+          sender: USER,
+          recipient: '0x9999999999999999999999999999999999999999',
+          currencyIn: { currency: { chainId: 10 } },
+          currencyOut: {
+            currency: {
+              chainId: 8453,
+              address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            },
+          },
+        },
+        steps: [],
+      } as Execute;
+      const quote = shape === 'raw Execute' ? rawQuote : ({ raw: rawQuote } as RelayQuote);
+
+      await expect(
+        executeRelayQuote(quote, WALLET, { relay: { client: relayClient } }),
+      ).rejects.toMatchObject({ code: 'SOURCE_EXECUTION_FAILED' });
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('will not execute a quote with a wallet pinned to the wrong source chain', async () => {
+    const execute = vi.fn();
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: { execute },
+    } as unknown as RelayClient;
+    const wrongChainWallet = {
+      account: { address: USER },
+      chain: { id: 42161 },
+      getChainId: vi.fn(async () => 42161),
+    } as unknown as WalletClient;
+    const rawQuote = {
+      details: {
+        sender: USER,
+        recipient: USER,
+        currencyIn: { currency: { chainId: 10 } },
+        currencyOut: {
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+          },
+        },
+      },
+      steps: [],
+    } as Execute;
+
+    await expect(
+      executeRelayQuote(rawQuote, wrongChainWallet, { relay: { client: relayClient } }),
+    ).rejects.toMatchObject({ code: 'SIGNER_CHAIN_MISMATCH' });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('checks the live chain id for a chainless Relay wallet before execution', async () => {
+    const execute = vi.fn();
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: { execute },
+    } as unknown as RelayClient;
+    const chainlessWrongWallet = {
+      account: { address: USER },
+      chain: undefined,
+      getChainId: vi.fn(async () => 42161),
+    } as unknown as WalletClient;
+    const rawQuote = {
+      details: {
+        sender: USER,
+        recipient: USER,
+        currencyIn: { currency: { chainId: 10 } },
+        currencyOut: {
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+          },
+        },
+      },
+      steps: [],
+    } as Execute;
+
+    await expect(
+      executeRelayQuote(rawQuote, chainlessWrongWallet, { relay: { client: relayClient } }),
+    ).rejects.toMatchObject({ code: 'SIGNER_CHAIN_MISMATCH' });
+    expect(chainlessWrongWallet.getChainId).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('reads Relay status through the SDK request utility', async () => {

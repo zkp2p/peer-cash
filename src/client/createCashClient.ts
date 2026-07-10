@@ -4,9 +4,10 @@
  * The facade keeps the outward surface tiny (capabilities / estimate / cashout
  * / order / orders / watch / withdraw / topUp) while reusing the published
  * SDK's battle-tested internals. A React app, a Node service, and an AI agent
- * are equal consumers: every mutating verb has an unsigned `prepare` path,
- * every wire type is serializable, and every transaction carries ERC-8021
- * attribution ({@link CASH_ATTRIBUTION_CODE}).
+ * are equal consumers: Base-USDC mutations have unsigned `prepare` paths,
+ * Relay execution is explicitly signer-backed, every wire type is serializable,
+ * and every protocol transaction carries ERC-8021 attribution
+ * ({@link CASH_ATTRIBUTION_CODE}).
  */
 import {
   createWalletClient,
@@ -19,7 +20,12 @@ import {
   type WalletClient,
 } from 'viem';
 import { base } from 'viem/chains';
-import { Zkp2pClient, getPaymentMethodsCatalog, appendAttributionToCalldata } from '@zkp2p/sdk';
+import {
+  Zkp2pClient,
+  getPaymentMethodsCatalog,
+  appendAttributionToCalldata,
+  createCompositeDepositId,
+} from '@zkp2p/sdk';
 import type {
   CurrencyType,
   CuratorPayeeDataInput,
@@ -35,12 +41,7 @@ import { deriveBuyerProfile } from '../engine/buyerProfile';
 import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
 import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
-import {
-  buildCapabilities,
-  platformRequiresIdentityAttestation,
-  MIN_CASHOUT_AMOUNT,
-  type CashCapabilities,
-} from './capabilities';
+import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
 import { readEstimate, type CashEstimate, type EstimateInput } from './estimate';
 import { CashError, errors, isCashError, mapChainError } from './errors';
 import {
@@ -48,6 +49,7 @@ import {
   readRelayStatus,
   quoteRelayToBaseUsdc,
   executeRelayQuote,
+  assertWalletChainId,
   type CashSourceCapabilities,
   type RelayOptions,
   type RelayExecutionResult,
@@ -55,6 +57,7 @@ import {
   type RelayQuoteInput,
   type RelaySourceInput,
   type RelayStatus,
+  type RelayTransaction,
 } from './relay';
 import type { Execute, ProgressData } from '@relayprotocol/relay-sdk';
 
@@ -74,6 +77,7 @@ export const CASH_ATTRIBUTION_CODE = 'peer-cash';
  * first-party clients).
  */
 const DEFAULT_CURATOR_URLS: Partial<Record<RuntimeEnv, string>> = {
+  preproduction: 'https://api-preprod.zkp2p.xyz',
   staging: 'https://api-staging.zkp2p.xyz',
 };
 const ERC20_APPROVE_ABI = parseAbi([
@@ -117,14 +121,16 @@ export interface CashLeg {
 
 export interface CashoutInput {
   /**
-   * Amount to cash out. Defaults to Base USDC base units. When `source` is set,
-   * this is source-token base units and Relay routes it into Base USDC first.
+   * Amount to cash out. Without `source`, this is Base USDC base units. With
+   * `source`, Relay interprets it according to `tradeType`; the default
+   * `EXACT_INPUT` treats it as source-token base units.
    */
   amount: bigint;
   /** Optional Relay source asset. Omit for the Base USDC default path. */
   source?: RelaySourceInput & {
     /** Base recipient for bridged USDC; defaults to the signer address. */
     recipient?: string;
+    /** Relay amount mode. Omit for the recommended exact source-input flow. */
     tradeType?: 'EXACT_INPUT' | 'EXACT_OUTPUT' | 'EXPECTED_OUTPUT';
   };
   /** Where the fiat should arrive. Multi-payout is a deliberate v1 cut. */
@@ -185,7 +191,14 @@ export interface CashoutResult {
   /** Optimistic snapshot (`awaiting-buyer`); poll `order(depositId)` for live state. */
   order: CashOrder;
   /** Present when `cashout()` first routed a source asset through Relay. */
-  source?: { amount: bigint; requestId?: string; txHashes: string[] };
+  source?: {
+    /** Conservative Base USDC amount deposited (Relay's guaranteed minimum output). */
+    amount: bigint;
+    requestId?: string;
+    txHashes: string[];
+    /** Chain-aware evidence (emitted by 0.1.4+; optional for wire compatibility). */
+    transactions?: { origin: RelayTransaction[]; destination: RelayTransaction[] };
+  };
 }
 
 export interface PrepareResult {
@@ -232,8 +245,12 @@ export interface CashClient {
   quoteSource(input: RelayQuoteInput): Promise<RelayQuote>;
   /** Execute a Relay SDK quote into Base USDC before starting the Peer Cash order. */
   executeSourceQuote(
-    quote: Execute,
-    opts: SignerOptions & {
+    quote: RelayQuote | Execute,
+    opts: {
+      /** Wallet signer on the quote's source chain. */
+      signer: WalletClient;
+      /** Expected Base recipient. Defaults to the source signer. */
+      recipient?: string;
       onProgress?: (data: ProgressData) => void;
       disableCapabilitiesCheck?: boolean;
     },
@@ -319,11 +336,33 @@ async function submitAndConfirm(
   try {
     hash = (await send()) as Hash;
   } catch (err) {
-    throw mapChainError(verb, err);
+    const mapped = mapChainError(verb, err);
+    if (isKnownPreBroadcastFailure(err, mapped)) throw mapped;
+    throw errors.transactionSubmissionUnknown(verb, err, {
+      kind: 'inspect-base-operation-submission',
+      operation: verb,
+    });
   }
-  const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+  let receipt;
+  try {
+    receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+  } catch (err) {
+    throw errors.transactionStatusUnknown(hash, err, verb);
+  }
   if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
   return hash;
+}
+
+function isKnownPreBroadcastFailure(err: unknown, mapped: CashError): boolean {
+  if (
+    mapped.code === 'INSUFFICIENT_TOKEN_BALANCE' ||
+    mapped.code === 'ALLOWANCE_NOT_VISIBLE' ||
+    mapped.code === 'ESCROW_PAUSED'
+  ) {
+    return true;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return /user rejected|user denied|rejected request|action_rejected/i.test(message);
 }
 
 /** The indexer aggregate fields both deposit queries share. */
@@ -397,9 +436,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
   // Signing clients are built lazily and cached per WalletClient identity.
   const signingClients = new WeakMap<WalletClient, Zkp2pClient>();
-  function signingClient(verb: string, opts?: SignerOptions): Zkp2pClient {
+  async function signingClient(verb: string, opts?: SignerOptions): Promise<Zkp2pClient> {
     const signer = opts?.signer;
     if (!signer?.account) throw errors.signerRequired(verb);
+    await assertWalletChainId(signer, BASE_CHAIN_ID, verb);
     let client = signingClients.get(signer);
     if (!client) {
       client = buildSdkClient(signer);
@@ -410,18 +450,15 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
   function validatePayout(input: CashoutInput): Omit<CashDepositInput, 'amount'> {
     const { receive } = input;
-    const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
-    if (!catalog[receive.platform]) throw errors.unsupportedPlatform(receive.platform);
+    const platform = buildCapabilities(environment).platforms.find(
+      (capability) => capability.platform === receive.platform,
+    );
+    if (!platform) throw errors.unsupportedPlatform(receive.platform);
     if (!isMarketRateSupported(receive.currency)) {
       throw errors.oracleUnsupportedCurrency(receive.currency);
     }
-    // Wise/PayPal require a signed maker identity attestation the SDK can't
-    // mint. Reject early unless the caller supplied one on the payee.
-    if (
-      platformRequiresIdentityAttestation(receive.platform) &&
-      !(receive.payee as { identityAttestation?: unknown }).identityAttestation
-    ) {
-      throw errors.payeeVerificationRequired(receive.platform);
+    if (!platform.currencies.includes(receive.currency)) {
+      throw errors.unsupportedPlatformCurrency(receive.platform, receive.currency);
     }
     return {
       payouts: [
@@ -431,15 +468,26 @@ export function createCashClient(options: CashClientOptions): CashClient {
           payeeData: receive.payee,
         },
       ],
-      ...(input.intentAmountRange ? { intentAmountRange: input.intentAmountRange } : {}),
     };
   }
 
-  function validateInput(input: CashoutInput): CashDepositInput {
-    if (input.amount < MIN_CASHOUT_AMOUNT) {
-      throw errors.amountBelowMinimum(input.amount, MIN_CASHOUT_AMOUNT);
+  function validateDepositInput(
+    amount: bigint,
+    input: CashoutInput,
+    payoutInput: Omit<CashDepositInput, 'amount'> = validatePayout(input),
+  ): CashDepositInput {
+    if (amount < MIN_CASHOUT_AMOUNT) {
+      throw errors.amountBelowMinimum(amount, MIN_CASHOUT_AMOUNT);
     }
-    return { amount: input.amount, ...validatePayout(input) };
+    const range = input.intentAmountRange;
+    if (range && (range.min <= 0n || range.max < range.min || range.max > amount)) {
+      throw errors.invalidIntentAmountRange(amount, range.min, range.max);
+    }
+    return {
+      amount,
+      ...payoutInput,
+      ...(range ? { intentAmountRange: range } : {}),
+    };
   }
 
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
@@ -457,21 +505,44 @@ export function createCashClient(options: CashClientOptions): CashClient {
     }
   }
 
+  function parseDepositId(depositId: string) {
+    try {
+      const parsed = parseCompositeDepositId(depositId);
+      return {
+        ...parsed,
+        compositeId: createCompositeDepositId(parsed.escrowAddress, parsed.onchainDepositId),
+      };
+    } catch (err) {
+      throw errors.invalidDepositId(depositId, err);
+    }
+  }
+
   async function fetchOrder(depositId: string): Promise<CashOrder> {
-    const deposits = await readClient.indexer.getDepositsByIdsWithRelations([depositId], {
-      includeIntents: true,
-      intentStatuses: CASH_ORDER_STATUSES,
-    });
+    const { compositeId } = parseDepositId(depositId);
+    let deposits;
+    try {
+      deposits = await readClient.indexer.getDepositsByIdsWithRelations([compositeId], {
+        includeIntents: true,
+        intentStatuses: CASH_ORDER_STATUSES,
+      });
+    } catch (err) {
+      throw errors.indexerUnavailable('order', err);
+    }
     const deposit = deposits[0];
 
     if (!deposit) {
       // Deposit not yet indexed (lag right after creation) - read intents directly.
-      const intents = await readClient.indexer.getIntentsForDeposits(
-        [depositId],
-        CASH_ORDER_STATUSES,
-      );
-      if (intents.length === 0) throw errors.orderNotFound(depositId);
-      return deriveCashOrder(depositId, intents);
+      let intents;
+      try {
+        intents = await readClient.indexer.getIntentsForDeposits(
+          [compositeId],
+          CASH_ORDER_STATUSES,
+        );
+      } catch (err) {
+        throw errors.indexerUnavailable('order intents', err);
+      }
+      if (intents.length === 0) throw errors.orderNotFound(compositeId);
+      return deriveCashOrder(compositeId, intents);
     }
 
     // Reconstruct the payout legs (platform, currency, payee hash, pricing
@@ -482,7 +553,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       getPaymentMethodsCatalog(BASE_CHAIN_ID, environment),
     );
 
-    return deriveCashOrder(depositId, deposit.intents ?? [], {
+    return deriveCashOrder(compositeId, deposit.intents ?? [], {
       ...depositOrderOptions(deposit),
       ...(payouts.length > 0 ? { payouts } : {}),
     });
@@ -493,7 +564,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     onchainDepositId: bigint;
     escrowArg: { escrowAddress?: Address };
   } {
-    const { escrowAddress, onchainDepositId } = parseCompositeDepositId(depositId);
+    const { escrowAddress, onchainDepositId } = parseDepositId(depositId);
     return {
       onchainDepositId,
       escrowArg: escrowAddress ? { escrowAddress: escrowAddress as Address } : {},
@@ -522,7 +593,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     const liveIntent = signaled.some((f) => isFillLive(f, nowSeconds));
     const expiredIntent = signaled.length > 0 && !liveIntent;
 
-    if (order.pendingAmount > 0n && liveIntent) {
+    if (liveIntent || (order.pendingAmount > 0n && signaled.length === 0)) {
       throw errors.activeIntentBlocksWithdrawal(depositId);
     }
     if (availableAmount(order) <= 0n && order.pendingAmount === 0n) {
@@ -598,26 +669,36 @@ export function createCashClient(options: CashClientOptions): CashClient {
         txOverrides: attribution,
       });
     } catch (err) {
-      throw mapChainError('approve', err);
+      throw mapChainError('approve', err, { requiredAmount: amount });
     }
     if (allowance.hadAllowance || !allowance.hash) return;
 
-    const receipt = await client.publicClient.waitForTransactionReceipt({ hash: allowance.hash });
+    let receipt;
+    try {
+      receipt = await client.publicClient.waitForTransactionReceipt({ hash: allowance.hash });
+    } catch (err) {
+      throw errors.transactionStatusUnknown(allowance.hash, err, 'approve');
+    }
     if (receipt.status === 'reverted') throw errors.transactionFailed(allowance.hash);
 
+    let lastReadError: unknown;
     for (let attempt = 0; attempt < 15; attempt++) {
-      const visible = (await client.publicClient.readContract({
-        address: token,
-        abi: ERC20_ALLOWANCE_ABI,
-        functionName: 'allowance',
-        args: [owner, escrow],
-      })) as bigint;
-      if (visible >= amount) return;
+      try {
+        const visible = (await client.publicClient.readContract({
+          address: token,
+          abi: ERC20_ALLOWANCE_ABI,
+          functionName: 'allowance',
+          args: [owner, escrow],
+        })) as bigint;
+        if (visible >= amount) return;
+      } catch (err) {
+        lastReadError = err;
+      }
       await sleep(1_000);
     }
     // The approve mined but the allowance never surfaced on the read path -
     // surface it as retryable rather than blindly submitting a doomed deposit.
-    throw errors.allowanceNotVisible(amount);
+    throw errors.allowanceNotVisible(amount, lastReadError);
   }
 
   return {
@@ -632,14 +713,18 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async executeSourceQuote(
-      quote: Execute,
-      opts: SignerOptions & {
+      quote: RelayQuote | Execute,
+      opts: {
+        signer: WalletClient;
+        recipient?: string;
         onProgress?: (data: ProgressData) => void;
         disableCapabilitiesCheck?: boolean;
       },
     ): Promise<RelayExecutionResult> {
+      if (!opts.signer.account) throw errors.signerRequired('executeSourceQuote');
       return executeRelayQuote(quote, opts.signer, {
         ...(options.relay ? { relay: options.relay } : {}),
+        ...(opts.recipient ? { recipient: opts.recipient } : {}),
         ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
         ...(opts.disableCapabilitiesCheck !== undefined
           ? { disableCapabilitiesCheck: opts.disableCapabilitiesCheck }
@@ -660,7 +745,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult> {
-      const client = signingClient('cashout', opts);
+      const client = await signingClient('cashout', opts);
       const owner = opts.signer.account!.address;
       const payoutInput = validatePayout(input);
 
@@ -670,6 +755,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         const sourceSigner =
           opts.sourceSigner ?? (input.source.chainId === BASE_CHAIN_ID ? opts.signer : undefined);
         if (!sourceSigner?.account) throw errors.signerRequired('source cashout');
+        await assertWalletChainId(sourceSigner, input.source.chainId, 'source cashout');
         if (
           input.source.recipient !== undefined &&
           input.source.recipient.toLowerCase() !== owner.toLowerCase()
@@ -690,7 +776,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           throw errors.amountBelowMinimum(relayQuote.outputAmount, MIN_CASHOUT_AMOUNT);
         }
         cashoutAmount = relayQuote.outputAmount;
-        const depositInput: CashDepositInput = { amount: cashoutAmount, ...payoutInput };
+        const depositInput = validateDepositInput(cashoutAmount, input, payoutInput);
         const params = await buildDepositParams(client, depositInput);
 
         // Spender must be the escrow createDeposit will target - the default can
@@ -700,16 +786,19 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
         const executed = await executeRelayQuote(relayQuote.raw, sourceSigner, {
           ...(options.relay ? { relay: options.relay } : {}),
+          recipient: owner,
           ...(opts.onSourceProgress ? { onProgress: opts.onSourceProgress } : {}),
           ...(opts.disableSourceCapabilitiesCheck !== undefined
             ? { disableCapabilitiesCheck: opts.disableSourceCapabilitiesCheck }
             : {}),
         });
-        sourceResult = {
+        const routedSource: NonNullable<CashoutResult['source']> = {
           amount: cashoutAmount,
           ...(executed.requestId ? { requestId: executed.requestId } : {}),
           txHashes: executed.txHashes,
+          ...(executed.transactions ? { transactions: executed.transactions } : {}),
         };
+        sourceResult = routedSource;
 
         const attributedParams = { ...params, txOverrides: attribution };
         // Submit the deposit; one retry for the replica-lag case the allowance
@@ -731,10 +820,26 @@ export function createCashClient(options: CashClientOptions): CashClient {
         try {
           hash = (await send()) as Hash;
         } catch (err) {
-          throw mapChainError('createDeposit', err);
+          const mapped = mapChainError('createDeposit', err, {
+            requiredAmount: depositInput.amount,
+          });
+          if (isKnownPreBroadcastFailure(err, mapped)) {
+            throw errors.sourceRouteCompletedCashoutFailed(routedSource, mapped);
+          }
+          throw errors.sourceCashoutSubmissionUnknown(routedSource, owner, mapped);
         }
-        const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
-        if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
+        let receipt;
+        try {
+          receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+        } catch (err) {
+          throw errors.sourceCashoutStatusUnknown(routedSource, hash, err);
+        }
+        if (receipt.status === 'reverted') {
+          throw errors.sourceRouteCompletedCashoutFailed(
+            routedSource,
+            errors.transactionFailed(hash),
+          );
+        }
 
         const abi = client.escrowV2Abi ?? client.escrowAbi;
         const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
@@ -751,11 +856,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
           escrowAddress: resolved.escrowAddress,
           onchainDepositId: resolved.onchainDepositId,
           order,
-          source: sourceResult,
+          source: routedSource,
         };
       }
 
-      const depositInput = validateInput(input);
+      const depositInput = validateDepositInput(input.amount, input, payoutInput);
       const params = await buildDepositParams(client, depositInput);
 
       // Spender must be the escrow createDeposit will target - the default can
@@ -783,9 +888,23 @@ export function createCashClient(options: CashClientOptions): CashClient {
       try {
         hash = (await send()) as Hash;
       } catch (err) {
-        throw mapChainError('createDeposit', err);
+        const mapped = mapChainError('createDeposit', err, {
+          requiredAmount: depositInput.amount,
+        });
+        if (isKnownPreBroadcastFailure(err, mapped)) throw mapped;
+        throw errors.transactionSubmissionUnknown('cashout', err, {
+          kind: 'inspect-base-cashout-submission',
+          amount: depositInput.amount.toString(),
+          depositor: owner,
+          txHashes: [],
+        });
       }
-      const receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+      let receipt;
+      try {
+        receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+      } catch (err) {
+        throw errors.transactionStatusUnknown(hash, err, 'cashout');
+      }
       if (receipt.status === 'reverted') throw errors.transactionFailed(hash);
 
       const abi = client.escrowV2Abi ?? client.escrowAbi;
@@ -809,7 +928,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     async prepare(input: CashoutInput): Promise<PrepareResult> {
       if (input.source) throw errors.sourceRouteUnsupportedInPrepare();
-      const depositInput = validateInput(input);
+      const depositInput = validateDepositInput(input.amount, input);
       const params = await buildDepositParams(readClient, depositInput);
 
       const { prepared } = await readClient.prepareCreateDeposit({
@@ -854,20 +973,57 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async buyer(address: string): Promise<CashBuyerProfile> {
-      const intents = await readClient.indexer.getOwnerIntents(address, CASH_ORDER_STATUSES);
+      let intents;
+      try {
+        intents = await readClient.indexer.getOwnerIntents(address, CASH_ORDER_STATUSES);
+      } catch (err) {
+        throw errors.indexerUnavailable('buyer profile', err);
+      }
       return deriveBuyerProfile(address, intents);
     },
 
     async orders(owner: string, opts: OrdersOptions = {}): Promise<CashOrder[]> {
       const { inFlight = false, limit = 100 } = opts;
-      const deposits = await readClient.indexer.getDeposits({ depositor: owner }, { limit });
+      let deposits;
+      try {
+        deposits = await readClient.indexer.getDepositsWithRelations(
+          { depositor: owner },
+          { limit },
+        );
+      } catch (err) {
+        throw errors.indexerUnavailable('orders', err);
+      }
+      const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
 
       const derived = deposits
-        // List rows carry no intent detail - flag it so `nextActions` treats a
-        // live outstanding amount conservatively (no false "withdraw" offer).
-        .map((d) => deriveCashOrder(d.id, [], { ...depositOrderOptions(d), fillsIncluded: false }))
+        .flatMap((deposit) => {
+          if (deposit.token.toLowerCase() !== BASE_USDC_ADDRESS.toLowerCase()) return [];
+          const payouts = derivePayouts(
+            deposit.paymentMethods ?? [],
+            deposit.currencies ?? [],
+            catalog,
+          );
+          // ERC-8021 attribution is not indexed, so the strongest on-chain
+          // identity is the product invariant: one Base-USDC payout leg at a
+          // zero-spread oracle rate. Exclude unrelated fixed-rate/vault rows.
+          if (
+            payouts.length !== 1 ||
+            !payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
+          ) {
+            return [];
+          }
+          return [
+            deriveCashOrder(deposit.id, [], {
+              ...depositOrderOptions(deposit),
+              payouts,
+              // List rows carry no intent detail - a positive outstanding
+              // amount is treated conservatively as a live lock.
+              fillsIncluded: false,
+            }),
+          ];
+        })
         // Drop dust/empty deposits that never represented a real cash-out.
-        .filter((o) => o.totalAmount > 10_000n)
+        .filter((o) => o.totalAmount >= MIN_CASHOUT_AMOUNT)
         .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 
       return inFlight ? derived.filter((o) => o.isInFlight) : derived;
@@ -909,7 +1065,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async withdraw(depositId: string, opts: WithdrawOptions): Promise<WithdrawResult> {
-      const client = signingClient('withdraw', opts);
+      const client = await signingClient('withdraw', opts);
 
       if (opts.amount !== undefined) {
         const { onchainDepositId, escrowArg } = await partialWithdrawContext(
@@ -1015,7 +1171,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async topUp(depositId: string, amount: bigint, opts: SignerOptions): Promise<TopUpResult> {
-      const client = signingClient('topUp', opts);
+      const client = await signingClient('topUp', opts);
       const { onchainDepositId, escrowArg } = await topUpContext(depositId, amount);
 
       // Cash deposits are always Base USDC (enforced at creation); the escrow
