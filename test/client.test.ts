@@ -658,6 +658,7 @@ describe('cashout()', () => {
         .fn()
         .mockRejectedValueOnce(new Error('wallet temporarily unavailable'))
         .mockResolvedValueOnce({ status: 'pending', statusCode: 100 })
+        .mockResolvedValueOnce({ status: 'success', statusCode: 200 })
         .mockResolvedValue({
           status: 'success',
           statusCode: 200,
@@ -681,7 +682,7 @@ describe('cashout()', () => {
     );
 
     expect(mockInstance.publicClient.getTransaction).toHaveBeenCalledWith({ hash: '0xbatchtx' });
-    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledTimes(3);
+    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledTimes(4);
     expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledWith({ id: '0xbundle-id' });
     expect(batchSigner.transport.request).toHaveBeenCalledTimes(2);
     expect(mockInstance.createDeposit).toHaveBeenCalledOnce();

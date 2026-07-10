@@ -731,11 +731,18 @@ export function createCashClient(options: CashClientOptions): CashClient {
             throw new Error('Relay wallet call bundle failed');
           }
           if (statuses.every((status) => status.status === 'success')) {
-            batchTransactionHashes = statuses.flatMap((status) =>
-              (status.receipts ?? []).map((receipt) => receipt.transactionHash),
-            );
-            batchesComplete = true;
-            break;
+            const receiptGroups = statuses.map((status) => status.receipts ?? []);
+            if (receiptGroups.some((receipts) => receipts.length === 0)) {
+              batchError = new Error(
+                'Relay wallet call bundle did not include transaction receipts',
+              );
+            } else {
+              batchTransactionHashes = receiptGroups.flatMap((receipts) =>
+                receipts.map((receipt) => receipt.transactionHash),
+              );
+              batchesComplete = true;
+              break;
+            }
           }
         } catch (err) {
           batchError = err;
