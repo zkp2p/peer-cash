@@ -14,6 +14,7 @@ export const nonNegativeBigintString = z
 export const relayTransactionJsonSchema = z.object({
   hash: z.string(),
   chainId: z.number(),
+  isBatchTx: z.boolean().optional(),
 });
 
 export const relayTransactionsJsonSchema = z

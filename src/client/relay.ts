@@ -94,6 +94,8 @@ export interface RelayExecutionResult {
 export interface RelayTransaction {
   hash: string;
   chainId: number;
+  /** Relay batch-call identifiers are not transaction hashes. */
+  isBatchTx?: boolean | undefined;
 }
 
 export interface RelayStatus {
@@ -232,10 +234,18 @@ function collectRelayTransactions(
   for (const step of steps) {
     for (const item of step.items) {
       for (const tx of item.internalTxHashes ?? []) {
-        record({ hash: tx.txHash, chainId: tx.chainId });
+        record({
+          hash: tx.txHash,
+          chainId: tx.chainId,
+          ...(tx.isBatchTx ? { isBatchTx: true } : {}),
+        });
       }
       for (const tx of item.txHashes ?? []) {
-        record({ hash: tx.txHash, chainId: tx.chainId });
+        record({
+          hash: tx.txHash,
+          chainId: tx.chainId,
+          ...(tx.isBatchTx ? { isBatchTx: true } : {}),
+        });
       }
     }
   }

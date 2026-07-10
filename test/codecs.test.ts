@@ -266,7 +266,7 @@ describe('Relay codecs', () => {
       txHashes: ['0xorigin', '0xdestination'],
       transactions: {
         origin: [{ hash: '0xorigin', chainId: 10 }],
-        destination: [{ hash: '0xdestination', chainId: 8453 }],
+        destination: [{ hash: '0xdestination', chainId: 8453, isBatchTx: true }],
       },
       quote: {
         request: { url: 'https://api.relay.link/quote/v2', headers: { authorization: 'secret' } },

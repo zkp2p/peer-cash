@@ -15,6 +15,7 @@ const mockInstance = {
   escrowV2Abi: undefined as Abi | undefined,
   escrowAbi: [] as Abi,
   publicClient: {
+    getTransaction: vi.fn(),
     readContract: vi.fn(),
     waitForTransactionReceipt: vi.fn(),
   },
@@ -464,6 +465,229 @@ describe('cashout()', () => {
         destination: [],
       },
     });
+  });
+
+  it('waits for the signer provider to observe a same-chain Relay nonce before depositing', async () => {
+    const relayQuote = {
+      details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
+        currencyIn: {
+          amount: '50000000000000',
+          currency: {
+            chainId: 8453,
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'ETH',
+            decimals: 18,
+          },
+        },
+        currencyOut: {
+          amount: '88800',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [],
+    };
+    const relayExecuted = {
+      steps: [
+        {
+          action: 'swap',
+          description: 'Swap ETH to USDC',
+          kind: 'transaction',
+          id: 'swap',
+          requestId: 'relay-base-request',
+          items: [{ status: 'complete', txHashes: [{ txHash: '0xrelaybase', chainId: 8453 }] }],
+        },
+      ],
+    };
+    const relayClient = {
+      chains: [
+        {
+          id: 8453,
+          name: 'base',
+          displayName: 'Base',
+          currency: {
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'ETH',
+            decimals: 18,
+          },
+        },
+      ],
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => ({
+          data: relayExecuted,
+          abortController: new AbortController(),
+        })),
+      },
+    };
+    mockInstance.publicClient.getTransaction
+      .mockRejectedValueOnce(new Error('transaction not found'))
+      .mockResolvedValue({
+        from: '0xmaker',
+        nonce: 84,
+      });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xdeposit' });
+    mockInstance.publicClient.getTransaction.mockResolvedValue({
+      from: '0xmaker',
+      nonce: 84,
+    });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(6n)],
+    });
+
+    const sameChainSigner = {
+      ...signer,
+      transport: {
+        request: vi
+          .fn()
+          .mockRejectedValueOnce(new Error('provider timeout'))
+          .mockResolvedValueOnce('0x54')
+          .mockResolvedValue('0x55'),
+      },
+    } as unknown as WalletClient;
+
+    await createCashClient({
+      environment: 'staging',
+      relay: { client: relayClient as never },
+    }).cashout(
+      {
+        amount: 50_000_000_000_000n,
+        source: {
+          chainId: 8453,
+          currency: '0x0000000000000000000000000000000000000000',
+        },
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+      },
+      { signer: sameChainSigner },
+    );
+
+    expect(mockInstance.publicClient.getTransaction).toHaveBeenCalledWith({
+      hash: '0xrelaybase',
+    });
+    expect(mockInstance.publicClient.getTransaction).toHaveBeenCalledTimes(2);
+    expect(sameChainSigner.transport.request).toHaveBeenCalledWith({
+      method: 'eth_getTransactionCount',
+      params: ['0xmaker', 'pending'],
+    });
+    expect(sameChainSigner.transport.request).toHaveBeenCalledTimes(3);
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txOverrides: expect.not.objectContaining({ nonce: expect.anything() }),
+      }),
+    );
+  });
+
+  it('does not treat a same-chain Relay batch identifier as a transaction hash', async () => {
+    const relayQuote = {
+      details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
+        currencyIn: {
+          amount: '50000000000000',
+          currency: {
+            chainId: 8453,
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'ETH',
+            decimals: 18,
+          },
+        },
+        currencyOut: {
+          amount: '88800',
+          currency: {
+            chainId: 8453,
+            address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            symbol: 'USDC',
+            decimals: 6,
+          },
+        },
+      },
+      steps: [],
+    };
+    const relayExecuted = {
+      steps: [
+        {
+          action: 'swap',
+          description: 'Swap ETH to USDC',
+          kind: 'transaction',
+          id: 'swap',
+          requestId: 'relay-base-request',
+          items: [
+            {
+              status: 'complete',
+              internalTxHashes: [{ txHash: '0xbundle-id', chainId: 8453, isBatchTx: true }],
+            },
+          ],
+        },
+      ],
+    };
+    const relayClient = {
+      chains: [{ id: 8453 }],
+      actions: {
+        getQuote: vi.fn(async () => relayQuote),
+        execute: vi.fn(async () => ({
+          data: relayExecuted,
+          abortController: new AbortController(),
+        })),
+      },
+    };
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xdeposit' });
+    mockInstance.publicClient.getTransaction.mockResolvedValue({
+      from: '0xmaker',
+      nonce: 84,
+    });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(7n)],
+    });
+    const batchSigner = {
+      ...signer,
+      transport: {
+        request: vi.fn().mockResolvedValueOnce('0x54').mockResolvedValue('0x55'),
+      },
+    } as unknown as WalletClient;
+    const batchSourceSigner = {
+      ...signer,
+      getCallsStatus: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('wallet temporarily unavailable'))
+        .mockResolvedValueOnce({ status: 'pending', statusCode: 100 })
+        .mockResolvedValue({
+          status: 'success',
+          statusCode: 200,
+          receipts: [{ transactionHash: '0xbatchtx' }],
+        }),
+    } as unknown as WalletClient;
+
+    const result = await createCashClient({
+      environment: 'staging',
+      relay: { client: relayClient as never },
+    }).cashout(
+      {
+        amount: 50_000_000_000_000n,
+        source: {
+          chainId: 8453,
+          currency: '0x0000000000000000000000000000000000000000',
+        },
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+      },
+      { signer: batchSigner, sourceSigner: batchSourceSigner },
+    );
+
+    expect(mockInstance.publicClient.getTransaction).toHaveBeenCalledWith({ hash: '0xbatchtx' });
+    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledTimes(3);
+    expect(batchSourceSigner.getCallsStatus).toHaveBeenCalledWith({ id: '0xbundle-id' });
+    expect(batchSigner.transport.request).toHaveBeenCalledTimes(2);
+    expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
+    expect(result.source?.transactions?.origin).toEqual([
+      { hash: '0xbundle-id', chainId: 8453, isBatchTx: true },
+    ]);
   });
 
   it.each([
