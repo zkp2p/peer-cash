@@ -728,6 +728,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (batchIds.length > 0) {
       let batchError: unknown;
       let batchesComplete = false;
+      let batchesSucceededWithoutReceipts = false;
       for (let attempt = 0; attempt < 20; attempt++) {
         try {
           const statuses = await Promise.all(
@@ -742,6 +743,8 @@ export function createCashClient(options: CashClientOptions): CashClient {
               batchError = new Error(
                 'Relay wallet call bundle did not include transaction receipts',
               );
+              batchesSucceededWithoutReceipts = true;
+              break;
             } else {
               batchTransactionHashes = receiptGroups.flatMap((receipts) =>
                 receipts.map((receipt) => receipt.transactionHash),
@@ -757,6 +760,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         await sleep(250);
       }
       if (!batchesComplete) {
+        if (batchesSucceededWithoutReceipts) throw batchError;
         throw batchExecutionFailed(
           batchError ?? new Error('Relay wallet call bundle did not complete'),
         );

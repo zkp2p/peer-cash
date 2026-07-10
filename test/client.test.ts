@@ -656,7 +656,6 @@ describe('cashout()', () => {
       .fn()
       .mockRejectedValueOnce(new Error('wallet temporarily unavailable'))
       .mockResolvedValueOnce({ status: 'pending', statusCode: 100 })
-      .mockResolvedValueOnce({ status: 'success', statusCode: 200 })
       .mockResolvedValue({
         status: 'success',
         statusCode: 200,
@@ -686,13 +685,36 @@ describe('cashout()', () => {
     });
 
     expect(mockInstance.publicClient.getTransaction).toHaveBeenCalledWith({ hash: '0xbatchtx' });
-    expect(getCallsStatus).toHaveBeenCalledTimes(4);
+    expect(getCallsStatus).toHaveBeenCalledTimes(3);
     expect(getCallsStatus).toHaveBeenCalledWith({ id: '0xbundle-id' });
     expect(batchSigner.transport.request).toHaveBeenCalledTimes(2);
     expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
     expect(result.source?.transactions?.origin).toEqual([
       { hash: '0xbundle-id', chainId: 8453, isBatchTx: true },
     ]);
+
+    getCallsStatus.mockReset().mockResolvedValue({
+      status: 'success',
+      statusCode: 200,
+    });
+    mockInstance.createDeposit.mockClear();
+
+    const receiptless = await cash
+      .cashout(input, { signer: batchSigner, sourceSigner: batchSourceSigner })
+      .catch((error) => error);
+
+    expect(receiptless).toMatchObject({
+      code: 'SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED',
+      retryable: false,
+      recovery: {
+        kind: 'retry-base-usdc-cashout',
+        amount: '88800',
+        requestId: 'relay-base-request',
+        txHashes: ['0xbundle-id'],
+      },
+    });
+    expect(getCallsStatus).toHaveBeenCalledOnce();
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
 
     getCallsStatus.mockReset().mockResolvedValue({
       status: 'failure',
