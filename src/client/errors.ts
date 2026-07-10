@@ -54,8 +54,8 @@ interface CashSourceRecoveryBase {
   requestId?: string;
   txHashes: string[];
   transactions?: {
-    origin: Array<{ hash: string; chainId: number }>;
-    destination: Array<{ hash: string; chainId: number }>;
+    origin: Array<{ hash: string; chainId: number; isBatchTx?: boolean | undefined }>;
+    destination: Array<{ hash: string; chainId: number; isBatchTx?: boolean | undefined }>;
   };
 }
 

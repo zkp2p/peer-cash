@@ -407,7 +407,9 @@ describe('Relay SDK adapter', () => {
             {
               status: 'complete',
               receipt: { gasUsed: 21_000n },
-              internalTxHashes: [{ txHash: '0xdestination-internal', chainId: 8453 }],
+              internalTxHashes: [
+                { txHash: '0xdestination-internal', chainId: 8453, isBatchTx: true },
+              ],
               txHashes: [
                 { txHash: '0xorigin', chainId: 10 },
                 { txHash: '0xdestination', chainId: 8453 },
@@ -444,7 +446,7 @@ describe('Relay SDK adapter', () => {
       transactions: {
         origin: [{ hash: '0xorigin', chainId: 10 }],
         destination: [
-          { hash: '0xdestination-internal', chainId: 8453 },
+          { hash: '0xdestination-internal', chainId: 8453, isBatchTx: true },
           { hash: '0xdestination', chainId: 8453 },
         ],
       },

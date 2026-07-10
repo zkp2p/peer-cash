@@ -16,6 +16,7 @@ import {
   parseAbi,
   type Address,
   type Hash,
+  type Hex,
   type Transport,
   type WalletClient,
 } from 'viem';
@@ -701,6 +702,97 @@ export function createCashClient(options: CashClientOptions): CashClient {
     throw errors.allowanceNotVisible(amount, lastReadError);
   }
 
+  async function waitForBaseSignerAfterRelay(
+    client: Zkp2pClient,
+    cashoutSigner: WalletClient,
+    sourceSigner: WalletClient,
+    owner: Address,
+    sourceChainId: number,
+    executed: RelayExecutionResult,
+  ): Promise<void> {
+    if (sourceChainId !== BASE_CHAIN_ID) return;
+
+    const baseTransactions = (executed.transactions?.origin ?? []).filter(
+      (transaction) => transaction.chainId === BASE_CHAIN_ID,
+    );
+    const batchIds = baseTransactions
+      .filter((transaction) => transaction.isBatchTx === true)
+      .map((transaction) => transaction.hash);
+    let batchTransactionHashes: Hash[] = [];
+    if (batchIds.length > 0) {
+      let batchError: unknown;
+      let batchesComplete = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        try {
+          const statuses = await Promise.all(
+            batchIds.map((id) => sourceSigner.getCallsStatus({ id })),
+          );
+          if (statuses.some((status) => status.status === 'failure')) {
+            throw new Error('Relay wallet call bundle failed');
+          }
+          if (statuses.every((status) => status.status === 'success')) {
+            batchTransactionHashes = statuses.flatMap((status) =>
+              (status.receipts ?? []).map((receipt) => receipt.transactionHash),
+            );
+            batchesComplete = true;
+            break;
+          }
+        } catch (err) {
+          batchError = err;
+        }
+        await sleep(250);
+      }
+      if (!batchesComplete) {
+        throw batchError ?? new Error('Relay wallet call bundle did not complete');
+      }
+    }
+
+    const hashes = [
+      ...baseTransactions
+        .filter((transaction) => transaction.isBatchTx !== true)
+        .map((transaction) => transaction.hash as Hash),
+      ...batchTransactionHashes,
+    ];
+    if (hashes.length === 0) return;
+
+    let transactions: Awaited<ReturnType<typeof client.publicClient.getTransaction>>[] | undefined;
+    let lastLookupError: unknown;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        transactions = await Promise.all(
+          hashes.map((hash) => client.publicClient.getTransaction({ hash })),
+        );
+        break;
+      } catch (err) {
+        lastLookupError = err;
+        await sleep(250);
+      }
+    }
+    if (!transactions) throw lastLookupError;
+
+    const ownerNonces = transactions
+      .filter((transaction) => transaction.from.toLowerCase() === owner.toLowerCase())
+      .map((transaction) => transaction.nonce);
+    if (ownerNonces.length === 0) return;
+
+    const afterRelay = Math.max(...ownerNonces) + 1;
+    let lastNonceError: unknown;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const pendingHex = (await cashoutSigner.transport.request({
+          method: 'eth_getTransactionCount',
+          params: [owner, 'pending'],
+        })) as Hex;
+        if (Number(BigInt(pendingHex)) >= afterRelay) return;
+      } catch (err) {
+        lastNonceError = err;
+      }
+      await sleep(250);
+    }
+    if (lastNonceError) throw lastNonceError;
+    throw new Error(`Signer provider did not observe Relay nonce ${afterRelay - 1}`);
+  }
+
   return {
     capabilities,
 
@@ -800,6 +892,21 @@ export function createCashClient(options: CashClientOptions): CashClient {
         };
         sourceResult = routedSource;
 
+        try {
+          await waitForBaseSignerAfterRelay(
+            client,
+            opts.signer,
+            sourceSigner,
+            owner,
+            input.source.chainId,
+            executed,
+          );
+        } catch (err) {
+          throw errors.sourceRouteCompletedCashoutFailed(
+            routedSource,
+            mapChainError('resolve same-chain Relay nonce', err),
+          );
+        }
         const attributedParams = { ...params, txOverrides: attribution };
         // Submit the deposit; one retry for the replica-lag case the allowance
         // visibility loop cannot fully rule out. All other failures map to typed
