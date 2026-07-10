@@ -8,8 +8,10 @@
  * is left untouched. A real integration leaves the deposit open for buyers -
  * set CASH_KEEP_OPEN=1 for that behavior.
  *
- * The curator validates payee handles against the live platform, so the payee
- * must be a real account. Override the demo corridor with:
+ * The curator validates supported handles against the live platform, so the
+ * payee must be a real account. A new Wise/PayPal registration also needs the
+ * identity attestation created by Peer; an existing registered handle can be
+ * reused. Override the demo corridor with:
  *   CASH_PLATFORM=venmo CASH_CURRENCY=USD CASH_PAYEE=@your-venmo
  */
 import { createWalletClient, http } from 'viem';

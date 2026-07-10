@@ -40,13 +40,21 @@ Source asset path:
 ```ts
 const { depositId, source } = await cash.cashout(
   {
-    amount: 100000n, // source-token base units
-    source: { chainId: 1, currency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' },
+    amount: 10_000_000n, // exact input: 10 USDC in source-token base units
+    source: {
+      chainId: 1,
+      currency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+      tradeType: 'EXACT_INPUT',
+    },
     receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@you' } },
   },
   { signer, sourceSigner },
 );
-// source.amount is the Base USDC amount Relay delivered before the cash-out order.
+
+// source.amount is Relay's guaranteed minimum Base USDC output and the exact
+// amount deposited into the cash-out order. It is not the route's actual output.
+console.log(source?.amount, source?.requestId);
+console.log(source?.transactions?.origin, source?.transactions?.destination);
 ```
 
 ## The core verbs
@@ -69,24 +77,59 @@ Base-USDC cashout, withdraw, and top-up have unsigned counterparts (`prepare`,
 `prepareWithdraw`, `prepareTopUp`). The unsigned path returns raw `txs[]` plus
 a same-index `steps[]` plan such as `approve`, `createDeposit`, or
 `withdrawDeposit`, so wallets, AA systems, and agents can show what each
-transaction does before signing. Source-routed cashout runs Relay first, so it
-uses the signed `cashout({ source }, { signer, sourceSigner })` path for
-non-Base sources or an explicit `quoteSource()` / `executeSourceQuote()` pre-step. Every Peer Cash transaction
-including approves carries ERC-8021 attribution: `peer-cash` first, your own
-`referrer` code(s) after it.
+transaction does before signing. `prepare()` is Base-USDC-only and rejects a
+`source` with `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`. A signer-backed app can
+use `cashout({ source }, { signer, sourceSigner })`; a custody-separated host
+must execute and confirm its Relay route before preparing the Base-USDC
+cashout. Every Peer Cash transaction, including approves, carries ERC-8021
+attribution: `peer-cash` first, your own `referrer` code(s) after it.
 
 The default/minimal flow is unchanged: pass Base USDC base units to
 `estimate()` and `cashout()`. For any other source asset, pass `source` to
-`cashout()` with a source-chain signer and the SDK first executes the Relay route into Base USDC, then
-creates the Peer Cash order. The destination is always canonical Base USDC
+`cashout()` with a source-chain signer. The SDK settles the Base allowance,
+executes the Relay route into Base USDC, then creates the Peer Cash order. Use
+`EXACT_INPUT` in cash-out UIs so `amount` always means source-token base units.
+The destination is always canonical Base USDC
 (`8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913`); source support is
 discovered and quoted by `@relayprotocol/relay-sdk`, not a static token
 allowlist.
 
-`capabilities()` tells you which platforms need a verified identity to
-register a payee (`requiresIdentityAttestation` - Wise and PayPal today); a
-bare-handle `cashout()` to those fails fast with `PAYEE_VERIFICATION_REQUIRED`
-rather than reverting on-chain.
+`capabilities()` tells you which platforms need a verified identity for a new
+payee registration (`requiresIdentityAttestation` - Wise and PayPal today).
+An already-registered Wise or PayPal handle can be reused with bare payee data.
+A new handle without its signed attestation fails during curator registration
+with `PAYEE_VERIFICATION_REQUIRED`, before funds move on-chain.
+
+## Source-route recovery
+
+Persist `depositId`, transaction hashes, and the Relay `requestId` as soon as
+they are available. A source-routed result includes both a flat
+`source.txHashes` list and chain-aware `source.transactions.origin` /
+`.destination` entries.
+
+- `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED`: Relay completed, but the Base
+  cashout was not created. Do not route again. Retry a Base-USDC-only
+  `cashout()` with `BigInt(error.recovery.amount)`.
+- `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`: Relay completed, but Base submission
+  returned no transaction hash. Inspect recent Base wallet activity and
+  `orders(error.recovery.depositor)` to prove no deposit exists before retrying.
+- `SOURCE_CASHOUT_STATUS_UNKNOWN`: the Base cashout transaction was submitted,
+  but its receipt is unknown. Do not route or submit again. Inspect
+  `error.recovery.depositTxHash`; recover the `depositId` from its
+  `DepositReceived` log if it succeeded, or use the recovery amount for a
+  Base-USDC-only retry only after confirming it reverted.
+- `TRANSACTION_SUBMISSION_UNKNOWN`: a Base-only cashout or another mutation
+  returned no hash. Treat it as potentially broadcast. Inspect recent Base
+  wallet activity and the supplied recovery action before any retry.
+
+Wallet clients pinned to the wrong chain fail with `SIGNER_CHAIN_MISMATCH`
+before a quote or transaction is submitted. Chainless wallets are checked
+through `getChainId()`; a disconnected wallet returns retryable
+`SIGNER_CHAIN_UNAVAILABLE`. Indexer and oracle transport outages are typed as
+retryable `INDEXER_UNAVAILABLE` and `ORACLE_READ_FAILED` reads; retry the read
+without repeating any transaction. `TRANSACTION_STATUS_UNKNOWN` carries the
+submitted hash in `error.recovery.transactionHash` so recovery never depends
+on parsing an error message.
 
 ## Lifecycle
 
@@ -147,10 +190,11 @@ React is an optional peer dependency - the root entry never imports it.
 
 ## Environments
 
-`production` | `preproduction` | `staging` - selects contracts, curator, and
-indexer. Indexer, curator, and Relay options are overridable via
-`createCashClient` options. Base USDC on Base is the default source and the
-only destination asset for cashout orders.
+`production` | `preproduction` | `staging` selects contracts, curator, and
+indexer. Preproduction defaults to `https://api-preprod.zkp2p.xyz`; staging
+defaults to `https://api-staging.zkp2p.xyz`. Indexer, curator, and Relay
+options remain overridable via `createCashClient` options. Base USDC on Base
+is the default source and the only destination asset for cashout orders.
 
 ## Install
 
@@ -167,12 +211,10 @@ Runnable first-party examples in [`examples/`](examples):
 
 ## Trust model, honestly
 
-This SDK is open source, so the code that constructs the parameters moving
-your USDC into protocol-held funds is auditable. It depends on the published
-`@zkp2p/sdk` for protocol internals, which currently ships from private source.
-The Peer Cash facade is verifiable here; the dependency is not yet fully open.
-Onchain custody is still enforced by the protocol: only the contract holds
-funds, and only you can withdraw an unmatched deposit.
+The published package depends on `@zkp2p/sdk` for protocol internals; that
+dependency currently ships from private source. Onchain custody is enforced by
+the protocol: only the contract holds funds, and only the maker can withdraw
+an unmatched deposit.
 
 ## License
 

@@ -19,8 +19,10 @@ can withdraw an unmatched deposit.
    the plan, submit the transactions in order, and wait for each receipt.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
    `@zkp2p/cash/tools` and map the tool names to the verbs above. Base-USDC
-   mutating tools return unsigned transactions; source routing should use
-   `cash_source_quote` / `cash_source_status`, then a Base-USDC cashout.
+   mutating tools return unsigned transactions. `cash_source_quote` is a quote,
+   not an execution tool; the host must execute and confirm Relay through its
+   signer/runtime, use `cash_source_status` to monitor it, then call the
+   Base-USDC `cash_cashout` tool. Never pass `source` into `prepare()`.
 
 Every transaction (including approves) carries ERC-8021 attribution:
 `peer-cash`, then any `referrer` codes from `createCashClient` options, then
@@ -28,10 +30,11 @@ the Base builder code.
 
 **Two platform caveats, both surfaced in `capabilities()`:**
 
-- **Wise and PayPal** carry `requiresIdentityAttestation: true`. Their curator
+- **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
-  (it comes from the Peer app/extension). A bare-handle `cashout()` to these
-  fails fast with `PAYEE_VERIFICATION_REQUIRED` before any transaction.
+  (it comes from the Peer app/extension). An already-registered handle can be
+  reused with bare payee data. A new handle without its attestation fails with
+  `PAYEE_VERIFICATION_REQUIRED` before funds move on-chain.
 - **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
   platform at registration - the account must exist. The rest (Zelle, Chime,
   etc.) are format-checked only. Match handles to the `payeeHint`.
@@ -71,6 +74,27 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
 }
 ```
 
+Signed source route (exact-input cash-out):
+
+```ts
+const routed = await cash.cashout(
+  {
+    amount: sourceAmount, // source-token base units
+    source: {
+      chainId: sourceChainId,
+      currency: sourceToken,
+      tradeType: 'EXACT_INPUT',
+    },
+    receive,
+  },
+  { signer, sourceSigner },
+);
+
+// Guaranteed minimum Base USDC and exact order deposit amount, not actual route output.
+console.log(routed.source?.amount);
+console.log(routed.source?.transactions?.origin, routed.source?.transactions?.destination);
+```
+
 ## Rules that prevent wrong behavior
 
 - **Never promise a rate.** `estimate()` is `kind: 'oracle-estimate'`; the
@@ -82,7 +106,24 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
   fill. Use `order.explain()` for live order state.
 - **Do not hardcode Relay source assets.** Use Relay SDK-backed EVM
   `capabilities({ includeRelaySources: true })` and `cashout({ source, ... })`.
-  Destination is always Base USDC. Non-Base source chains require `sourceSigner`.
+  Destination is always Base USDC. Non-Base source chains require
+  `sourceSigner`. Use `EXACT_INPUT` in high-level cash-out flows so `amount`
+  remains source-token base units. `source.amount` is Relay's guaranteed
+  minimum output and the exact Base USDC deposit amount.
+- **Persist source evidence.** A routed result carries `requestId`, flat
+  `txHashes`, and chain-aware `transactions.origin` / `.destination` arrays.
+- **Never repeat a completed or uncertain route.** On `SOURCE_EXECUTION_FAILED`,
+  inspect its Relay request and transaction recovery evidence. On
+  `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED`, retry without `source` using
+  `BigInt(err.recovery.amount)`. On `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`, inspect
+  Base wallet activity and `orders(err.recovery.depositor)`. On
+  `SOURCE_CASHOUT_STATUS_UNKNOWN`, inspect
+  `err.recovery.depositTxHash`; do not submit again until its receipt is known.
+- **Never resubmit an unknown Base transaction.**
+  `TRANSACTION_SUBMISSION_UNKNOWN` means a call returned no hash but may have
+  broadcast; follow its recovery action and inspect wallet/protocol state.
+  `TRANSACTION_STATUS_UNKNOWN` means the returned hash may already have
+  succeeded. Inspect `err.recovery.transactionHash` first.
 - **`ORDER_NOT_FOUND` seconds after `cashout()` is indexer lag**, not a lost
   deposit. The tx receipt you hold is the truth. Retry; `watch()` absorbs
   this automatically.
@@ -97,31 +138,53 @@ if (order.nextActions.includes('withdraw') && shouldUnwind) {
 - **Serialize with the codecs.** `orderToJson`/`orderFromJson` etc. round-trip
   bigints losslessly and re-attach `explain()`. Plain `JSON.stringify` on a
   live object throws on bigints.
+- **Environment selects the curator.** Preproduction defaults to
+  `https://api-preprod.zkp2p.xyz`; staging defaults to
+  `https://api-staging.zkp2p.xyz`. Use `curatorUrl` only for an explicit
+  override.
 
 ## Error → remediation table
 
 Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 
-| Code                                  | Retryable | Agent action                                                                                                            |
-| ------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `ORACLE_UNSUPPORTED_CURRENCY`         | no        | Re-pick currency from `capabilities()`                                                                                  |
-| `UNSUPPORTED_PLATFORM`                | no        | Re-pick platform from `capabilities()`                                                                                  |
-| `AMOUNT_BELOW_MINIMUM`                | no        | Raise amount (hard floor $0.01, recommended ≥ 1 USDC)                                                                   |
-| `PAYEE_VERIFICATION_REQUIRED`         | no        | Wise/PayPal need a signed identity attestation - register the payee via the Peer app first                              |
-| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE` | no        | Use signer-backed `cashout({ source })` with a source signer, or bridge with Relay first and then `prepare()` Base USDC |
-| `PAYEE_REGISTRATION_FAILED`           | yes       | Validate handle against `payeeHint`, retry with backoff (curator caps at 20 registrations/min)                          |
-| `ALLOWANCE_NOT_VISIBLE`               | yes       | Approve mined but a stale RPC replica hid it; retry the same call in a few seconds                                      |
-| `TRANSACTION_FAILED`                  | no        | The on-chain call reverted or was mapped from a raw error; surface to operator; funds unchanged                         |
-| `DEPOSIT_RESOLUTION_FAILED`           | no        | Extract depositId from the `DepositReceived` log in the receipt                                                         |
-| `ORDER_NOT_FOUND`                     | yes       | Retry (indexer lag) unless the id is provably wrong                                                                     |
-| `INDEXER_LAG`                         | yes       | Retry after a few seconds                                                                                               |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`     | yes       | Wait; retry full `withdraw()` after intent expiry (or withdraw the unlocked part with `amount`)                         |
-| `INSUFFICIENT_AVAILABLE_FUNDS`        | yes       | Partial amount exceeds the unlocked balance; lower it or close fully later                                              |
-| `NOTHING_TO_WITHDRAW`                 | no        | Order is terminal; reconcile your records                                                                               |
-| `ORDER_NOT_ACTIVE`                    | no        | Top-up target is closed; start a new `cashout()` instead                                                                |
-| `SIGNER_REQUIRED`                     | no        | Provide `{ signer }` or switch to the prepare path                                                                      |
-| `WATCH_TIMEOUT`                       | yes       | Resume `watch(depositId)` whenever convenient                                                                           |
-| `ESCROW_PAUSED`                       | yes       | Back off; existing funds remain withdrawable                                                                            |
+| Code                                    | Retryable | Agent action                                                                               |
+| --------------------------------------- | --------- | ------------------------------------------------------------------------------------------ |
+| `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Re-pick currency from `capabilities()`                                                     |
+| `ORACLE_READ_FAILED`                    | yes       | Retry the read through a healthy Base RPC; do not present a cached value as live           |
+| `UNSUPPORTED_PLATFORM`                  | no        | Re-pick platform from `capabilities()`                                                     |
+| `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | Use a currency listed for that platform                                                    |
+| `AMOUNT_BELOW_MINIMUM`                  | no        | Raise amount (hard floor $0.01, recommended at least 1 USDC)                               |
+| `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount                       |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | Register a new Wise/PayPal payee through Peer; an existing registered handle can be reused |
+| `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
+| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |
+| `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                                   |
+| `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                                  |
+| `SOURCE_QUOTE_FAILED`                   | yes       | Refresh capabilities and request a new canonical Base-USDC quote                           |
+| `SOURCE_EXECUTION_FAILED`               | no        | Inspect source transactions and Relay status before any retry                              |
+| `SOURCE_STATUS_FAILED`                  | yes       | Retry only the status read                                                                 |
+| `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Do not route again; retry Base-only with `recovery.amount`                                 |
+| `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`     | no        | Inspect Base activity and orders; prove no deposit exists before retrying                  |
+| `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Inspect `recovery.depositTxHash`; do not resubmit while its receipt is unknown             |
+| `INSUFFICIENT_TOKEN_BALANCE`            | no        | Fund the required token amount, then retry                                                 |
+| `ALLOWANCE_NOT_VISIBLE`                 | yes       | Approval mined but a stale RPC hid it; retry after it becomes visible                      |
+| `TRANSACTION_FAILED`                    | no        | Inspect the failed/reverted call before another action                                     |
+| `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | Inspect Base wallet/protocol state and the recovery action before any resubmission         |
+| `TRANSACTION_STATUS_UNKNOWN`            | no        | Inspect `recovery.transactionHash` before resubmitting                                     |
+| `DEPOSIT_RESOLUTION_FAILED`             | no        | Inspect the confirmed Base receipt and recover the id from `DepositReceived`               |
+| `INVALID_DEPOSIT_ID`                    | no        | Use the exact id returned by `cashout()`                                                   |
+| `ORDER_NOT_FOUND`                       | yes       | Retry through immediate indexer lag; otherwise verify the id                               |
+| `INDEXER_LAG`                           | yes       | Retry after a few seconds                                                                  |
+| `INDEXER_UNAVAILABLE`                   | yes       | Retry only the failed read; keep the id/owner and never repeat a transaction               |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`       | yes       | Wait for fill/expiry, or withdraw only the unlocked amount                                 |
+| `INSUFFICIENT_AVAILABLE_FUNDS`          | yes       | Lower the partial withdrawal amount                                                        |
+| `NOTHING_TO_WITHDRAW`                   | no        | Order is terminal; reconcile records                                                       |
+| `ORDER_NOT_ACTIVE`                      | no        | Start a new cashout instead of topping up                                                  |
+| `SIGNER_REQUIRED`                       | no        | Provide a signer or use a Base-USDC prepare path                                           |
+| `SIGNER_CHAIN_MISMATCH`                 | no        | Switch to the required chain and refresh any Relay quote before retrying                   |
+| `SIGNER_CHAIN_UNAVAILABLE`              | yes       | Reconnect the wallet and prove its chain before retrying                                   |
+| `WATCH_TIMEOUT`                         | yes       | Resume `watch(depositId)` later                                                            |
+| `ESCROW_PAUSED`                         | yes       | Back off; existing funds remain withdrawable                                               |
 
 `isCashError(err)` narrows unknown errors; `err.toJSON()` is safe for logs
 and tool results.
