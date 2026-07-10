@@ -3,6 +3,14 @@ import type { CurrencyType } from '../sdk-types';
 import type { CashClient } from '../client/createCashClient';
 import type { CashEstimate, EstimateInput } from '../client/estimate';
 
+interface EstimateIdentity {
+  client: CashClient;
+  amount: bigint;
+  currency: CurrencyType;
+  platform: string | null | undefined;
+  source: EstimateInput['source'] | null | undefined;
+}
+
 export interface UseEstimateOptions {
   client: CashClient | null;
   /** Amount to convert, USDC base units. Estimate is skipped while null/0. */
@@ -33,15 +41,33 @@ export function useEstimate({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const mountedRef = useRef(true);
+  const latestRequestRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const estimateIdentityRef = useRef<EstimateIdentity | null>(null);
+  const loadingIdentityRef = useRef<EstimateIdentity | null>(null);
+  const errorIdentityRef = useRef<EstimateIdentity | null>(null);
 
   const refresh = useCallback(async () => {
+    const requestId = ++latestRequestRef.current;
+    const isCurrent = () => mountedRef.current && requestId === latestRequestRef.current;
     if (!client || !currency || !amount || amount <= 0n) {
-      if (mountedRef.current) setEstimate(null);
+      if (isCurrent()) {
+        estimateIdentityRef.current = null;
+        loadingIdentityRef.current = null;
+        errorIdentityRef.current = null;
+        setEstimate(null);
+        setIsLoading(false);
+        setError(null);
+      }
       return;
     }
-    setIsLoading(true);
-    setError(null);
+    const identity: EstimateIdentity = { client, amount, currency, platform, source };
+    if (isCurrent()) {
+      loadingIdentityRef.current = identity;
+      errorIdentityRef.current = null;
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       const result = await client.estimate({
         amount,
@@ -49,17 +75,32 @@ export function useEstimate({
         ...(platform ? { platform } : {}),
         ...(source ? { source } : {}),
       });
-      if (mountedRef.current) setEstimate(result);
+      if (isCurrent()) {
+        estimateIdentityRef.current = identity;
+        setEstimate(result);
+      }
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      if (mountedRef.current) {
+      if (isCurrent()) {
+        estimateIdentityRef.current = null;
+        errorIdentityRef.current = identity;
         setEstimate(null);
         setError(e);
       }
     } finally {
-      if (mountedRef.current) setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   }, [client, currency, amount, platform, source]);
+
+  useEffect(() => {
+    latestRequestRef.current += 1;
+    estimateIdentityRef.current = null;
+    loadingIdentityRef.current = null;
+    errorIdentityRef.current = null;
+    setEstimate(null);
+    setIsLoading(false);
+    setError(null);
+  }, [client, amount, currency, platform, source]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -69,9 +110,22 @@ export function useEstimate({
     }
     return () => {
       mountedRef.current = false;
+      latestRequestRef.current += 1;
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [refresh, refreshIntervalMs]);
 
-  return { estimate, isLoading, error, refresh };
+  const matchesCurrentIdentity = (identity: EstimateIdentity | null) =>
+    identity?.client === client &&
+    identity.amount === amount &&
+    identity.currency === currency &&
+    identity.platform === platform &&
+    identity.source === source;
+
+  return {
+    estimate: matchesCurrentIdentity(estimateIdentityRef.current) ? estimate : null,
+    isLoading: matchesCurrentIdentity(loadingIdentityRef.current) ? isLoading : false,
+    error: matchesCurrentIdentity(errorIdentityRef.current) ? error : null,
+    refresh,
+  };
 }
