@@ -3,8 +3,8 @@
 > Offramp-only SDK for the ZKP2P protocol: route any Relay-supported EVM source
 > asset to Base USDC, then cash out to fiat (Venmo, Revolut, Wise, Zelle, ...)
 > at the live Chainlink oracle market rate with zero spread and no centralized
-> off-ramp provider. The user is the maker, Peer handles the buyer side, and the
-> SDK exposes readable order state.
+> off-ramp provider. The user is the maker, a buyer pays them fiat and proves
+> the payment, and the SDK exposes readable order state.
 > Base-USDC flows are serializable through prepare paths; source-routed cashout
 > uses Relay execution first. React apps, Node services, and agent hosts use the
 > same typed surface.
@@ -59,9 +59,8 @@ Key facts:
 
 ## Links
 
-- Live demo: https://react-cashout-demo.vercel.app
-- Product page: https://peer.xyz/cash
 - npm: https://www.npmjs.com/package/@zkp2p/cash
+- Source: https://github.com/zkp2p/peer-cash
 
 ## Docs
 
