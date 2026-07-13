@@ -15,13 +15,7 @@ import { isMarketRateSupported } from '../engine/marketRate';
 import { errors } from './errors';
 import { MIN_CASHOUT_AMOUNT } from './capabilities';
 import { readFillEta, type CashFillEta } from './fillEta';
-import {
-  quoteRelayToBaseUsdc,
-  type CashAsset,
-  type RelayOptions,
-  type RelayQuote,
-  type RelaySourceInput,
-} from './relay';
+import type { CashAsset, RelayOptions, RelayQuote, RelaySourceInput } from './relay';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
@@ -111,19 +105,23 @@ export async function readEstimate(
     throw errors.oracleUnsupportedCurrency(currency);
   }
 
-  const relayQuote =
-    input.source !== undefined
-      ? await quoteRelayToBaseUsdc(
-          {
-            user: input.source.user,
-            amount: input.amount,
-            source: { chainId: input.source.chainId, currency: input.source.currency },
-            ...(input.source.recipient ? { recipient: input.source.recipient } : {}),
-            ...(input.source.tradeType ? { tradeType: input.source.tradeType } : {}),
-          },
-          context.relay,
-        )
-      : undefined;
+  let relayQuote: RelayQuote | undefined;
+  if (input.source !== undefined) {
+    // The Relay SDK performs discovery during initialization in browser
+    // environments. Keep the entire adapter outside the Base-USDC path so
+    // ordinary estimates have no Relay network or bundle dependency.
+    const { quoteRelayToBaseUsdc } = await import('./relay');
+    relayQuote = await quoteRelayToBaseUsdc(
+      {
+        user: input.source.user,
+        amount: input.amount,
+        source: { chainId: input.source.chainId, currency: input.source.currency },
+        ...(input.source.recipient ? { recipient: input.source.recipient } : {}),
+        ...(input.source.tradeType ? { tradeType: input.source.tradeType } : {}),
+      },
+      context.relay,
+    );
+  }
 
   const amount = relayQuote?.outputAmount ?? input.amount;
   if (amount < MIN_CASHOUT_AMOUNT) {

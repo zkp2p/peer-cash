@@ -256,42 +256,42 @@ explicit override.
 
 ## Failure table
 
-| Code                                    | Retryable | What happened / what to do                                                                                                                   |
-| --------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                                                  |
-| `ORACLE_READ_FAILED`                    | yes       | The live Chainlink read failed. Retry through a healthy Base RPC; do not present a cached value as live.                                     |
-| `UNSUPPORTED_PLATFORM`                  | no        | Platform is absent from this environment's catalog. Pick from `capabilities()`.                                                              |
-| `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | The platform does not support that currency. Use its `capabilities()` currencies.                                                            |
-| `AMOUNT_BELOW_MINIMUM`                  | no        | Amount is below the $0.01 hard floor. The recommended minimum is 1 USDC.                                                                     |
-| `INVALID_INTENT_AMOUNT_RANGE`           | no        | Min/max is non-positive, inverted, or exceeds the deposit. Correct the range.                                                                |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation. Register it through Peer first; an existing registration can be reused.                        |
-| `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
-| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |
-| `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                        |
-| `SOURCE_CAPABILITIES_FAILED`            | yes       | Relay source discovery failed. Retry or use Base USDC.                                                                                       |
-| `SOURCE_QUOTE_FAILED`                   | yes       | Relay returned no valid canonical Base-USDC route. Refresh capabilities and quote again.                                                     |
-| `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; nothing was submitted. Recreate the source signer with viem's `nonceManager` and execute a fresh quote.                           |
-| `SOURCE_EXECUTION_FAILED`               | no        | Route execution did not report success. Inspect source transactions and Relay status before retrying.                                        |
-| `SOURCE_STATUS_FAILED`                  | yes       | Relay status is temporarily unavailable. Retry the status read without resubmitting.                                                         |
-| `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Relay completed but no Base cashout was created. Use the recovery amount for a Base-USDC-only retry; never repeat Relay.                     |
-| `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`     | no        | Relay completed but Base submission returned no hash. Inspect wallet activity and orders before any retry.                                   |
-| `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Relay completed and the Base tx was submitted, but its receipt is unknown. Inspect `depositTxHash`; do not resubmit while status is unknown. |
-| `INSUFFICIENT_TOKEN_BALANCE`            | no        | Wallet lacks the required token amount. Fund it, then retry.                                                                                 |
-| `ALLOWANCE_NOT_VISIBLE`                 | yes       | Approval mined but a stale RPC replica hid it. Retry the same call after the allowance becomes visible.                                      |
-| `TRANSACTION_FAILED`                    | no        | The on-chain call failed or reverted. Inspect the cause and transaction before another action.                                               |
-| `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.             |
-| `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                              |
-| `DEPOSIT_RESOLUTION_FAILED`             | no        | Base tx succeeded but no `DepositReceived` was decoded. Inspect its logs and recover the composite id.                                       |
-| `INVALID_DEPOSIT_ID`                    | no        | The id is not `escrowAddress_onchainId`. A bare number cannot cold-hydrate; use the value returned by `cashout()`.                           |
-| `ORDER_NOT_FOUND`                       | yes       | Unknown id or immediate indexer lag. Verify the id and retry shortly after creation.                                                         |
-| `INDEXER_LAG`                           | yes       | Indexer trails the chain. Retry the read shortly.                                                                                            |
-| `INDEXER_UNAVAILABLE`                   | yes       | The indexer read failed. Retry only that read with the same id or owner; never repeat an on-chain transaction.                               |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`       | yes       | A buyer may still deliver. Wait for fill or expiry, or withdraw only the unlocked amount.                                                    |
-| `INSUFFICIENT_AVAILABLE_FUNDS`          | yes       | Partial withdrawal exceeds unlocked funds. Lower the amount.                                                                                 |
-| `NOTHING_TO_WITHDRAW`                   | no        | Order is terminal. Reconcile `order(depositId)`.                                                                                             |
-| `ORDER_NOT_ACTIVE`                      | no        | A closed order cannot be topped up. Start a new cashout.                                                                                     |
-| `SIGNER_REQUIRED`                       | no        | Pass a signer or use a Base-USDC `prepare*` path.                                                                                            |
-| `SIGNER_CHAIN_MISMATCH`                 | no        | Switch the signer to the required chain and refresh any Relay quote before retrying.                                                         |
-| `SIGNER_CHAIN_UNAVAILABLE`              | yes       | The wallet could not report its live chain. Reconnect it and prove the required chain before retrying.                                       |
-| `WATCH_TIMEOUT`                         | yes       | Order remains live. Resume `watch()` or `order()` later.                                                                                     |
-| `ESCROW_PAUSED`                         | yes       | Deposits are paused. Existing funds remain withdrawable.                                                                                     |
+| Code                                    | Retryable | What happened / what to do                                                                                                                                |
+| --------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                                                               |
+| `ORACLE_READ_FAILED`                    | yes       | The live Chainlink read failed. Retry through a healthy Base RPC; do not present a cached value as live.                                                  |
+| `UNSUPPORTED_PLATFORM`                  | no        | Platform is absent from this environment's catalog. Pick from `capabilities()`.                                                                           |
+| `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | The platform does not support that currency. Use its `capabilities()` currencies.                                                                         |
+| `AMOUNT_BELOW_MINIMUM`                  | no        | Amount is below the $0.01 hard floor. The recommended minimum is 1 USDC.                                                                                  |
+| `INVALID_INTENT_AMOUNT_RANGE`           | no        | Min/max is non-positive, inverted, or exceeds the deposit. Correct the range.                                                                             |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation. Register it through Peer first; an existing registration can be reused.                                     |
+| `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                              |
+| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                               |
+| `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                                     |
+| `SOURCE_CAPABILITIES_FAILED`            | yes       | Relay source discovery failed. Retry or use Base USDC.                                                                                                    |
+| `SOURCE_QUOTE_FAILED`                   | yes       | Relay returned no valid canonical Base-USDC route. Refresh capabilities and quote again.                                                                  |
+| `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; nothing was submitted. Recreate the source signer with viem's `nonceManager` and execute a fresh quote.                                        |
+| `SOURCE_EXECUTION_FAILED`               | no        | Route execution did not report success. Inspect source transactions and Relay status before retrying.                                                     |
+| `SOURCE_STATUS_FAILED`                  | yes       | Relay status is temporarily unavailable. Retry the status read without resubmitting.                                                                      |
+| `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Relay completed but no Base cashout was created. Use the recovery amount for a Base-USDC-only retry; never repeat Relay.                                  |
+| `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`     | no        | Relay completed but Base submission returned no hash. Inspect wallet activity and orders before any retry.                                                |
+| `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Relay completed and the Base tx was submitted, but its receipt is unknown. Inspect `depositTxHash`; do not resubmit while status is unknown.              |
+| `INSUFFICIENT_TOKEN_BALANCE`            | no        | Wallet lacks the required token amount. Fund it, then retry.                                                                                              |
+| `ALLOWANCE_NOT_VISIBLE`                 | yes       | Approval mined but a stale RPC replica hid it. Retry the same call after the allowance becomes visible.                                                   |
+| `TRANSACTION_FAILED`                    | no        | The on-chain call failed or reverted. Inspect the cause and transaction before another action.                                                            |
+| `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.                          |
+| `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                                           |
+| `DEPOSIT_RESOLUTION_FAILED`             | no        | Base tx succeeded but no `DepositReceived` was decoded. Inspect `recovery.transactionHash`, recover the composite id from its logs, and resume the order. |
+| `INVALID_DEPOSIT_ID`                    | no        | The id is not `escrowAddress_onchainId`. A bare number cannot cold-hydrate; use the value returned by `cashout()`.                                        |
+| `ORDER_NOT_FOUND`                       | yes       | Unknown id or immediate indexer lag. Verify the id and retry shortly after creation.                                                                      |
+| `INDEXER_LAG`                           | yes       | Indexer trails the chain. Retry the read shortly.                                                                                                         |
+| `INDEXER_UNAVAILABLE`                   | yes       | The indexer read failed. Retry only that read with the same id or owner; never repeat an on-chain transaction.                                            |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`       | yes       | A buyer may still deliver. Wait for fill or expiry, or withdraw only the unlocked amount.                                                                 |
+| `INSUFFICIENT_AVAILABLE_FUNDS`          | yes       | Partial withdrawal exceeds unlocked funds. Lower the amount.                                                                                              |
+| `NOTHING_TO_WITHDRAW`                   | no        | Order is terminal. Reconcile `order(depositId)`.                                                                                                          |
+| `ORDER_NOT_ACTIVE`                      | no        | A closed order cannot be topped up. Start a new cashout.                                                                                                  |
+| `SIGNER_REQUIRED`                       | no        | Pass a signer or use a Base-USDC `prepare*` path.                                                                                                         |
+| `SIGNER_CHAIN_MISMATCH`                 | no        | Switch the signer to the required chain and refresh any Relay quote before retrying.                                                                      |
+| `SIGNER_CHAIN_UNAVAILABLE`              | yes       | The wallet could not report its live chain. Reconnect it and prove the required chain before retrying.                                                    |
+| `WATCH_TIMEOUT`                         | yes       | Order remains live. Resume `watch()` or `order()` later.                                                                                                  |
+| `ESCROW_PAUSED`                         | yes       | Deposits are paused. Existing funds remain withdrawable.                                                                                                  |

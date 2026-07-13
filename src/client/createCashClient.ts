@@ -45,20 +45,16 @@ import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/ty
 import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
 import { readEstimate, type CashEstimate, type EstimateInput } from './estimate';
 import { CashError, errors, isCashError, mapChainError } from './errors';
-import {
-  readRelaySourceCapabilities,
-  readRelayStatus,
-  quoteRelayToBaseUsdc,
-  executeRelayQuote,
-  assertWalletChainId,
-  type CashSourceCapabilities,
-  type RelayOptions,
-  type RelayExecutionResult,
-  type RelayQuote,
-  type RelayQuoteInput,
-  type RelaySourceInput,
-  type RelayStatus,
-  type RelayTransaction,
+import { assertWalletChainId } from './wallet';
+import type {
+  CashSourceCapabilities,
+  RelayOptions,
+  RelayExecutionResult,
+  RelayQuote,
+  RelayQuoteInput,
+  RelaySourceInput,
+  RelayStatus,
+  RelayTransaction,
 } from './relay';
 import type { Execute, ProgressData } from '@relayprotocol/relay-sdk';
 
@@ -641,10 +637,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
   }): CashCapabilities | Promise<CashCapabilities> {
     const baseCapabilities = buildCapabilities(environment);
     if (!capabilityOptions?.includeRelaySources) return baseCapabilities;
-    return readRelaySourceCapabilities(options.relay).then((relay) => ({
-      ...baseCapabilities,
-      source: { ...baseCapabilities.source, relay },
-    }));
+    return import('./relay')
+      .then(({ readRelaySourceCapabilities }) => readRelaySourceCapabilities(options.relay))
+      .then((relay) => ({
+        ...baseCapabilities,
+        source: { ...baseCapabilities.source, relay },
+      }));
   }
 
   /**
@@ -817,10 +815,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
     capabilities,
 
     async sourceCapabilities(): Promise<CashSourceCapabilities> {
+      const { readRelaySourceCapabilities } = await import('./relay');
       return readRelaySourceCapabilities(options.relay);
     },
 
     async quoteSource(input: RelayQuoteInput): Promise<RelayQuote> {
+      const { quoteRelayToBaseUsdc } = await import('./relay');
       return quoteRelayToBaseUsdc(input, options.relay);
     },
 
@@ -834,6 +834,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       },
     ): Promise<RelayExecutionResult> {
       if (!opts.signer.account) throw errors.signerRequired('executeSourceQuote');
+      const { executeRelayQuote } = await import('./relay');
       return executeRelayQuote(quote, opts.signer, {
         ...(options.relay ? { relay: options.relay } : {}),
         ...(opts.recipient ? { recipient: opts.recipient } : {}),
@@ -845,6 +846,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async relayStatus(requestId: string): Promise<RelayStatus> {
+      const { readRelayStatus } = await import('./relay');
       return readRelayStatus(requestId, options.relay);
     },
 
@@ -864,6 +866,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       let sourceResult: CashoutResult['source'];
       let cashoutAmount = input.amount;
       if (input.source) {
+        const { executeRelayQuote, quoteRelayToBaseUsdc } = await import('./relay');
         const sourceSigner =
           opts.sourceSigner ?? (input.source.chainId === BASE_CHAIN_ID ? opts.signer : undefined);
         if (!sourceSigner?.account) throw errors.signerRequired('source cashout');

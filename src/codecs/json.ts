@@ -12,11 +12,13 @@ import {
   restoreRelayValue,
   sanitizeRelayQuoteRaw,
   sanitizeRelayValue,
-  type CashAsset,
-  type CashSourceCapabilities,
-  type RelayExecutionResult,
-  type RelayQuote,
-  type RelayStatus,
+} from './relayWire';
+import type {
+  CashAsset,
+  CashSourceCapabilities,
+  RelayExecutionResult,
+  RelayQuote,
+  RelayStatus,
 } from '../client/relay';
 import type { CashCapabilities } from '../client/capabilities';
 import { CashError, type CashErrorRecovery, type CashErrorShape } from '../client/errors';

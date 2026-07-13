@@ -182,7 +182,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `TRANSACTION_FAILED`                    | no        | Inspect the failed/reverted call before another action                                     |
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | Inspect Base wallet/protocol state and the recovery action before any resubmission         |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | Inspect `recovery.transactionHash` before resubmitting                                     |
-| `DEPOSIT_RESOLUTION_FAILED`             | no        | Inspect the confirmed Base receipt and recover the id from `DepositReceived`               |
+| `DEPOSIT_RESOLUTION_FAILED`             | no        | Inspect `recovery.transactionHash` and recover the id from `DepositReceived`               |
 | `INVALID_DEPOSIT_ID`                    | no        | Use the exact id returned by `cashout()`                                                   |
 | `ORDER_NOT_FOUND`                       | yes       | Retry through immediate indexer lag; otherwise verify the id                               |
 | `INDEXER_LAG`                           | yes       | Retry after a few seconds                                                                  |

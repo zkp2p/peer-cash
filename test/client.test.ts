@@ -1319,7 +1319,14 @@ describe('cashout()', () => {
         },
         { signer },
       ),
-    ).rejects.toMatchObject({ code: 'DEPOSIT_RESOLUTION_FAILED' });
+    ).rejects.toMatchObject({
+      code: 'DEPOSIT_RESOLUTION_FAILED',
+      recovery: {
+        kind: 'inspect-base-transaction',
+        transactionHash: '0xhash',
+        operation: 'cashout',
+      },
+    });
   });
 });
 
