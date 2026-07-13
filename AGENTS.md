@@ -110,10 +110,19 @@ console.log(routed.source?.transactions?.origin, routed.source?.transactions?.de
   `sourceSigner`. Use `EXACT_INPUT` in high-level cash-out flows so `amount`
   remains source-token base units. `source.amount` is Relay's guaranteed
   minimum output and the exact Base USDC deposit amount.
+- **Use a nonce-managed source signer for routed cashouts.** Relay routes
+  with more than one source-chain transaction (approve, then route) are
+  refused preflight with `SOURCE_NONCE_MANAGER_REQUIRED` on plain local
+  accounts - create the source signer with
+  `privateKeyToAccount(pk, { nonceManager })`. Browser (`json-rpc`) wallets
+  are unaffected.
 - **Persist source evidence.** A routed result carries `requestId`, flat
   `txHashes`, and chain-aware `transactions.origin` / `.destination` arrays.
 - **Never repeat a completed or uncertain route.** On `SOURCE_EXECUTION_FAILED`,
-  inspect its Relay request and transaction recovery evidence. On
+  inspect its Relay request and transaction recovery evidence. A failed
+  approval-only route can sit in `relayStatus` `waiting` indefinitely - decide
+  from the recovery payload and origin transactions, never by waiting for a
+  terminal Relay status. On
   `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED`, retry without `source` using
   `BigInt(err.recovery.amount)`. On `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`, inspect
   Base wallet activity and `orders(err.recovery.depositor)`. On
@@ -128,7 +137,8 @@ console.log(routed.source?.transactions?.origin, routed.source?.transactions?.de
   deposit. The tx receipt you hold is the truth. Retry; `watch()` absorbs
   this automatically.
 - **Unwind with `withdraw()` only.** It is state-aware (prunes expired
-  intents first). Do not call escrow functions directly.
+  intents first). Do not call escrow functions directly. Partial withdrawals
+  increment `returnedAmount`; `totalAmount` is historical and never shrinks.
 - **Read fills as receipts.** `fiatOwed` is the buyer's obligation at the
   locked rate; after the proof, `fiatPaid`/`paymentId`/`releasedAmount` are
   the verified outcome. Reconcile against those, not your own math.
@@ -161,6 +171,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                                   |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                                  |
 | `SOURCE_QUOTE_FAILED`                   | yes       | Refresh capabilities and request a new canonical Base-USDC quote                           |
+| `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; recreate the source signer with viem's `nonceManager`, then quote again         |
 | `SOURCE_EXECUTION_FAILED`               | no        | Inspect source transactions and Relay status before any retry                              |
 | `SOURCE_STATUS_FAILED`                  | yes       | Retry only the status read                                                                 |
 | `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Do not route again; retry Base-only with `recovery.amount`                                 |

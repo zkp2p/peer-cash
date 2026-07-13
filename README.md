@@ -107,6 +107,13 @@ The destination is always canonical Base USDC
 discovered and quoted by `@relayprotocol/relay-sdk`, not a static token
 allowlist.
 
+Routes that submit more than one source-chain transaction (approve, then
+route) require a nonce-managed source signer -
+`privateKeyToAccount(pk, { nonceManager })` from viem. Without one the SDK
+refuses the route preflight with `SOURCE_NONCE_MANAGER_REQUIRED` instead of
+letting the route transaction reuse the approval's nonce and revert
+mid-route. Browser wallets are unaffected.
+
 `capabilities()` tells you which platforms need a verified identity for a new
 payee registration (`requiresIdentityAttestation` - Wise and PayPal today).
 An already-registered Wise or PayPal handle can be reused with bare payee data.
@@ -120,6 +127,10 @@ they are available. A source-routed result includes both a flat
 `source.txHashes` list and chain-aware `source.transactions.origin` /
 `.destination` entries.
 
+- `SOURCE_EXECUTION_FAILED` where only the approval landed: the Relay request
+  can stay in `relayStatus` `waiting` indefinitely. Decide from the error's
+  recovery payload and origin transactions, never by waiting for a terminal
+  Relay status.
 - `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED`: Relay completed, but the Base
   cashout was not created. Do not route again. Retry a Base-USDC-only
   `cashout()` with `BigInt(error.recovery.amount)`.

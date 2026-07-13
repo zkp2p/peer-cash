@@ -25,6 +25,7 @@ export type CashErrorCode =
   | 'SOURCE_RECIPIENT_MISMATCH'
   | 'SOURCE_CAPABILITIES_FAILED'
   | 'SOURCE_QUOTE_FAILED'
+  | 'SOURCE_NONCE_MANAGER_REQUIRED'
   | 'SOURCE_EXECUTION_FAILED'
   | 'SOURCE_STATUS_FAILED'
   | 'SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED'
@@ -294,6 +295,13 @@ export const errors = {
       },
       { cause },
     ),
+  sourceNonceManagerRequired: (transactionCount: number) =>
+    new CashError({
+      code: 'SOURCE_NONCE_MANAGER_REQUIRED',
+      message: `This Relay route submits ${transactionCount} source-chain transactions, but the local signer has no nonce manager; the route transaction would reuse the approval nonce and revert.`,
+      retryable: false,
+      remediation: `Create the source signer with viem's nonce manager - privateKeyToAccount(pk, { nonceManager }) - then request a fresh quote and retry. No transaction was submitted.`,
+    }),
   sourceExecutionFailed: (
     cause?: unknown,
     evidence?: {

@@ -698,6 +698,109 @@ describe('Relay SDK adapter', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  describe('multi-transaction nonce management', () => {
+    const baseDetails = {
+      sender: USER,
+      recipient: USER,
+      currencyIn: { currency: { chainId: 10 } },
+      currencyOut: {
+        currency: {
+          chainId: 8453,
+          address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+        },
+      },
+    };
+    const multiTxQuote = {
+      details: baseDetails,
+      steps: [
+        {
+          action: 'approve',
+          description: 'Approve',
+          kind: 'transaction',
+          id: 'approve',
+          items: [{ status: 'incomplete', data: { to: '0xtoken', data: '0x095ea7b3' } }],
+        },
+        {
+          action: 'deposit',
+          description: 'Deposit',
+          kind: 'transaction',
+          id: 'deposit',
+          items: [{ status: 'incomplete', data: { to: '0xrouter', data: '0xdeadbeef' } }],
+        },
+      ],
+    } as unknown as Execute;
+    const singleTxQuote = {
+      details: baseDetails,
+      steps: [multiTxQuote.steps[1]!],
+    } as Execute;
+    const walletWithAccount = (account: Record<string, unknown>) =>
+      ({
+        account: { address: USER, ...account },
+        chain: { id: 10 },
+        getChainId: vi.fn(async () => 10),
+      }) as unknown as WalletClient;
+    const workingRelayClient = () => {
+      const execute = vi.fn(async () => ({
+        data: { details: baseDetails, steps: [] } as unknown as Execute,
+        abortController: new AbortController(),
+      }));
+      return {
+        execute,
+        client: { chains: [{ id: 10 }], actions: { execute } } as unknown as RelayClient,
+      };
+    };
+
+    it('refuses a multi-transaction route for a local account without a nonce manager', async () => {
+      const { execute, client } = workingRelayClient();
+
+      await expect(
+        executeRelayQuote(multiTxQuote, walletWithAccount({ type: 'local' }), {
+          relay: { client },
+        }),
+      ).rejects.toMatchObject({
+        code: 'SOURCE_NONCE_MANAGER_REQUIRED',
+        retryable: false,
+        remediation: expect.stringContaining('nonceManager'),
+      });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('executes a multi-transaction route for a nonce-managed local account', async () => {
+      const { execute, client } = workingRelayClient();
+
+      await expect(
+        executeRelayQuote(
+          multiTxQuote,
+          walletWithAccount({ type: 'local', nonceManager: { consume: vi.fn() } }),
+          { relay: { client } },
+        ),
+      ).resolves.toMatchObject({ txHashes: [] });
+      expect(execute).toHaveBeenCalledOnce();
+    });
+
+    it('executes a single-transaction route without requiring a nonce manager', async () => {
+      const { execute, client } = workingRelayClient();
+
+      await expect(
+        executeRelayQuote(singleTxQuote, walletWithAccount({ type: 'local' }), {
+          relay: { client },
+        }),
+      ).resolves.toMatchObject({ txHashes: [] });
+      expect(execute).toHaveBeenCalledOnce();
+    });
+
+    it('leaves json-rpc accounts alone - the node allocates their nonces', async () => {
+      const { execute, client } = workingRelayClient();
+
+      await expect(
+        executeRelayQuote(multiTxQuote, walletWithAccount({ type: 'json-rpc' }), {
+          relay: { client },
+        }),
+      ).resolves.toMatchObject({ txHashes: [] });
+      expect(execute).toHaveBeenCalledOnce();
+    });
+  });
+
   it('reads Relay status through the SDK request utility', async () => {
     const request = vi.fn(async () => ({
       data: { status: 'success', txHashes: ['0xout'], inTxHashes: ['0xin'], updatedAt: 1 },

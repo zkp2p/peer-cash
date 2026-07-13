@@ -319,6 +319,23 @@ async function assertRelayExecutionIdentity(
   }
 }
 
+/**
+ * Relay routes that submit more than one source-chain transaction (approve,
+ * then route) are sent back-to-back by the Relay SDK, which reuses the
+ * approval's nonce for the route transaction on plain local accounts and
+ * reverts mid-route. A viem nonce manager allocates the nonces correctly, so
+ * multi-transaction execution requires one up front - failing before any
+ * transaction is submitted instead of after the approval has spent gas.
+ */
+function assertRelayNonceManagement(quote: Execute, wallet: WalletClient): void {
+  const account = wallet.account;
+  if (!account || account.type !== 'local' || account.nonceManager !== undefined) return;
+  const transactionCount = quote.steps.flatMap((step) =>
+    step.items.filter((item) => asString(asRecord(item.data).to) !== undefined),
+  ).length;
+  if (transactionCount > 1) throw errors.sourceNonceManagerRequired(transactionCount);
+}
+
 function isRelaySecretKey(key: string): boolean {
   const normalized = key.toLowerCase();
   return normalized === 'headers' || normalized === 'apikey';
@@ -574,6 +591,7 @@ export async function executeRelayQuote(
     observedRequestId = quoteRequestId(rawQuote);
     assertCanonicalRelayDestination(rawQuote);
     await assertRelayExecutionIdentity(rawQuote, wallet, options.recipient);
+    assertRelayNonceManagement(rawQuote, wallet);
     const client = relayClient(options.relay);
     const sourceChainId = quoteSourceChainId(rawQuote);
     if (

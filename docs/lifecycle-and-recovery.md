@@ -36,6 +36,16 @@ For any other EVM source asset, Peer Cash uses `@relayprotocol/relay-sdk`:
    `executeSourceQuote()` remains available for apps that want a separate
    bridge step.
 
+Routes that need more than one source-chain transaction (an ERC-20 `approve`,
+then the route transaction) are submitted back-to-back by the Relay SDK. On a
+plain local account the route transaction reuses the approval's nonce and
+reverts mid-route, so `executeSourceQuote()` and `cashout({ source })` refuse
+multi-transaction routes up front with `SOURCE_NONCE_MANAGER_REQUIRED` unless
+the source signer carries a viem nonce manager:
+`privateKeyToAccount(pk, { nonceManager })`. The check fires before anything
+is submitted. Browser (`json-rpc`) wallets are unaffected - the node
+allocates their nonces.
+
 Cash-out interfaces should use `tradeType: 'EXACT_INPUT'` (also the default),
 so `amount` always means source-token base units. A `RelayQuote.outputAmount`
 is the guaranteed minimum Base USDC output. The same value becomes
@@ -62,10 +72,16 @@ destination constant.
 
 Do not retry a source route merely because the Base cashout did not finish:
 
+- `SOURCE_NONCE_MANAGER_REQUIRED` is preflight: nothing was submitted.
+  Recreate the source signer with viem's nonce manager and execute a fresh
+  quote.
 - `SOURCE_EXECUTION_FAILED` means Relay execution did not report success. Check
   its `inspect-relay-route` recovery evidence, submitted wallet transactions,
   and `relayStatus(requestId)` before taking another action; a blind retry can
-  route twice.
+  route twice. A failed route whose only landed transaction is the approval
+  can sit in `relayStatus` `waiting` indefinitely - it never becomes terminal,
+  so decide from the persisted recovery payload and the origin transactions,
+  not from Relay reaching a final status.
 - `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` means Relay completed, but the Base
   cashout was not created. Its recovery payload has
   `kind: 'retry-base-usdc-cashout'`, the guaranteed Base USDC `amount`, Relay
@@ -132,7 +148,9 @@ UI built on this SDK is a bug in that UI.
 - **Partial withdrawal** - `withdraw(depositId, { amount })` pulls part of
   the _unlocked_ balance back out. A live buyer intent does not block it
   (their locked portion is untouched); asking for more than the unlocked
-  balance fails with `INSUFFICIENT_AVAILABLE_FUNDS`.
+  balance fails with `INSUFFICIENT_AVAILABLE_FUNDS`. Accounting note: a
+  partial withdrawal increments `returnedAmount`; `totalAmount` records
+  everything the order has ever held and does not shrink.
 - There is no retain-on-empty or rate knob to manage - a cash order cleans
   itself up when fully filled, and the market rate is not configurable.
 
@@ -252,6 +270,7 @@ explicit override.
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                        |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Relay source discovery failed. Retry or use Base USDC.                                                                                       |
 | `SOURCE_QUOTE_FAILED`                   | yes       | Relay returned no valid canonical Base-USDC route. Refresh capabilities and quote again.                                                     |
+| `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; nothing was submitted. Recreate the source signer with viem's `nonceManager` and execute a fresh quote.                           |
 | `SOURCE_EXECUTION_FAILED`               | no        | Route execution did not report success. Inspect source transactions and Relay status before retrying.                                        |
 | `SOURCE_STATUS_FAILED`                  | yes       | Relay status is temporarily unavailable. Retry the status read without resubmitting.                                                         |
 | `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Relay completed but no Base cashout was created. Use the recovery amount for a Base-USDC-only retry; never repeat Relay.                     |
