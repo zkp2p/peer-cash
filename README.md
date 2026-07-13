@@ -5,12 +5,25 @@ on Venmo, Revolut, Wise, Zelle, and more at the live Chainlink market rate,
 with zero spread and no centralized off-ramp provider.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
-protocol. The cashing-out user is the maker: their USDC becomes a
-protocol-held deposit, Peer handles the buyer side, and the SDK gives the
-integrator a small set of typed verbs plus readable order state. No hosted
-widget, no provider custody, no quote engine to maintain.
+protocol. The cashing-out user is the maker: their USDC becomes a deposit in
+the protocol contracts, a buyer pays them fiat and proves the payment, and the
+SDK gives the integrator a small set of typed verbs plus readable order state.
+No hosted widget, no provider custody, no quote engine to maintain.
 
-**[Live demo](https://react-cashout-demo.vercel.app)** · **[Product page](https://peer.xyz/cash)**
+**[npm](https://www.npmjs.com/package/@zkp2p/cash)** · **[Lifecycle and recovery](docs/lifecycle-and-recovery.md)** · **[Agent integration manual](AGENTS.md)**
+
+## Pick the right SDK
+
+Peer Cash and the general ZKP2P SDK serve different integration depths:
+
+| Package       | Use it when                                       | Boundary                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is the live Chainlink rate at fill with zero spread, and the SDK owns the resumable order lifecycle.    |
+| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
+
+Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
+cannot express custom spreads, buyer-side proof flows, vaults, disputes, or
+arbitrary protocol operations.
 
 ```ts
 import { createCashClient, usdc } from '@zkp2p/cash';
