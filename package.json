@@ -1,6 +1,6 @@
 {
   "name": "@zkp2p/cash",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Peer Cash - offramp-only SDK for routing crypto to Base USDC, then cashing out to fiat at the live oracle market rate.",
   "license": "MIT",
   "author": "Peer (https://peer.xyz)",
