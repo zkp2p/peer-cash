@@ -24,6 +24,7 @@ type Fill = {
 function deposit(createdAt: number, fills: Fill[]): FillStatsDepositLike {
   return {
     timestamp: createdAt,
+    updatedAt: fills.reduce((latest, fill) => Math.max(latest, fill.at), createdAt),
     intents: fills.map(({ method, currency, at }) => ({
       paymentMethodHash: hashes[method]!,
       fiatCurrency: currency,
@@ -116,26 +117,51 @@ describe('computeFillStats', () => {
 });
 
 describe('readFillStats', () => {
-  it('uses the shared paginated query and stops when a full page exits the window', async () => {
+  it('does not truncate more than 2,000 deposits updated inside the window', async () => {
     const now = Math.floor(Date.now() / 1000);
     const windowStart = now - FILL_STATS_WINDOW_SECONDS;
-    const page = Array.from({ length: 250 }, (_, index) =>
-      deposit(windowStart - index - 1, [
-        { method: 'venmo', currency: 'USD', at: windowStart + 60 + index },
-      ]),
+    const fullPage = Array.from({ length: 250 }, (_, index) =>
+      deposit(windowStart - index - 1, [{ method: 'venmo', currency: 'USD', at: now - index }]),
     );
-    const getDepositsWithRelations = vi.fn(async () => page);
+    const finalPage = [
+      deposit(windowStart - 1_000, [{ method: 'venmo', currency: 'USD', at: now - 1_000 }]),
+    ];
+    const getDepositsWithRelations = vi.fn(async (_filter, pagination) =>
+      (pagination?.offset ?? 0) < 2_000 ? fullPage : finalPage,
+    );
     const client = { indexer: { getDepositsWithRelations } };
 
     const stats = await readFillStats(client as never, 'staging');
 
-    expect(stats['venmo:USD']?.fills).toBe(250);
+    expect(stats['venmo:USD']?.fills).toBe(2_001);
     expect(stats['venmo:USD']?.medianFillSeconds).toBeUndefined();
-    expect(getDepositsWithRelations).toHaveBeenCalledOnce();
-    expect(getDepositsWithRelations).toHaveBeenCalledWith(
+    expect(getDepositsWithRelations).toHaveBeenCalledTimes(9);
+    expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
+      1,
       { chainId: 8453 },
-      { limit: 250, offset: 0, orderBy: 'timestamp', orderDirection: 'desc' },
+      { limit: 250, offset: 0, orderBy: 'updatedAt', orderDirection: 'desc' },
       { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
     );
+    expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
+      9,
+      { chainId: 8453 },
+      { limit: 250, offset: 2_000, orderBy: 'updatedAt', orderDirection: 'desc' },
+      { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
+    );
+  });
+
+  it('stops when a full updated-at page falls outside the window', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const windowStart = now - FILL_STATS_WINDOW_SECONDS;
+    const page = Array.from({ length: 250 }, (_, index) =>
+      deposit(windowStart - index - 1, [
+        { method: 'venmo', currency: 'USD', at: windowStart - index - 1 },
+      ]),
+    );
+    const getDepositsWithRelations = vi.fn(async () => page);
+
+    await readFillStats({ indexer: { getDepositsWithRelations } } as never, 'staging');
+
+    expect(getDepositsWithRelations).toHaveBeenCalledOnce();
   });
 });

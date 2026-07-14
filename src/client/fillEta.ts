@@ -10,7 +10,6 @@ import { basePlatformForMethod } from './platformGroups';
 
 export const FILL_STATS_WINDOW_SECONDS = 30 * 24 * 60 * 60;
 const FILL_STATS_PAGE_LIMIT = 250;
-const FILL_STATS_MAX_DEPOSIT_SCAN = 2_000;
 
 export interface CashPairFillStats {
   /** Fulfilled intents through this pair inside the rolling 30-day window. */
@@ -38,6 +37,7 @@ interface IntentLike {
 export interface FillStatsDepositLike {
   createdAt?: string | number | Date | null;
   timestamp?: string | number | Date | null;
+  updatedAt?: string | number | Date | null;
   intents?: IntentLike[] | null;
 }
 
@@ -185,13 +185,13 @@ async function readFillStatsSample(
   const windowStart = now - FILL_STATS_WINDOW_SECONDS;
   const deposits: FillStatsDepositLike[] = [];
 
-  for (let offset = 0; offset < FILL_STATS_MAX_DEPOSIT_SCAN; offset += FILL_STATS_PAGE_LIMIT) {
+  for (let offset = 0; ; offset += FILL_STATS_PAGE_LIMIT) {
     const page = (await client.indexer.getDepositsWithRelations(
       { chainId: BASE_CHAIN_ID },
       {
         limit: FILL_STATS_PAGE_LIMIT,
         offset,
-        orderBy: 'timestamp',
+        orderBy: 'updatedAt',
         orderDirection: 'desc',
       },
       { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
@@ -199,10 +199,10 @@ async function readFillStatsSample(
     deposits.push(...page);
 
     if (page.length < FILL_STATS_PAGE_LIMIT) break;
-    const oldestCreatedAt = Math.min(
-      ...page.map((deposit) => toUnixSeconds(deposit.createdAt ?? deposit.timestamp) ?? Infinity),
+    const oldestUpdatedAt = Math.min(
+      ...page.map((deposit) => toUnixSeconds(deposit.updatedAt) ?? Infinity),
     );
-    if (oldestCreatedAt < windowStart) break;
+    if (oldestUpdatedAt < windowStart) break;
   }
 
   return computeFillStatsSample(deposits, now, environment);

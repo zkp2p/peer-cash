@@ -188,11 +188,12 @@ describe('readEstimate', () => {
     });
   });
 
-  it('paginates deposits by creation time when ETA samples are beyond the first page', async () => {
+  it('paginates deposits by update time when ETA samples are beyond the first page', async () => {
     const now = Math.floor(Date.now() / 1000);
     const firstPage = Array.from({ length: 250 }, (_, index) => ({
       ...venmoUsdPricing(25),
       createdAt: String(now - 1_000 - index),
+      updatedAt: String(now - 900 - index),
       intents: [
         {
           status: 'FULFILLED',
@@ -207,6 +208,7 @@ describe('readEstimate', () => {
       {
         ...venmoUsdPricing(0),
         createdAt: String(now - 2_000),
+        updatedAt: String(now - 1_700),
         intents: [
           {
             status: 'FULFILLED',
@@ -237,13 +239,13 @@ describe('readEstimate', () => {
     expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
       1,
       { chainId: 8453 },
-      { limit: 250, offset: 0, orderBy: 'timestamp', orderDirection: 'desc' },
+      { limit: 250, offset: 0, orderBy: 'updatedAt', orderDirection: 'desc' },
       { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
     );
     expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
       2,
       { chainId: 8453 },
-      { limit: 250, offset: 250, orderBy: 'timestamp', orderDirection: 'desc' },
+      { limit: 250, offset: 250, orderBy: 'updatedAt', orderDirection: 'desc' },
       { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
     );
   });
