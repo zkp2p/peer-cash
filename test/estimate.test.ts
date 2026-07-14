@@ -7,6 +7,7 @@ import type { RelayClient } from '@relayprotocol/relay-sdk';
 
 const catalog = getPaymentMethodsCatalog(8453, 'staging');
 const venmoHash = catalog['venmo']!.paymentMethodHash;
+const revolutHash = catalog['revolut']!.paymentMethodHash;
 const USD_HASH = currencyInfo['USD']!.currencyCodeHash;
 
 function venmoUsdPricing(spreadBps: number) {
@@ -118,7 +119,7 @@ describe('readEstimate', () => {
     ).rejects.toMatchObject({ code: 'ORACLE_READ_FAILED', retryable: true });
   });
 
-  it('adds rolling first-fill ETA from zero-spread market-rate cash-out deposits', async () => {
+  it('adds rolling first-fill ETA from the same intent-attributed pair sampler', async () => {
     const now = Math.floor(Date.now() / 1000);
     const indexerClient = {
       indexer: {
@@ -131,8 +132,20 @@ describe('readEstimate', () => {
             totalAmountTaken: '1000000',
             totalWithdrawn: '0',
             intents: [
-              { status: 'FULFILLED', amount: '500000', fulfillTimestamp: String(now - 900) },
-              { status: 'FULFILLED', amount: '500000', fulfillTimestamp: String(now - 600) },
+              {
+                status: 'FULFILLED',
+                amount: '500000',
+                paymentMethodHash: venmoHash,
+                fiatCurrency: USD_HASH,
+                fulfillTimestamp: String(now - 900),
+              },
+              {
+                status: 'FULFILLED',
+                amount: '500000',
+                paymentMethodHash: venmoHash,
+                fiatCurrency: 'USD',
+                fulfillTimestamp: String(now - 600),
+              },
             ],
           },
           {
@@ -143,19 +156,20 @@ describe('readEstimate', () => {
             totalAmountTaken: '1000000',
             totalWithdrawn: '0',
             intents: [
-              { status: 'FULFILLED', amount: '250000', fulfillTimestamp: String(now - 1_800) },
-              { status: 'FULFILLED', amount: '750000', fulfillTimestamp: String(now - 1_400) },
-            ],
-          },
-          {
-            ...venmoUsdPricing(25),
-            createdAt: String(now - 3_000),
-            remainingDeposits: '0',
-            outstandingIntentAmount: '0',
-            totalAmountTaken: '1000000',
-            totalWithdrawn: '0',
-            intents: [
-              { status: 'FULFILLED', amount: '1000000', fulfillTimestamp: String(now - 2_990) },
+              {
+                status: 'FULFILLED',
+                amount: '250000',
+                paymentMethodHash: venmoHash,
+                fiatCurrency: 'USD',
+                fulfillTimestamp: String(now - 1_800),
+              },
+              {
+                status: 'FULFILLED',
+                amount: '750000',
+                paymentMethodHash: venmoHash,
+                fiatCurrency: 'USD',
+                fulfillTimestamp: String(now - 1_400),
+              },
             ],
           },
         ]),
@@ -174,21 +188,35 @@ describe('readEstimate', () => {
     });
   });
 
-  it('paginates deposits by creation time when ETA samples are beyond the first page', async () => {
+  it('paginates deposits by update time when ETA samples are beyond the first page', async () => {
     const now = Math.floor(Date.now() / 1000);
     const firstPage = Array.from({ length: 250 }, (_, index) => ({
       ...venmoUsdPricing(25),
       createdAt: String(now - 1_000 - index),
+      updatedAt: String(now - 900 - index),
       intents: [
-        { status: 'FULFILLED', amount: '1000000', fulfillTimestamp: String(now - 900 - index) },
+        {
+          status: 'FULFILLED',
+          amount: '1000000',
+          paymentMethodHash: revolutHash,
+          fiatCurrency: 'USD',
+          fulfillTimestamp: String(now - 900 - index),
+        },
       ],
     }));
     const secondPage = [
       {
         ...venmoUsdPricing(0),
         createdAt: String(now - 2_000),
+        updatedAt: String(now - 1_700),
         intents: [
-          { status: 'FULFILLED', amount: '1000000', fulfillTimestamp: String(now - 1_700) },
+          {
+            status: 'FULFILLED',
+            amount: '1000000',
+            paymentMethodHash: venmoHash,
+            fiatCurrency: USD_HASH,
+            fulfillTimestamp: String(now - 1_700),
+          },
         ],
       },
     ];
@@ -211,13 +239,13 @@ describe('readEstimate', () => {
     expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
       1,
       { chainId: 8453 },
-      { limit: 250, offset: 0, orderBy: 'timestamp', orderDirection: 'desc' },
+      { limit: 250, offset: 0, orderBy: 'updatedAt', orderDirection: 'desc' },
       { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
     );
     expect(getDepositsWithRelations).toHaveBeenNthCalledWith(
       2,
       { chainId: 8453 },
-      { limit: 250, offset: 250, orderBy: 'timestamp', orderDirection: 'desc' },
+      { limit: 250, offset: 250, orderBy: 'updatedAt', orderDirection: 'desc' },
       { includeIntents: true, intentStatuses: ['FULFILLED', 'MANUALLY_RELEASED'] },
     );
   });

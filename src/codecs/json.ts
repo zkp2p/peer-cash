@@ -7,6 +7,7 @@ import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
+import type { CashFillStats } from '../client/fillEta';
 import {
   restoreRelayQuoteRaw,
   restoreRelayValue,
@@ -30,6 +31,7 @@ import type {
 import {
   cashCapabilitiesJsonSchema,
   cashEstimateJsonSchema,
+  cashFillStatsJsonSchema,
   cashFillJsonSchema,
   cashOrderJsonSchema,
   cashSourceCapabilitiesJsonSchema,
@@ -48,6 +50,7 @@ import {
   type CashAssetJson,
   type CashCapabilitiesJson,
   type CashEstimateJson,
+  type CashFillStatsJson,
   type CashErrorJson,
   type CashFillJson,
   type CashOrderJson,
@@ -193,6 +196,27 @@ export function estimateFromJson(json: unknown): CashEstimate {
         }
       : undefined,
   }) as unknown as CashEstimate;
+}
+
+// --- CashFillStats ---
+
+export function fillStatsToJson(stats: CashFillStats): CashFillStatsJson {
+  return cashFillStatsJsonSchema.parse(stats);
+}
+
+export function fillStatsFromJson(json: unknown): CashFillStats {
+  const parsed = cashFillStatsJsonSchema.parse(json);
+  return Object.fromEntries(
+    Object.entries(parsed).map(([pair, stats]) => [
+      pair,
+      {
+        fills: stats.fills,
+        ...(stats.medianFillSeconds !== undefined
+          ? { medianFillSeconds: stats.medianFillSeconds }
+          : {}),
+      },
+    ]),
+  );
 }
 
 // --- RelayQuote ---

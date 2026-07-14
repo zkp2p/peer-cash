@@ -44,7 +44,9 @@ import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolve
 import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
 import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
 import { readEstimate, type CashEstimate, type EstimateInput } from './estimate';
+import { readFillStats, type CashFillStats } from './fillEta';
 import { CashError, errors, isCashError, mapChainError } from './errors';
+import { paymentMethodsForPlatform } from './platformGroups';
 import {
   readRelaySourceCapabilities,
   readRelayStatus,
@@ -240,6 +242,13 @@ export interface CashClient {
   capabilities(): CashCapabilities;
   /** 0b - Discovery with live Relay-supported EVM source chains/tokens. */
   capabilities(options: { includeRelaySources: true }): Promise<CashCapabilities>;
+  /**
+   * 0c - Raw 30-day demand and first-fill speed evidence keyed by
+   * `platform:currency`. A recommended consumer gate is `fills >= 10 &&
+   * medianFillSeconds <= 48h`; fail open to the full capability catalog when
+   * stats are unavailable or the gate would remove every pair.
+   */
+  fillStats(): Promise<CashFillStats>;
   /** Relay-only source discovery helper. */
   sourceCapabilities(): Promise<CashSourceCapabilities>;
   /** Quote any Relay-supported EVM source asset into Base USDC. */
@@ -451,6 +460,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
   function validatePayout(input: CashoutInput): Omit<CashDepositInput, 'amount'> {
     const { receive } = input;
+    const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
     const platform = buildCapabilities(environment).platforms.find(
       (capability) => capability.platform === receive.platform,
     );
@@ -461,14 +471,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (!platform.currencies.includes(receive.currency)) {
       throw errors.unsupportedPlatformCurrency(receive.platform, receive.currency);
     }
+    const paymentMethods = paymentMethodsForPlatform(receive.platform, catalog);
     return {
-      payouts: [
-        {
-          processorName: receive.platform,
-          currency: receive.currency,
-          payeeData: receive.payee,
-        },
-      ],
+      payouts: paymentMethods.map((processorName) => ({
+        processorName,
+        currency: receive.currency,
+        payeeData: receive.payee,
+      })),
     };
   }
 
@@ -854,6 +863,14 @@ export function createCashClient(options: CashClientOptions): CashClient {
         environment,
         ...(options.relay ? { relay: options.relay } : {}),
       });
+    },
+
+    async fillStats(): Promise<CashFillStats> {
+      try {
+        return await readFillStats(readClient, environment);
+      } catch (err) {
+        throw errors.indexerUnavailable('fill stats', err);
+      }
     },
 
     async cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult> {

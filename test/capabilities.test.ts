@@ -37,6 +37,18 @@ describe('buildCapabilities', () => {
     expect(venmo?.currencies).toContain('USD');
   });
 
+  it('presents the Zelle method group as one platform with unioned currencies', () => {
+    const caps = buildCapabilities('production');
+    const zelle = caps.platforms.filter((platform) => platform.platform.startsWith('zelle'));
+
+    expect(zelle).toEqual([
+      expect.objectContaining({
+        platform: 'zelle',
+        currencies: expect.arrayContaining(['USD']),
+      }),
+    ]);
+  });
+
   it('flags Wise and PayPal as requiring an identity attestation; others do not', () => {
     const caps = buildCapabilities('production');
     for (const platform of caps.platforms) {

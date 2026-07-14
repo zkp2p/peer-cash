@@ -133,7 +133,7 @@ const rootType = null as CashClient | null;
 const reactExport: typeof useCashout = useCashout;
 const reactType = null as UseCashoutOptions | null;
 const customName: CashToolName = 'merchant_custom_tool';
-const builtInName: BuiltInCashToolName = 'cash_order';
+const builtInName: BuiltInCashToolName = 'cash_fill_stats';
 const mutableRegistry: CashToolDefinition[] = cashTools;
 
 void [rootExport, rootType, reactExport, reactType, customName, builtInName, mutableRegistry];
@@ -147,9 +147,9 @@ import { useCashout } from '@zkp2p/cash/react';
 import { cashToolManifest, cashTools } from '@zkp2p/cash/tools';
 
 const client = createCashClient({ environment: 'staging' });
-if (typeof client.cashout !== 'function' || usdc('1') !== 1_000_000n) throw new Error('root ESM failed');
+if (typeof client.cashout !== 'function' || typeof client.fillStats !== 'function' || usdc('1') !== 1_000_000n) throw new Error('root ESM failed');
 if (typeof useCashout !== 'function') throw new Error('react ESM failed');
-if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 10) throw new Error('tools ESM failed');
+if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 11) throw new Error('tools ESM failed');
 `,
   );
   writeFileSync(
@@ -159,9 +159,9 @@ const { useCashout } = require('@zkp2p/cash/react');
 const { cashToolManifest, cashTools } = require('@zkp2p/cash/tools');
 
 const client = createCashClient({ environment: 'staging' });
-if (typeof client.cashout !== 'function' || usdc('1') !== 1000000n) throw new Error('root CJS failed');
+if (typeof client.cashout !== 'function' || typeof client.fillStats !== 'function' || usdc('1') !== 1000000n) throw new Error('root CJS failed');
 if (typeof useCashout !== 'function') throw new Error('react CJS failed');
-if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 10) throw new Error('tools CJS failed');
+if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 11) throw new Error('tools CJS failed');
 `,
   );
   run('node', ['smoke.mjs'], temporaryRoot);

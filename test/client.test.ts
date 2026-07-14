@@ -160,6 +160,37 @@ describe('environment routing', () => {
   });
 });
 
+describe('fillStats()', () => {
+  it('returns intent-attributed pair evidence through the public client verb', async () => {
+    const venmoHash = getPaymentMethodsCatalog(8453, 'staging')['venmo']!.paymentMethodHash;
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
+      {
+        timestamp: NOW - 300,
+        intents: [
+          {
+            paymentMethodHash: venmoHash,
+            fiatCurrency: 'USD',
+            fulfillTimestamp: NOW - 120,
+          },
+        ],
+      },
+    ]);
+
+    await expect(client().fillStats()).resolves.toEqual({
+      'venmo:USD': { fills: 1, medianFillSeconds: 180 },
+    });
+  });
+
+  it('maps an unavailable indexer to the existing retryable read error', async () => {
+    mockInstance.indexer.getDepositsWithRelations.mockRejectedValue(new Error('gateway timeout'));
+
+    await expect(client().fillStats()).rejects.toMatchObject({
+      code: 'INDEXER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+});
+
 describe('order()', () => {
   it('rejects a bare on-chain id before querying the composite-id index', async () => {
     await expect(client().order('123')).rejects.toMatchObject({ code: 'INVALID_DEPOSIT_ID' });
@@ -329,6 +360,44 @@ describe('cashout()', () => {
     expect(result.onchainDepositId).toBe(5n);
     expect(result.txHash).toBe('0xhash');
     expect(result.order.state).toBe('awaiting-buyer');
+  });
+
+  it('expands a signed Zelle cashout into the full bank-scoped method group', async () => {
+    const payeeHashes = ['0xzelle', '0xchase', '0xbofa', '0xciti'];
+    mockInstance.registerPayeeDetails.mockResolvedValue({
+      depositDetails: payeeHashes.map(() => ({})),
+      hashedOnchainIds: payeeHashes,
+    });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'zelle', currency: 'USD', payee: { offchainId: 'a@example.com' } },
+      },
+      { signer },
+    );
+
+    const methods = ['zelle', 'zelle-chase', 'zelle-bofa', 'zelle-citi'];
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: methods,
+      payeeData: methods.map(() => ({ offchainId: 'a@example.com' })),
+    });
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        processorNames: methods,
+        paymentMethodsOverride: methods.map(
+          (method) => getPaymentMethodsCatalog(8453, 'staging')[method]!.paymentMethodHash,
+        ),
+        paymentMethodDataOverride: payeeHashes.map((payeeDetails) =>
+          expect.objectContaining({ payeeDetails }),
+        ),
+      }),
+    );
   });
 
   it('does not invite duplicate Base cashouts when submission returns no hash', async () => {
@@ -1344,6 +1413,33 @@ describe('prepare()', () => {
     // No signing surface touched.
     expect(mockInstance.createDeposit).not.toHaveBeenCalled();
     expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+  });
+
+  it('expands a prepared Zelle cashout into the full bank-scoped method group', async () => {
+    const payeeHashes = ['0xzelle', '0xchase', '0xbofa', '0xciti'];
+    mockInstance.registerPayeeDetails.mockResolvedValue({
+      depositDetails: payeeHashes.map(() => ({})),
+      hashedOnchainIds: payeeHashes,
+    });
+    mockInstance.prepareCreateDeposit.mockResolvedValue({
+      depositDetails: payeeHashes.map(() => ({})),
+      prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
+    });
+
+    const result = await client().prepare({
+      amount: 5_000_000n,
+      receive: { platform: 'zelle', currency: 'USD', payee: { offchainId: '+12025550123' } },
+    });
+
+    const methods = ['zelle', 'zelle-chase', 'zelle-bofa', 'zelle-citi'];
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: methods,
+      payeeData: methods.map(() => ({ offchainId: '+12025550123' })),
+    });
+    expect(mockInstance.prepareCreateDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ processorNames: methods }),
+    );
+    expect(result.register.hashedOnchainIds).toEqual(payeeHashes);
   });
 
   it('rejects Relay source routing because prepare cannot execute the bridge pre-step', async () => {

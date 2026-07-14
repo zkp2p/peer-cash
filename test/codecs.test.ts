@@ -10,6 +10,8 @@ import {
   cashErrorToJson,
   estimateFromJson,
   estimateToJson,
+  fillStatsFromJson,
+  fillStatsToJson,
   fillFromJson,
   orderFromJson,
   orderToJson,
@@ -165,6 +167,17 @@ describe('estimate codec', () => {
     expect(
       (json.source?.relayQuote.raw as { request?: { headers?: unknown } }).request?.headers,
     ).toBeUndefined();
+  });
+});
+
+describe('fill stats codec', () => {
+  it('round-trips plain JSON evidence and rejects invalid counts', () => {
+    const stats = {
+      'venmo:USD': { fills: 12, medianFillSeconds: 3_600 },
+      'zelle:USD': { fills: 4 },
+    };
+    expect(fillStatsFromJson(JSON.parse(JSON.stringify(fillStatsToJson(stats))))).toEqual(stats);
+    expect(() => fillStatsFromJson({ 'venmo:USD': { fills: -1 } })).toThrow();
   });
 });
 

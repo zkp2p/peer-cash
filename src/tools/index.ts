@@ -138,6 +138,16 @@ const builtInCashTools = [
     },
   },
   {
+    name: 'cash_fill_stats',
+    description:
+      'Read raw 30-day demand and first-fill speed evidence for every observed platform:currency pair. Consumers should apply their own threshold and fail open to cash_capabilities when stats are unavailable or filtering would empty the catalog.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'cash_cashout',
     description:
       'Start a Base-USDC cash-out using the custody-separated prepare path. Returns UNSIGNED transactions plus same-index steps [approve, createDeposit]; signing and ordered submission stay host-side. For another source asset, complete cash_source_quote and cash_source_status first, then pass the guaranteed Base USDC output amount here.',
