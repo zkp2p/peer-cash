@@ -19,5 +19,5 @@
       "@zkp2p/cash/tools": ["./src/tools/index.ts"]
     }
   },
-  "include": ["src", "test", "examples", "tsup.config.ts", "vitest.config.ts"]
+  "include": ["src", "test", "examples", "scripts", "tsup.config.ts", "vitest.config.ts"]
 }

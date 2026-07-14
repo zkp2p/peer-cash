@@ -48,6 +48,11 @@ function ok(message: string): void {
   console.log(`  ok: ${message}`);
 }
 
+function errorDetails(error: unknown): string {
+  if (isCashError(error)) return JSON.stringify(error.toJSON(), null, 2);
+  return error instanceof Error ? error.message : String(error);
+}
+
 const privateKey = process.env.TEST_WALLET_PRIVATE_KEY;
 if (!privateKey) fail('TEST_WALLET_PRIVATE_KEY is missing');
 
@@ -107,9 +112,7 @@ async function cleanupOpenDeposits(): Promise<void> {
         `  cleanup withdrew ${depositId}: https://basescan.org/tx/${withdrawal.withdrawTxHash}`,
       );
     } catch (error) {
-      console.error(
-        `  cleanup failed for ${depositId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      console.error(`  cleanup failed for ${depositId}: ${errorDetails(error)}`);
     }
   }
 }
@@ -279,7 +282,7 @@ async function main(): Promise<void> {
 try {
   await main();
 } catch (error) {
-  console.error(`\nFAIL: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`\nFAIL: ${errorDetails(error)}`);
   await cleanupOpenDeposits();
   process.exitCode = 1;
 }

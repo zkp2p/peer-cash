@@ -92,7 +92,7 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test examples",
+    "lint": "eslint src test examples scripts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",

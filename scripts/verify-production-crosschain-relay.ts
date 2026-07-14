@@ -6,9 +6,10 @@
  * Buyer payment/proof is intentionally out of scope.
  *
  * Run: bun scripts/verify-production-crosschain-relay.ts
- * Needs TEST_WALLET_PRIVATE_KEY, Base ETH, and >= 1 USDC on Base.
+ * Needs TEST_WALLET_PRIVATE_KEY, Base ETH, and >= 1.5 USDC on Base.
  */
 import { createClient as createRelayClient, MAINNET_RELAY_API } from '@relayprotocol/relay-sdk';
+import type { ProgressData } from '@relayprotocol/relay-sdk';
 import { fetchChainConfigs } from '@relayprotocol/relay-sdk/chain-utils';
 import { createPublicClient, createWalletClient, erc20Abi, http, nonceManager } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -33,6 +34,24 @@ function fail(message: string): never {
 
 function ok(message: string): void {
   console.log(`  ok: ${message}`);
+}
+
+function errorDetails(error: unknown): string {
+  if (isCashError(error)) return JSON.stringify(error.toJSON(), null, 2);
+  return error instanceof Error ? error.message : String(error);
+}
+
+function relayEvidence(steps: ProgressData['steps']): {
+  requestId?: string;
+  txHashes: string[];
+} {
+  const requestId = steps
+    .map((step) => step.requestId)
+    .find((id): id is string => id !== undefined);
+  const txHashes = steps.flatMap((step) =>
+    step.items.flatMap((item) => (item.txHashes ?? []).map((transaction) => transaction.txHash)),
+  );
+  return { ...(requestId ? { requestId } : {}), txHashes };
 }
 
 const privateKey = process.env.TEST_WALLET_PRIVATE_KEY;
@@ -129,9 +148,7 @@ async function cleanupOpenDeposit(): Promise<void> {
     );
     openDepositId = undefined;
   } catch (error) {
-    console.error(
-      `  cleanup failed for ${openDepositId}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`  cleanup failed for ${openDepositId}: ${errorDetails(error)}`);
   }
 }
 
@@ -154,13 +171,29 @@ async function bridgeFromBase(
     },
     false,
   );
-  const { data } = await relayClient.actions.execute({ quote, wallet: baseSigner });
-  const requestId = data.steps
-    .map((step) => step.requestId)
-    .find((id): id is string => id !== undefined);
-  const txHashes = data.steps.flatMap((step) =>
-    step.items.flatMap((item) => (item.txHashes ?? []).map((transaction) => transaction.txHash)),
-  );
+  let evidence = relayEvidence(quote.steps);
+  let data;
+  try {
+    ({ data } = await relayClient.actions.execute({
+      quote,
+      wallet: baseSigner,
+      onProgress: (progress) => {
+        evidence = relayEvidence(progress.steps);
+      },
+    }));
+  } catch (error) {
+    const summary = [
+      evidence.requestId ? `request ${evidence.requestId}` : undefined,
+      ...evidence.txHashes,
+    ]
+      .filter((value): value is string => value !== undefined)
+      .join(', ');
+    throw new Error(
+      `${label} Relay execution failed (${summary || 'no transaction evidence'}): ${errorDetails(error)}`,
+      { cause: error },
+    );
+  }
+  const { requestId, txHashes } = relayEvidence(data.steps);
   if (!requestId || txHashes.length === 0) fail(`${label} returned no Relay evidence`);
   console.log(
     `  ${label}: ${txHashes.map((hash) => `https://basescan.org/tx/${hash}`).join(', ')}`,
@@ -255,7 +288,7 @@ async function main(): Promise<void> {
 try {
   await main();
 } catch (error) {
-  console.error(`\nFAIL: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`\nFAIL: ${errorDetails(error)}`);
   await cleanupOpenDeposit();
   process.exitCode = 1;
 }
