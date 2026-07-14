@@ -222,4 +222,3 @@ const terminal = await waitForOrder(
 ok(`order is ${terminal.state}; no cross-chain test liquidity remains in Peer Cash`);
 
 console.log('\nPRODUCTION CROSS-CHAIN RELAY VERIFICATION PASSED');
-await bridgeFromBase(BASE_USDC_ADDRESS, ARBITRUM_USDC, FUNDING_USDC, 'Base USDC -> Arbitrum USDC');
