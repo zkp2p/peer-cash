@@ -48,7 +48,7 @@ export type {
   RelayStatus,
   RelayTransaction,
 } from './client/relay';
-export type { CashFillEta } from './client/fillEta';
+export type { CashFillEta, CashFillStats, CashPairFillStats } from './client/fillEta';
 
 // Typed errors
 export { CashError, isCashError, errors } from './client/errors';

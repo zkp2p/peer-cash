@@ -200,6 +200,15 @@ export const cashEstimateJsonSchema = z.object({
     .optional(),
 });
 
+export const cashPairFillStatsJsonSchema = z
+  .object({
+    fills: z.number().int().nonnegative(),
+    medianFillSeconds: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export const cashFillStatsJsonSchema = z.record(z.string(), cashPairFillStatsJsonSchema);
+
 export const preparedTransactionJsonSchema = z.object({
   to: z.string(),
   data: z.string(),
@@ -427,6 +436,7 @@ export const cashErrorJsonSchema = z
 export type CashOrderJson = z.infer<typeof cashOrderJsonSchema>;
 export type CashFillJson = z.infer<typeof cashFillJsonSchema>;
 export type CashEstimateJson = z.infer<typeof cashEstimateJsonSchema>;
+export type CashFillStatsJson = z.infer<typeof cashFillStatsJsonSchema>;
 export type PreparedTransactionJson = z.infer<typeof preparedTransactionJsonSchema>;
 export type CashoutResultJson = z.infer<typeof cashoutResultJsonSchema>;
 export type PrepareResultJson = z.infer<typeof prepareResultJsonSchema>;

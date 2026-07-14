@@ -6,6 +6,7 @@ import { getPaymentMethodsCatalog, getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
+import { basePlatformForMethod } from './platformGroups';
 import type { CashSourceCapabilities } from './relay';
 
 /** Hard floor: below one cent a deposit is dust and can never fill. */
@@ -87,17 +88,24 @@ export interface CashCapabilities {
 export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
   const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
 
-  const platforms: CashPlatformCapability[] = Object.entries(catalog)
-    .map(([platform, entry]) => {
-      const currencies = (entry.currencies ?? [])
-        .map((hash) => getCurrencyCodeFromHash(hash))
-        .filter(
-          (code): code is CurrencyType =>
-            code != null && isMarketRateSupported(code as CurrencyType),
-        );
+  const currenciesByPlatform = new Map<string, Set<CurrencyType>>();
+  for (const [method, entry] of Object.entries(catalog)) {
+    const platform = basePlatformForMethod(method);
+    const currencies = (entry.currencies ?? [])
+      .map((hash) => getCurrencyCodeFromHash(hash))
+      .filter(
+        (code): code is CurrencyType => code != null && isMarketRateSupported(code as CurrencyType),
+      );
+    const aggregate = currenciesByPlatform.get(platform) ?? new Set<CurrencyType>();
+    for (const currency of currencies) aggregate.add(currency);
+    currenciesByPlatform.set(platform, aggregate);
+  }
+
+  const platforms: CashPlatformCapability[] = [...currenciesByPlatform.entries()]
+    .map(([platform, currencies]) => {
       return {
         platform,
-        currencies: [...new Set(currencies)],
+        currencies: [...currencies].sort(),
         payeeHint: PAYEE_HINTS[platform] ?? 'Your payment handle for this platform',
         requiresIdentityAttestation: IDENTITY_ATTESTATION_PLATFORMS.has(platform),
       };

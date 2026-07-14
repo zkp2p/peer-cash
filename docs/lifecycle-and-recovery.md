@@ -124,10 +124,17 @@ passes through `delivering` until the last one completes. `filledAmount`,
 ## The ETA principle
 
 `estimate().eta` is historical, not a promise. It uses rolling 30-day indexer
-data from deposit/order creation to the first fulfilled fill. It deliberately
-does **not** measure buyer signal to fulfillment; that would miss the
-buyer-arrival wait that users actually care about. The public shape is small:
-`{ seconds, label }`.
+data from deposit/order creation to the first fulfilled fill through the
+intent's actual platform and currency pair. It deliberately does **not**
+measure buyer signal to fulfillment; that would miss the buyer-arrival wait
+that users actually care about. The public shape is small: `{ seconds, label }`.
+
+`fillStats()` exposes the sampler's raw evidence for catalog filtering as
+`Record<"platform:currency", { fills, medianFillSeconds? }>`. Bank-scoped Zelle
+methods aggregate to `zelle:USD`. Consumers own thresholding; the recommended
+gate is `fills >= 10 && medianFillSeconds <= 48h`, with a fail-open fallback to
+the full capability catalog when the read fails or filtering would empty it.
+Medians are per-deposit first-fill latencies, never means or censored cohorts.
 
 - **Buyer arrival time is market-driven.** A deposit at market rate should
   fill fast, but the ETA is only a recent historical sample.

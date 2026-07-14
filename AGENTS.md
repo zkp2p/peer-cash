@@ -54,6 +54,9 @@ const relayCaps = await cash.capabilities({ includeRelaySources: true });
 // 2. Estimate - idempotent, cacheable, no side effects. Includes rolling ETA.
 const est = await cash.estimate({ amount: usdc(500), currency: 'EUR' });
 
+// Optional: raw demand + speed evidence per offered platform:currency pair.
+const stats = await cash.fillStats();
+
 // 3. Execute.
 const { depositId } = await cash.cashout(
   {
@@ -101,9 +104,9 @@ console.log(routed.source?.transactions?.origin, routed.source?.transactions?.de
   binding rate resolves at the oracle when a buyer fills. Do not display or
   log it as a locked price.
 - **Do not invent an ETA.** Use `estimate().eta`: `{ seconds, label }` backed
-  by rolling 30-day indexer data from zero-spread (`spreadBps: 0`) market-rate
-  deposits in the same payout corridor, measured from deposit creation to first
-  fill. Use `order.explain()` for live order state.
+  by the same rolling 30-day, intent-attributed pair sample as `fillStats()`,
+  measured from deposit creation to first fill. Use `order.explain()` for live
+  order state.
 - **Do not hardcode Relay source assets.** Use Relay SDK-backed EVM
   `capabilities({ includeRelaySources: true })` and `cashout({ source, ... })`.
   Destination is always Base USDC. Non-Base source chains require

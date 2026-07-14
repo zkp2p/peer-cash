@@ -76,6 +76,7 @@ console.log(source?.transactions?.origin, source?.transactions?.destination);
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
 | `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
+| `fillStats()`                                                  | Raw 30-day fill counts and median first-fill time per `platform:currency` pair                                                  |
 | `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `estimate({ amount, currency })`                               | Base USDC oracle estimate plus simple recent-fill ETA                                                                           |
@@ -96,6 +97,11 @@ use `cashout({ source }, { signer, sourceSigner })`; a custody-separated host
 must execute and confirm its Relay route before preparing the Base-USDC
 cashout. Every Peer Cash transaction, including approves, carries ERC-8021
 attribution: `peer-cash` first, your own `referrer` code(s) after it.
+
+`capabilities()` presents Zelle as one platform. A cashout with
+`receive.platform: 'zelle'` automatically attaches the generic Zelle method
+and its Chase, Bank of America, and Citi buyer routes to the deposit; the payee
+handle and public API remain bank-agnostic.
 
 The default/minimal flow is unchanged: pass Base USDC base units to
 `estimate()` and `cashout()`. For any other source asset, pass `source` to
@@ -172,9 +178,12 @@ awaiting-buyer ──────────► matched ───────�
   fills. `estimate()` says "approximately"; nothing in this API pretends to
   lock a price.
 - **ETA is historical.** `estimate().eta` is just `{ seconds, label }`, backed
-  by rolling 30-day indexer data from zero-spread (`spreadBps: 0`) market-rate
-  deposits in the same payout corridor, measured from deposit creation to first
-  fulfilled fill.
+  by the same rolling 30-day, intent-attributed pair sampler as `fillStats()`,
+  measured from deposit creation to the first fulfilled fill through the pair.
+- **Availability thresholds belong to the consumer.** `fillStats()` returns raw
+  evidence. A recommended gate is `fills >= 10 && medianFillSeconds <= 48h`.
+  Fail open to the full `capabilities()` catalog when stats are unavailable or
+  the gate would empty the offered catalog.
 - **Everything is resumable.** An order is reconstructed from the chain by
   `depositId` alone. Close the tab, switch devices, crash the process - then
   call `order(depositId)`.
