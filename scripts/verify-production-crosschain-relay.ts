@@ -28,8 +28,7 @@ const RECEIVE = {
 } as const;
 
 function fail(message: string): never {
-  console.error(`\nFAIL: ${message}`);
-  process.exit(1);
+  throw new Error(message);
 }
 
 function ok(message: string): void {
@@ -53,6 +52,7 @@ const arbitrumSigner = createWalletClient({
 });
 const arbitrumPublic = createPublicClient({ chain: arbitrum, transport: http(arbitrumRpc) });
 const cash = createCashClient({ environment: 'production', rpcUrl: baseRpc });
+let openDepositId: string | undefined;
 const relayClient = createRelayClient({
   baseApiUrl: MAINNET_RELAY_API,
   source: 'peer-cash-production-verification',
@@ -115,6 +115,26 @@ async function waitForOrder(
   }
 }
 
+async function cleanupOpenDeposit(): Promise<void> {
+  if (!openDepositId) return;
+  try {
+    const order = await waitForOrder(openDepositId, () => true);
+    if (!order.nextActions.includes('withdraw')) {
+      console.error(`  cleanup blocked for ${openDepositId}: order is ${order.state}`);
+      return;
+    }
+    const withdrawal = await cash.withdraw(openDepositId, { signer: baseSigner });
+    console.error(
+      `  cleanup withdrew ${openDepositId}: https://basescan.org/tx/${withdrawal.withdrawTxHash}`,
+    );
+    openDepositId = undefined;
+  } catch (error) {
+    console.error(
+      `  cleanup failed for ${openDepositId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 async function bridgeFromBase(
   currency: string,
   destinationCurrency: string,
@@ -148,77 +168,94 @@ async function bridgeFromBase(
   await waitForRelaySuccess(requestId, `${label} completion`);
 }
 
-console.log(`wallet: ${account.address}`);
-console.log('environment: production | route: Base -> Arbitrum -> Base');
+async function main(): Promise<void> {
+  console.log(`wallet: ${account.address}`);
+  console.log('environment: production | route: Base -> Arbitrum -> Base');
 
-console.log('\n[1/5] fund Arbitrum gas from Base');
-const ethBefore = await arbitrumPublic.getBalance({ address: account.address });
-await bridgeFromBase(
-  BASE_USDC_ADDRESS,
-  NATIVE_TOKEN,
-  FUNDING_ARBITRUM_GAS_USDC,
-  'Base USDC -> Arbitrum ETH',
-);
-await waitFor(
-  'Arbitrum ETH arrival',
-  async () => (await arbitrumPublic.getBalance({ address: account.address })) > ethBefore,
-);
-ok('Arbitrum source signer has native gas');
+  console.log('\n[1/5] fund Arbitrum gas from Base');
+  const ethBefore = await arbitrumPublic.getBalance({ address: account.address });
+  await bridgeFromBase(
+    BASE_USDC_ADDRESS,
+    NATIVE_TOKEN,
+    FUNDING_ARBITRUM_GAS_USDC,
+    'Base USDC -> Arbitrum ETH',
+  );
+  await waitFor(
+    'Arbitrum ETH arrival',
+    async () => (await arbitrumPublic.getBalance({ address: account.address })) > ethBefore,
+  );
+  ok('Arbitrum source signer has native gas');
 
-console.log('\n[2/5] fund Arbitrum USDC from Base');
-const usdcBefore = await arbitrumUsdcBalance();
-await bridgeFromBase(BASE_USDC_ADDRESS, ARBITRUM_USDC, FUNDING_USDC, 'Base USDC -> Arbitrum USDC');
-await waitFor('Arbitrum USDC arrival', async () => (await arbitrumUsdcBalance()) > usdcBefore);
-const sourceAmount = (await arbitrumUsdcBalance()) - usdcBefore;
-if (sourceAmount < usdc('0.01'))
-  fail(`Arbitrum USDC funding is too small (${formatUsdc(sourceAmount)})`);
-ok(`Arbitrum received ${formatUsdc(sourceAmount)} USDC`);
+  console.log('\n[2/5] fund Arbitrum USDC from Base');
+  const usdcBefore = await arbitrumUsdcBalance();
+  await bridgeFromBase(
+    BASE_USDC_ADDRESS,
+    ARBITRUM_USDC,
+    FUNDING_USDC,
+    'Base USDC -> Arbitrum USDC',
+  );
+  await waitFor('Arbitrum USDC arrival', async () => (await arbitrumUsdcBalance()) > usdcBefore);
+  const sourceAmount = (await arbitrumUsdcBalance()) - usdcBefore;
+  if (sourceAmount < usdc('0.01'))
+    fail(`Arbitrum USDC funding is too small (${formatUsdc(sourceAmount)})`);
+  ok(`Arbitrum received ${formatUsdc(sourceAmount)} USDC`);
 
-console.log('\n[3/5] live cross-chain quote');
-const quote = await cash.quoteSource({
-  user: account.address,
-  recipient: account.address,
-  amount: sourceAmount,
-  source: { chainId: arbitrum.id, currency: ARBITRUM_USDC },
-});
-if (
-  quote.destination.address.toLowerCase() !== BASE_USDC_ADDRESS ||
-  quote.outputAmount < usdc('0.01')
-) {
-  fail('cross-chain quote did not return usable canonical Base USDC');
-}
-ok(`Arbitrum USDC -> Base USDC quote minimum: ${formatUsdc(quote.outputAmount)} USDC`);
-
-console.log('\n[4/5] Arbitrum USDC -> Base USDC -> Peer Cash cashout');
-const routed = await cash.cashout(
-  {
+  console.log('\n[3/5] live cross-chain quote');
+  const quote = await cash.quoteSource({
+    user: account.address,
+    recipient: account.address,
     amount: sourceAmount,
     source: { chainId: arbitrum.id, currency: ARBITRUM_USDC },
-    receive: RECEIVE,
-  },
-  { signer: baseSigner, sourceSigner: arbitrumSigner },
-);
-if (!routed.source || routed.source.txHashes.length === 0)
-  fail('cross-chain cashout returned no Relay evidence');
-console.log(`  source: ${routed.source.txHashes.join(', ')}`);
-console.log(`  deposit: https://basescan.org/tx/${routed.txHash}`);
-const order = await waitForOrder(
-  routed.depositId,
-  (candidate) =>
-    candidate.state === 'awaiting-buyer' && candidate.totalAmount === routed.source!.amount,
-);
-if (!order.nextActions.includes('withdraw')) fail('cross-chain order omitted withdraw');
-if (routed.source.requestId)
-  await waitForRelaySuccess(routed.source.requestId, 'Arbitrum -> Base route completion');
-ok(`cross-chain route produced ${formatUsdc(order.totalAmount)} USDC in an indexed maker order`);
+  });
+  if (
+    quote.destination.address.toLowerCase() !== BASE_USDC_ADDRESS ||
+    quote.outputAmount < usdc('0.01')
+  ) {
+    fail('cross-chain quote did not return usable canonical Base USDC');
+  }
+  ok(`Arbitrum USDC -> Base USDC quote minimum: ${formatUsdc(quote.outputAmount)} USDC`);
 
-console.log('\n[5/5] unwind the cross-chain maker order');
-const withdrawal = await cash.withdraw(routed.depositId, { signer: baseSigner });
-console.log(`  return: https://basescan.org/tx/${withdrawal.withdrawTxHash}`);
-const terminal = await waitForOrder(
-  routed.depositId,
-  (candidate) => candidate.state === 'returned',
-);
-ok(`order is ${terminal.state}; no cross-chain test liquidity remains in Peer Cash`);
+  console.log('\n[4/5] Arbitrum USDC -> Base USDC -> Peer Cash cashout');
+  const routed = await cash.cashout(
+    {
+      amount: sourceAmount,
+      source: { chainId: arbitrum.id, currency: ARBITRUM_USDC },
+      receive: RECEIVE,
+    },
+    { signer: baseSigner, sourceSigner: arbitrumSigner },
+  );
+  openDepositId = routed.depositId;
+  if (!routed.source || routed.source.txHashes.length === 0)
+    fail('cross-chain cashout returned no Relay evidence');
+  console.log(`  source: ${routed.source.txHashes.join(', ')}`);
+  console.log(`  deposit: https://basescan.org/tx/${routed.txHash}`);
+  const order = await waitForOrder(
+    routed.depositId,
+    (candidate) =>
+      candidate.state === 'awaiting-buyer' && candidate.totalAmount === routed.source!.amount,
+  );
+  if (!order.nextActions.includes('withdraw')) fail('cross-chain order omitted withdraw');
+  if (routed.source.requestId)
+    await waitForRelaySuccess(routed.source.requestId, 'Arbitrum -> Base route completion');
+  ok(`cross-chain route produced ${formatUsdc(order.totalAmount)} USDC in an indexed maker order`);
 
-console.log('\nPRODUCTION CROSS-CHAIN RELAY VERIFICATION PASSED');
+  console.log('\n[5/5] unwind the cross-chain maker order');
+  const withdrawal = await cash.withdraw(routed.depositId, { signer: baseSigner });
+  openDepositId = undefined;
+  console.log(`  return: https://basescan.org/tx/${withdrawal.withdrawTxHash}`);
+  const terminal = await waitForOrder(
+    routed.depositId,
+    (candidate) => candidate.state === 'returned',
+  );
+  ok(`order is ${terminal.state}; no cross-chain test liquidity remains in Peer Cash`);
+
+  console.log('\nPRODUCTION CROSS-CHAIN RELAY VERIFICATION PASSED');
+}
+
+try {
+  await main();
+} catch (error) {
+  console.error(`\nFAIL: ${error instanceof Error ? error.message : String(error)}`);
+  await cleanupOpenDeposit();
+  process.exitCode = 1;
+}
