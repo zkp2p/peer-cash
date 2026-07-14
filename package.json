@@ -92,13 +92,15 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test examples",
+    "lint": "eslint src test examples scripts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "audit": "bun audit --production",
     "pack:check": "bun scripts/check-packed-package.ts",
+    "verify:production-crosschain-relay": "bun scripts/verify-production-crosschain-relay.ts",
+    "verify:production-maker": "bun scripts/verify-production-maker.ts",
     "prepack": "bun run build",
     "ci": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run audit && bun run build && bun run pack:check"
   },
