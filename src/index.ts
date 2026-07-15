@@ -35,7 +35,7 @@ export {
   RECOMMENDED_MIN_CASHOUT_AMOUNT,
 } from './client/capabilities';
 export type { CashCapabilities, CashPlatformCapability } from './client/capabilities';
-export type { CashEstimate, EstimateInput } from './client/estimate';
+export type { CashEstimate, EstimateInput, EstimateOptions } from './client/estimate';
 export type {
   CashAsset,
   CashChain,

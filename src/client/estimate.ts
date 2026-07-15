@@ -62,6 +62,14 @@ export interface EstimateInput {
   };
 }
 
+export interface EstimateOptions {
+  /**
+   * Include the historical indexer-backed ETA. Disable for progressive UIs
+   * that render the oracle rate first and load pair fill stats separately.
+   */
+  includeEta?: boolean;
+}
+
 /**
  * Chainlink feeds should update at least daily; a reading older than this is
  * flagged `stale` so a consumer can warn rather than quote a frozen rate. The
@@ -103,6 +111,8 @@ export async function readEstimate(
   context: {
     indexerClient?: Zkp2pClient;
     environment?: Parameters<typeof readFillEta>[1]['environment'];
+    etaReader?: (input: Parameters<typeof readFillEta>[1]) => Promise<CashFillEta>;
+    includeEta?: boolean;
     relay?: RelayOptions;
   } = {},
 ): Promise<CashEstimate> {
@@ -186,13 +196,18 @@ export async function readEstimate(
       : {}),
   };
 
-  if (context.indexerClient && context.environment) {
+  if (context.includeEta !== false && context.environment) {
     try {
-      estimate.eta = await readFillEta(context.indexerClient, {
+      const etaInput = {
         environment: context.environment,
         currency,
         ...(input.platform ? { platform: input.platform } : {}),
-      });
+      };
+      if (context.etaReader) {
+        estimate.eta = await context.etaReader(etaInput);
+      } else if (context.indexerClient) {
+        estimate.eta = await readFillEta(context.indexerClient, etaInput);
+      }
     } catch {
       // ETA is historical garnish; the oracle estimate remains usable without it.
     }

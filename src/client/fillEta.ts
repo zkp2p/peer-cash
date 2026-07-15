@@ -41,7 +41,7 @@ export interface FillStatsDepositLike {
   intents?: IntentLike[] | null;
 }
 
-interface FillStatsSample {
+export interface FillStatsSample {
   stats: CashFillStats;
   medianFillSecondsByCurrency: Map<string, number>;
 }
@@ -177,7 +177,7 @@ export function computeFillStats(
   return computeFillStatsSample(deposits, nowSeconds, environment).stats;
 }
 
-async function readFillStatsSample(
+export async function readFillStatsSample(
   client: Zkp2pClient,
   environment: RuntimeEnv,
 ): Promise<FillStatsSample> {
@@ -208,6 +208,21 @@ async function readFillStatsSample(
   return computeFillStatsSample(deposits, now, environment);
 }
 
+/** Resolve an ETA from one cached snapshot without crossing platform/currency pairs. */
+export function fillEtaFromSample(
+  sample: FillStatsSample,
+  input: { environment: RuntimeEnv; platform?: string; currency: CurrencyType },
+): CashFillEta {
+  const currency = input.currency.toUpperCase();
+  const seconds = input.platform
+    ? sample.stats[`${basePlatformForMethod(input.platform)}:${currency}`]?.medianFillSeconds
+    : sample.medianFillSecondsByCurrency.get(currency);
+  return {
+    ...(seconds !== undefined ? { seconds } : {}),
+    label: etaLabel(seconds),
+  };
+}
+
 /** Read raw 30-day demand and speed evidence for every observed payout pair. */
 export async function readFillStats(
   client: Zkp2pClient,
@@ -222,12 +237,5 @@ export async function readFillEta(
   input: { environment: RuntimeEnv; platform?: string; currency: CurrencyType },
 ): Promise<CashFillEta> {
   const sample = await readFillStatsSample(client, input.environment);
-  const currency = input.currency.toUpperCase();
-  const seconds = input.platform
-    ? sample.stats[`${basePlatformForMethod(input.platform)}:${currency}`]?.medianFillSeconds
-    : sample.medianFillSecondsByCurrency.get(currency);
-  return {
-    ...(seconds !== undefined ? { seconds } : {}),
-    label: etaLabel(seconds),
-  };
+  return fillEtaFromSample(sample, input);
 }

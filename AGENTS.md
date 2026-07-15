@@ -54,6 +54,9 @@ const relayCaps = await cash.capabilities({ includeRelaySources: true });
 // 2. Estimate - idempotent, cacheable, no side effects. Includes rolling ETA.
 const est = await cash.estimate({ amount: usdc(500), currency: 'EUR' });
 
+// Progressive UI: do not let indexer-backed history hold up the oracle rate.
+const rateOnly = await cash.estimate({ amount: usdc(500), currency: 'EUR' }, { includeEta: false });
+
 // Optional: raw demand + speed evidence per offered platform:currency pair.
 const stats = await cash.fillStats();
 
@@ -106,7 +109,9 @@ console.log(routed.source?.transactions?.origin, routed.source?.transactions?.de
 - **Do not invent an ETA.** Use `estimate().eta`: `{ seconds, label }` backed
   by the same rolling 30-day, intent-attributed pair sample as `fillStats()`,
   measured from deposit creation to first fill. Use `order.explain()` for live
-  order state.
+  order state. For progressive UIs, call `estimate(..., { includeEta: false })`
+  and load `fillStats()["platform:CURRENCY"]` separately. The SDK caches the
+  raw snapshot for 15 minutes, but never substitutes another pair's data.
 - **Do not hardcode Relay source assets.** Use Relay SDK-backed EVM
   `capabilities({ includeRelaySources: true })` and `cashout({ source, ... })`.
   Destination is always Base USDC. Non-Base source chains require

@@ -189,6 +189,42 @@ describe('fillStats()', () => {
       retryable: true,
     });
   });
+
+  it('shares one cached snapshot across pair ETA and raw stats reads', async () => {
+    const venmoHash = getPaymentMethodsCatalog(8453, 'staging')['venmo']!.paymentMethodHash;
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
+      {
+        timestamp: NOW - 300,
+        intents: [
+          {
+            paymentMethodHash: venmoHash,
+            fiatCurrency: 'USD',
+            fulfillTimestamp: NOW - 120,
+          },
+        ],
+      },
+    ]);
+    const cash = client();
+
+    const [estimate, stats] = await Promise.all([
+      cash.estimate({ amount: 1_000_000n, currency: 'USD', platform: 'venmo' }),
+      cash.fillStats(),
+    ]);
+    const unmatchedPairEstimate = await cash.estimate({
+      amount: 1_000_000n,
+      currency: 'USD',
+      platform: 'revolut',
+    });
+
+    expect(estimate.eta?.seconds).toBe(180);
+    expect(unmatchedPairEstimate.eta).toEqual({
+      label: 'Recent fill time unavailable',
+    });
+    expect(stats).toEqual({
+      'venmo:USD': { fills: 1, medianFillSeconds: 180 },
+    });
+    expect(mockInstance.indexer.getDepositsWithRelations).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('order()', () => {

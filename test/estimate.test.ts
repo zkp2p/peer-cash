@@ -188,6 +188,21 @@ describe('readEstimate', () => {
     });
   });
 
+  it('can return the oracle estimate without waiting for ETA history', async () => {
+    const etaReader = vi.fn(async () => ({ seconds: 180, label: 'Usually starts in 3 min' }));
+
+    const est = await readEstimate(
+      mockPublicClient(0n),
+      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { environment: 'staging', etaReader, includeEta: false },
+    );
+
+    expect(est.rate).toBe(1);
+    expect(est.receiveAmount).toBe(1);
+    expect(est.eta).toBeUndefined();
+    expect(etaReader).not.toHaveBeenCalled();
+  });
+
   it('paginates deposits by update time when ETA samples are beyond the first page', async () => {
     const now = Math.floor(Date.now() / 1000);
     const firstPage = Array.from({ length: 250 }, (_, index) => ({

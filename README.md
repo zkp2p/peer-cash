@@ -34,6 +34,13 @@ const est = await cash.estimate({ amount: usdc(1000), currency: 'USD' });
 // { rate: 1, receiveAmount: 1000, kind: 'oracle-estimate', eta: { seconds, label } }
 // "≈", never a locked quote. Base USDC remains the default source.
 
+// Progressive UI: render rate/receive first, then resolve the exact pair ETA.
+const rateOnly = await cash.estimate(
+  { amount: usdc(1000), currency: 'USD' },
+  { includeEta: false },
+);
+const pairStats = (await cash.fillStats())['venmo:USD'];
+
 const { depositId } = await cash.cashout(
   {
     amount: usdc(1000),
@@ -76,10 +83,10 @@ console.log(source?.transactions?.origin, source?.transactions?.destination);
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
 | `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
-| `fillStats()`                                                  | Raw 30-day fill counts and median first-fill time per `platform:currency` pair                                                  |
+| `fillStats()`                                                  | Cached 30-day fill counts and median first-fill time per exact `platform:currency` pair                                         |
 | `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
-| `estimate({ amount, currency })`                               | Base USDC oracle estimate plus simple recent-fill ETA                                                                           |
+| `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
 | `cashout(input, { signer })`                                   | Registers your payee, creates the protocol-held order, returns the `depositId`                                                  |
 | `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
@@ -180,6 +187,9 @@ awaiting-buyer ──────────► matched ───────�
 - **ETA is historical.** `estimate().eta` is just `{ seconds, label }`, backed
   by the same rolling 30-day, intent-attributed pair sampler as `fillStats()`,
   measured from deposit creation to the first fulfilled fill through the pair.
+  The raw snapshot is cached for 15 minutes per client and each ETA is still
+  resolved from its exact normalized `platform:currency` key. Use
+  `{ includeEta: false }` when rate and receive amount should render first.
 - **Availability thresholds belong to the consumer.** `fillStats()` returns raw
   evidence. A recommended gate is `fills >= 10 && medianFillSeconds <= 48h`.
   Fail open to the full `capabilities()` catalog when stats are unavailable or

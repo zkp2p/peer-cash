@@ -43,8 +43,18 @@ import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
 import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
 import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
-import { readEstimate, type CashEstimate, type EstimateInput } from './estimate';
-import { readFillStats, type CashFillStats } from './fillEta';
+import {
+  readEstimate,
+  type CashEstimate,
+  type EstimateInput,
+  type EstimateOptions,
+} from './estimate';
+import {
+  fillEtaFromSample,
+  readFillStatsSample,
+  type CashFillStats,
+  type FillStatsSample,
+} from './fillEta';
 import { CashError, errors, isCashError, mapChainError } from './errors';
 import { paymentMethodsForPlatform } from './platformGroups';
 import {
@@ -65,6 +75,7 @@ import {
 import type { Execute, ProgressData } from '@relayprotocol/relay-sdk';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
+const FILL_STATS_CACHE_MS = 15 * 60 * 1000;
 
 /**
  * ERC-8021 attribution code stamped on every transaction this package
@@ -268,7 +279,7 @@ export interface CashClient {
   /** Track Relay execution status by quote/request id. */
   relayStatus(requestId: string): Promise<RelayStatus>;
   /** 1 - Estimate: currency + amount only. No payee, no side effects, no expiry. */
-  estimate(input: EstimateInput): Promise<CashEstimate>;
+  estimate(input: EstimateInput, options?: EstimateOptions): Promise<CashEstimate>;
   /** 2 - Cash out: payee registration + deposit params + submission happen here. */
   cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult>;
   /** 2b - Unsigned path: `txs[]` for agent wallets, AA, server keys, policy layers. */
@@ -443,6 +454,30 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
   // Read-only client - indexer, curator registration, oracle reads.
   const readClient = buildSdkClient(createWalletClient({ chain: base, transport }));
+
+  // Fill history is one environment-wide snapshot. Cache and de-duplicate the
+  // expensive paginated read, then resolve each ETA from its exact
+  // normalized platform:currency key.
+  let fillStatsCache: { sample: FillStatsSample; expiresAt: number } | null = null;
+  let fillStatsRequest: Promise<FillStatsSample> | null = null;
+  async function getFillStatsSample(): Promise<FillStatsSample> {
+    if (fillStatsCache && fillStatsCache.expiresAt > Date.now()) {
+      return fillStatsCache.sample;
+    }
+    if (fillStatsRequest) return fillStatsRequest;
+
+    fillStatsRequest = readFillStatsSample(readClient, environment);
+    try {
+      const sample = await fillStatsRequest;
+      fillStatsCache = {
+        sample,
+        expiresAt: Date.now() + FILL_STATS_CACHE_MS,
+      };
+      return sample;
+    } finally {
+      fillStatsRequest = null;
+    }
+  }
 
   // Signing clients are built lazily and cached per WalletClient identity.
   const signingClients = new WeakMap<WalletClient, Zkp2pClient>();
@@ -857,17 +892,20 @@ export function createCashClient(options: CashClientOptions): CashClient {
       return readRelayStatus(requestId, options.relay);
     },
 
-    async estimate(input: EstimateInput): Promise<CashEstimate> {
+    async estimate(input: EstimateInput, estimateOptions?: EstimateOptions): Promise<CashEstimate> {
       return readEstimate(readClient.publicClient, input, {
-        indexerClient: readClient,
         environment,
+        ...(estimateOptions?.includeEta !== undefined
+          ? { includeEta: estimateOptions.includeEta }
+          : {}),
+        etaReader: async (etaInput) => fillEtaFromSample(await getFillStatsSample(), etaInput),
         ...(options.relay ? { relay: options.relay } : {}),
       });
     },
 
     async fillStats(): Promise<CashFillStats> {
       try {
-        return await readFillStats(readClient, environment);
+        return (await getFillStatsSample()).stats;
       } catch (err) {
         throw errors.indexerUnavailable('fill stats', err);
       }

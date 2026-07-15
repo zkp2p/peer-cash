@@ -135,6 +135,11 @@ methods aggregate to `zelle:USD`. Consumers own thresholding; the recommended
 gate is `fills >= 10 && medianFillSeconds <= 48h`, with a fail-open fallback to
 the full capability catalog when the read fails or filtering would empty it.
 Medians are per-deposit first-fill latencies, never means or censored cohorts.
+The client caches one raw environment snapshot for 15 minutes and de-duplicates
+concurrent reads; ETA resolution still uses only the requested normalized
+`platform:currency` key. A progressive UI can call
+`estimate(input, { includeEta: false })` to render rate/receive immediately,
+then read that pair from `fillStats()` without coupling the two loading states.
 
 - **Buyer arrival time is market-driven.** A deposit at market rate should
   fill fast, but the ETA is only a recent historical sample.

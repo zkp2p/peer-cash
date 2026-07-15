@@ -74,6 +74,33 @@ function order(depositId: string): CashOrder {
 }
 
 describe('@zkp2p/cash/react', () => {
+  it('useEstimate can request the rate without indexer-backed ETA', async () => {
+    const estimateMock = vi.fn().mockResolvedValue(estimate(1_000_000n));
+    const client = { estimate: estimateMock } as unknown as CashClient;
+    let renderer: ReactTestRenderer;
+
+    function Harness() {
+      useEstimate({
+        client,
+        amount: 1_000_000n,
+        currency: 'USD',
+        platform: 'venmo',
+        includeEta: false,
+      });
+      return null;
+    }
+
+    await act(async () => {
+      renderer = create(createElement(Harness));
+    });
+
+    expect(estimateMock).toHaveBeenCalledWith(
+      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { includeEta: false },
+    );
+    await act(async () => renderer.unmount());
+  });
+
   it('useEstimate keeps the newest input when an older request resolves last', async () => {
     const first = deferred<CashEstimate>();
     const second = deferred<CashEstimate>();

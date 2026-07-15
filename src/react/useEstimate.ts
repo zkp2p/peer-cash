@@ -9,6 +9,7 @@ interface EstimateIdentity {
   currency: CurrencyType;
   platform: string | null | undefined;
   source: EstimateInput['source'] | null | undefined;
+  includeEta: boolean;
 }
 
 export interface UseEstimateOptions {
@@ -20,6 +21,8 @@ export interface UseEstimateOptions {
   platform?: string | null | undefined;
   /** Optional Relay source. Omit for the Base USDC default path. */
   source?: EstimateInput['source'] | null | undefined;
+  /** Disable to render the oracle rate before loading pair fill stats separately. */
+  includeEta?: boolean;
   /** Re-fetch interval (ms) so the displayed rate tracks the market. 0 = no auto-refresh. */
   refreshIntervalMs?: number;
 }
@@ -35,6 +38,7 @@ export function useEstimate({
   currency,
   platform,
   source,
+  includeEta = true,
   refreshIntervalMs = 0,
 }: UseEstimateOptions) {
   const [estimate, setEstimate] = useState<CashEstimate | null>(null);
@@ -61,7 +65,7 @@ export function useEstimate({
       }
       return;
     }
-    const identity: EstimateIdentity = { client, amount, currency, platform, source };
+    const identity: EstimateIdentity = { client, amount, currency, platform, source, includeEta };
     if (isCurrent()) {
       loadingIdentityRef.current = identity;
       errorIdentityRef.current = null;
@@ -69,12 +73,15 @@ export function useEstimate({
       setError(null);
     }
     try {
-      const result = await client.estimate({
-        amount,
-        currency,
-        ...(platform ? { platform } : {}),
-        ...(source ? { source } : {}),
-      });
+      const result = await client.estimate(
+        {
+          amount,
+          currency,
+          ...(platform ? { platform } : {}),
+          ...(source ? { source } : {}),
+        },
+        { includeEta },
+      );
       if (isCurrent()) {
         estimateIdentityRef.current = identity;
         setEstimate(result);
@@ -90,7 +97,7 @@ export function useEstimate({
     } finally {
       if (isCurrent()) setIsLoading(false);
     }
-  }, [client, currency, amount, platform, source]);
+  }, [client, currency, amount, platform, source, includeEta]);
 
   useEffect(() => {
     latestRequestRef.current += 1;
@@ -100,7 +107,7 @@ export function useEstimate({
     setEstimate(null);
     setIsLoading(false);
     setError(null);
-  }, [client, amount, currency, platform, source]);
+  }, [client, amount, currency, platform, source, includeEta]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -120,7 +127,8 @@ export function useEstimate({
     identity.amount === amount &&
     identity.currency === currency &&
     identity.platform === platform &&
-    identity.source === source;
+    identity.source === source &&
+    identity.includeEta === includeEta;
 
   return {
     estimate: matchesCurrentIdentity(estimateIdentityRef.current) ? estimate : null,

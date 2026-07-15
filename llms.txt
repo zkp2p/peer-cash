@@ -24,6 +24,11 @@ Key facts:
 - fillStats() returns raw `{ fills, medianFillSeconds? }` evidence keyed by
   `platform:currency`. Recommended consumer gate: fills >= 10 and median <=
   48h; fail open to capabilities() if unavailable or filtering empties it.
+  Its raw environment snapshot is cached for 15 minutes, while lookups remain
+  exact to the normalized platform:currency pair.
+- Progressive UIs can call estimate(input, { includeEta: false }) so the
+  oracle rate is not blocked by indexer history, then load the exact pair from
+  fillStats() separately.
 - capabilities() exposes one Zelle platform. A zelle cashout internally attaches
   the generic method plus Chase, Bank of America, and Citi buyer routes.
 - Resume any order from its depositId alone (composite escrow_onchainId).
