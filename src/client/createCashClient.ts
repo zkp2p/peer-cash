@@ -41,7 +41,12 @@ import { derivePayouts } from '../engine/payouts';
 import { deriveBuyerProfile } from '../engine/buyerProfile';
 import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
-import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
+import type {
+  CashBuyerProfile,
+  CashDepositInput,
+  CashOrder,
+  CashPayoutInfo,
+} from '../engine/types';
 import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
 import {
   readEstimate,
@@ -56,7 +61,6 @@ import {
   type FillStatsSample,
 } from './fillEta';
 import { CashError, errors, isCashError, mapChainError } from './errors';
-import { paymentMethodsForPlatform } from './platformGroups';
 import {
   readRelaySourceCapabilities,
   readRelayStatus,
@@ -495,7 +499,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
   function validatePayout(input: CashoutInput): Omit<CashDepositInput, 'amount'> {
     const { receive } = input;
-    const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
     const platform = buildCapabilities(environment).platforms.find(
       (capability) => capability.platform === receive.platform,
     );
@@ -506,13 +509,14 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (!platform.currencies.includes(receive.currency)) {
       throw errors.unsupportedPlatformCurrency(receive.platform, receive.currency);
     }
-    const paymentMethods = paymentMethodsForPlatform(receive.platform, catalog);
     return {
-      payouts: paymentMethods.map((processorName) => ({
-        processorName,
-        currency: receive.currency,
-        payeeData: receive.payee,
-      })),
+      payouts: [
+        {
+          processorName: receive.platform,
+          currency: receive.currency,
+          payeeData: receive.payee,
+        },
+      ],
     };
   }
 
@@ -533,6 +537,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
       ...payoutInput,
       ...(range ? { intentAmountRange: range } : {}),
     };
+  }
+
+  function isCashPayoutSet(payouts: readonly CashPayoutInfo[]): boolean {
+    return (
+      payouts.length === 1 &&
+      payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
+    );
   }
 
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
@@ -597,10 +608,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
       deposit.currencies ?? [],
       getPaymentMethodsCatalog(BASE_CHAIN_ID, environment),
     );
+    if (!isCashPayoutSet(payouts)) throw errors.orderNotFound(compositeId);
 
     return deriveCashOrder(compositeId, deposit.intents ?? [], {
       ...depositOrderOptions(deposit),
-      ...(payouts.length > 0 ? { payouts } : {}),
+      payouts,
     });
   }
 
@@ -1189,10 +1201,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           // ERC-8021 attribution is not indexed, so the strongest on-chain
           // identity is the product invariant: one Base-USDC payout leg at a
           // zero-spread oracle rate. Exclude unrelated fixed-rate/vault rows.
-          if (
-            payouts.length !== 1 ||
-            !payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
-          ) {
+          if (!isCashPayoutSet(payouts)) {
             return [];
           }
           return [
