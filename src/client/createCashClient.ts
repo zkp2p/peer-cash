@@ -41,7 +41,12 @@ import { derivePayouts } from '../engine/payouts';
 import { deriveBuyerProfile } from '../engine/buyerProfile';
 import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
-import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
+import type {
+  CashBuyerProfile,
+  CashDepositInput,
+  CashOrder,
+  CashPayoutInfo,
+} from '../engine/types';
 import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
 import {
   readEstimate,
@@ -534,6 +539,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
     };
   }
 
+  function isCashPayoutSet(payouts: readonly CashPayoutInfo[]): boolean {
+    return (
+      payouts.length === 1 &&
+      payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
+    );
+  }
+
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
     try {
       return await prepareCashDepositParams(client, depositInput);
@@ -596,10 +608,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
       deposit.currencies ?? [],
       getPaymentMethodsCatalog(BASE_CHAIN_ID, environment),
     );
+    if (!isCashPayoutSet(payouts)) throw errors.orderNotFound(compositeId);
 
     return deriveCashOrder(compositeId, deposit.intents ?? [], {
       ...depositOrderOptions(deposit),
-      ...(payouts.length > 0 ? { payouts } : {}),
+      payouts,
     });
   }
 
@@ -1188,10 +1201,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           // ERC-8021 attribution is not indexed, so the strongest on-chain
           // identity is the product invariant: one Base-USDC payout leg at a
           // zero-spread oracle rate. Exclude unrelated fixed-rate/vault rows.
-          if (
-            payouts.length !== 1 ||
-            !payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
-          ) {
+          if (!isCashPayoutSet(payouts)) {
             return [];
           }
           return [

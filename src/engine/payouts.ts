@@ -57,14 +57,18 @@ function toPricing(tuple: MethodCurrencyLike | undefined): CashPayoutPricing {
 /**
  * Decode a deposit's payment methods + currency tuples into payout legs.
  * Pure - the environment arrives via the catalog. One leg per
- * (method, currency) pair; cash orders create exactly one in v1.
+ * (method, currency) pair; cash orders create exactly one in v1. If any
+ * method is absent from the active catalog, reject the whole set instead of
+ * partially reclassifying a mixed historical deposit.
  */
 export function derivePayouts(
   paymentMethods: ReadonlyArray<PaymentMethodLike>,
   currencies: ReadonlyArray<MethodCurrencyLike>,
   catalog: PaymentMethodCatalog,
 ): CashPayoutInfo[] {
-  return paymentMethods.flatMap((method) => {
+  const payouts: CashPayoutInfo[] = [];
+
+  for (const method of paymentMethods) {
     const platformHash = method.paymentMethodHash ?? '';
     if (!platformHash) return [];
 
@@ -72,30 +76,36 @@ export function derivePayouts(
     try {
       platform = resolvePaymentMethodNameFromHash(platformHash, catalog);
     } catch {
-      // Malformed / non-bytes32 hash - keep the raw value, no decoded name.
-      platform = undefined;
+      return [];
     }
+    if (!platform) return [];
+
     const tuples = currencies.filter(
       (c) => (c.paymentMethodHash ?? '').toLowerCase() === platformHash.toLowerCase(),
     );
     const base = {
-      ...(platform !== undefined ? { platform } : {}),
+      platform,
       platformHash,
       payeeHash: method.payeeDetailsHash ?? '',
       active: method.active ?? true,
     };
 
-    if (tuples.length === 0) return [{ ...base, pricing: toPricing(undefined) }];
+    if (tuples.length === 0) {
+      payouts.push({ ...base, pricing: toPricing(undefined) });
+      continue;
+    }
 
-    return tuples.map((tuple) => {
+    for (const tuple of tuples) {
       const currency =
         tuple.currencyCode != null ? getCurrencyCodeFromHash(tuple.currencyCode) : undefined;
-      return {
+      payouts.push({
         ...base,
         ...(currency !== undefined ? { currency } : {}),
         ...(tuple.currencyCode != null ? { currencyHash: tuple.currencyCode } : {}),
         pricing: toPricing(tuple),
-      };
-    });
-  });
+      });
+    }
+  }
+
+  return payouts;
 }

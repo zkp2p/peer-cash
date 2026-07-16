@@ -59,6 +59,7 @@ import { isCashError } from '../src/client/errors';
 const NOW = Math.floor(Date.now() / 1000);
 const ESCROW = '0x1111111111111111111111111111111111111111';
 const DEPOSIT_ID = `${ESCROW}_5`;
+const UNKNOWN_PAYMENT_METHOD_HASH = `0x${'11'.repeat(32)}`;
 
 const DEPOSIT_RECEIVED_ABI: Abi = [
   {
@@ -272,6 +273,32 @@ describe('order()', () => {
     expect(order.nextActions).toEqual(['wait']);
   });
 
+  it('refuses an indexed deposit containing a method outside the active catalog', async () => {
+    const genericHash = getPaymentMethodsCatalog(8453, 'staging')['zelle']!.paymentMethodHash;
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        paymentMethods: [
+          { paymentMethodHash: genericHash, payeeDetailsHash: '0xgeneric', active: true },
+          {
+            paymentMethodHash: UNKNOWN_PAYMENT_METHOD_HASH,
+            payeeDetailsHash: '0xunknown',
+            active: true,
+          },
+        ],
+        currencies: [
+          {
+            paymentMethodHash: genericHash,
+            currencyCode: currencyInfo['USD']!.currencyCodeHash,
+            spreadBps: 0,
+            kind: 'oracle_chainlink',
+          },
+        ],
+      }),
+    ]);
+
+    await expect(client().order(DEPOSIT_ID)).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' });
+  });
+
   it('falls back to intents-only when the deposit is not indexed yet', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([]);
     mockInstance.indexer.getIntentsForDeposits.mockResolvedValue([
@@ -322,6 +349,32 @@ describe('orders()', () => {
     const orders = await client().orders('0xmaker');
 
     expect(orders).toEqual([]);
+  });
+
+  it('excludes deposits containing a method outside the active catalog', async () => {
+    const genericHash = getPaymentMethodsCatalog(8453, 'staging')['zelle']!.paymentMethodHash;
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([
+      depositRow({
+        paymentMethods: [
+          { paymentMethodHash: genericHash, payeeDetailsHash: '0xgeneric', active: true },
+          {
+            paymentMethodHash: UNKNOWN_PAYMENT_METHOD_HASH,
+            payeeDetailsHash: '0xunknown',
+            active: true,
+          },
+        ],
+        currencies: [
+          {
+            paymentMethodHash: genericHash,
+            currencyCode: currencyInfo['USD']!.currencyCodeHash,
+            spreadBps: 0,
+            kind: 'oracle_chainlink',
+          },
+        ],
+      }),
+    ]);
+
+    await expect(client().orders('0xmaker')).resolves.toEqual([]);
   });
 
   it('includes a cash-out at the exact minimum amount', async () => {
@@ -1473,7 +1526,12 @@ describe('prepare()', () => {
       payeeData: methods.map(() => ({ offchainId: '+12025550123' })),
     });
     expect(mockInstance.prepareCreateDeposit).toHaveBeenCalledWith(
-      expect.objectContaining({ processorNames: methods }),
+      expect.objectContaining({
+        processorNames: methods,
+        paymentMethodsOverride: methods.map(
+          (method) => getPaymentMethodsCatalog(8453, 'staging')[method]!.paymentMethodHash,
+        ),
+      }),
     );
     expect(result.register.hashedOnchainIds).toEqual(payeeHashes);
   });

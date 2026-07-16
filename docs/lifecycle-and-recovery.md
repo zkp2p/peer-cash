@@ -195,6 +195,11 @@ platform, currency, payee hash, and a pricing proof (`spreadBps: 0`,
 `kind: 'oracle_chainlink'`, `marketRate: true`): the zero-spread claim is a
 queryable fact, not marketing copy.
 
+Reconstruction is fail-closed: every payment method on the indexed deposit
+must resolve through the active SDK catalog, and the result must be exactly
+one zero-spread oracle payout. `orders()` excludes unsupported or mixed rows;
+`order()` returns `ORDER_NOT_FOUND` rather than partially reclassifying them.
+
 ## Who is this buyer?
 
 `buyer(address)` aggregates the matched buyer's full intent history into a

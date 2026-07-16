@@ -96,7 +96,7 @@ export const cashPayoutPricingJsonSchema = z.object({
 });
 
 export const cashPayoutInfoJsonSchema = z.object({
-  platform: z.string().optional(),
+  platform: z.string(),
   platformHash: z.string(),
   currency: z.string().optional(),
   currencyHash: z.string().optional(),

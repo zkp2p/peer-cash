@@ -110,6 +110,11 @@ attribution: `peer-cash` first, your own `referrer` code(s) after it.
 the deposit. Bank-specific capture routing is outside this maker-side SDK and
 never changes the on-chain payment method.
 
+Order reads fail closed against the same active catalog. If any method on an
+indexed deposit is unsupported, `orders()` excludes the whole deposit and
+`order()` returns `ORDER_NOT_FOUND`; Peer Cash never partially reclassifies a
+mixed historical deposit.
+
 The default/minimal flow is unchanged: pass Base USDC base units to
 `estimate()` and `cashout()`. For any other source asset, pass `source` to
 `cashout()` with a source-chain signer. The SDK settles the Base allowance,

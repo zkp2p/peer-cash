@@ -56,6 +56,8 @@ Key facts:
   payment id, released USDC, and fill latency after the proof.
 - Orders carry their payout legs (platform, currency, payee hash) plus a
   verifiable pricing proof (spreadBps: 0, oracle kind) from indexed data.
+- Order reads fail closed when any deposit method is absent from the active
+  catalog; mixed historical deposits are never partially reclassified.
 - buyer(address) aggregates a buyer's track record (fulfilled/pruned/success
   rate) from their full intent history.
 - Default path is same-chain Base USDC. Optional `source` on `cashout()` runs

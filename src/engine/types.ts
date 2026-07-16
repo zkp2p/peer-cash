@@ -84,8 +84,8 @@ export interface CashPayoutPricing {
 
 /** One payout leg reconstructed from the chain - platform, currency, payee hash, pricing. */
 export interface CashPayoutInfo {
-  /** Decoded platform id, e.g. `'venmo'` (undefined if the catalog doesn't know the hash). */
-  platform?: string;
+  /** Decoded active platform id, e.g. `'venmo'`. */
+  platform: string;
   /** Raw payment method hash (bytes32). */
   platformHash: string;
   /** Decoded fiat currency code, e.g. `'USD'`. */

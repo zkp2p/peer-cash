@@ -157,15 +157,38 @@ describe('derivePayouts', () => {
     expect(payout.pricing.lastOracleUpdatedAt).toBe(NOW - 60);
   });
 
-  it('keeps raw hashes when the catalog cannot decode, and marketRate false off-oracle', () => {
+  it('returns no payouts when any method is absent from the active catalog', () => {
+    const venmoHash = catalog['venmo']!.paymentMethodHash;
+    const unknownHash = `0x${'11'.repeat(32)}`;
     const payouts = derivePayouts(
-      [{ paymentMethodHash: '0xdeadbeef', payeeDetailsHash: '0xp', active: false }],
-      [{ paymentMethodHash: '0xdeadbeef', currencyCode: '0xunknown', spreadBps: 25, kind: null }],
+      [
+        { paymentMethodHash: venmoHash, payeeDetailsHash: '0xknown', active: true },
+        { paymentMethodHash: unknownHash, payeeDetailsHash: '0xunknown', active: false },
+      ],
+      [
+        {
+          paymentMethodHash: venmoHash,
+          currencyCode: USD_HASH,
+          spreadBps: 0,
+          kind: 'oracle_chainlink',
+        },
+      ],
+      catalog,
+    );
+
+    expect(payouts).toEqual([]);
+  });
+
+  it('marks a known non-oracle payout as non-market-rate', () => {
+    const venmoHash = catalog['venmo']!.paymentMethodHash;
+    const payouts = derivePayouts(
+      [{ paymentMethodHash: venmoHash, payeeDetailsHash: '0xp', active: false }],
+      [{ paymentMethodHash: venmoHash, currencyCode: '0xunknown', spreadBps: 25, kind: null }],
       catalog,
     );
     const payout = payouts[0]!;
-    expect(payout.platform).toBeUndefined();
-    expect(payout.platformHash).toBe('0xdeadbeef');
+    expect(payout.platform).toBe('venmo');
+    expect(payout.platformHash).toBe(venmoHash);
     expect(payout.currency).toBeUndefined();
     expect(payout.currencyHash).toBe('0xunknown');
     expect(payout.active).toBe(false);
