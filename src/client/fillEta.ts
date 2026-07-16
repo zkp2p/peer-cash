@@ -6,7 +6,6 @@ import {
 } from '@zkp2p/sdk';
 import { BASE_CHAIN_ID } from '../engine/constants';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
-import { basePlatformForMethod } from './platformGroups';
 
 export const FILL_STATS_WINDOW_SECONDS = 30 * 24 * 60 * 60;
 const FILL_STATS_PAGE_LIMIT = 250;
@@ -123,7 +122,7 @@ function computeFillStatsSample(
       const currency = normalizeCurrencyCode(intent.fiatCurrency);
       if (!method || !currency) continue;
 
-      const pair = `${basePlatformForMethod(method)}:${currency}`;
+      const pair = `${method}:${currency}`;
       fillCounts.set(pair, (fillCounts.get(pair) ?? 0) + 1);
 
       if (createdAt === undefined || createdAt < windowStart || fulfilledAt < createdAt) continue;
@@ -215,7 +214,7 @@ export function fillEtaFromSample(
 ): CashFillEta {
   const currency = input.currency.toUpperCase();
   const seconds = input.platform
-    ? sample.stats[`${basePlatformForMethod(input.platform)}:${currency}`]?.medianFillSeconds
+    ? sample.stats[`${input.platform}:${currency}`]?.medianFillSeconds
     : sample.medianFillSecondsByCurrency.get(currency);
   return {
     ...(seconds !== undefined ? { seconds } : {}),

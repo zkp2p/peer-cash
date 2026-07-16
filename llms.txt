@@ -29,8 +29,8 @@ Key facts:
 - Progressive UIs can call estimate(input, { includeEta: false }) so the
   oracle rate is not blocked by indexer history, then load the exact pair from
   fillStats() separately.
-- capabilities() exposes one Zelle platform. A zelle cashout internally attaches
-  the generic method plus Chase, Bank of America, and Citi buyer routes.
+- capabilities() exposes one Zelle platform. A zelle cashout attaches only the
+  generic Zelle payment method to the on-chain deposit.
 - Resume any order from its depositId alone (composite escrow_onchainId).
 - One unwind verb: withdraw(depositId) - prunes expired intents automatically;
   pass amount for a partial withdrawal of the unlocked balance.

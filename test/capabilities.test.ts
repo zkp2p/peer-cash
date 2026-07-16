@@ -37,7 +37,7 @@ describe('buildCapabilities', () => {
     expect(venmo?.currencies).toContain('USD');
   });
 
-  it('presents the Zelle method group as one platform with unioned currencies', () => {
+  it('presents generic Zelle as one platform', () => {
     const caps = buildCapabilities('production');
     const zelle = caps.platforms.filter((platform) => platform.platform.startsWith('zelle'));
 

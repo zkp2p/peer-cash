@@ -106,9 +106,9 @@ cashout. Every Peer Cash transaction, including approves, carries ERC-8021
 attribution: `peer-cash` first, your own `referrer` code(s) after it.
 
 `capabilities()` presents Zelle as one platform. A cashout with
-`receive.platform: 'zelle'` automatically attaches the generic Zelle method
-and its Chase, Bank of America, and Citi buyer routes to the deposit; the payee
-handle and public API remain bank-agnostic.
+`receive.platform: 'zelle'` attaches only the generic Zelle payment method to
+the deposit. Bank-specific capture routing is outside this maker-side SDK and
+never changes the on-chain payment method.
 
 The default/minimal flow is unchanged: pass Base USDC base units to
 `estimate()` and `cashout()`. For any other source asset, pass `source` to

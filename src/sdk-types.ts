@@ -1,5 +1,5 @@
 /**
- * Name-mapping shim over the published `@zkp2p/sdk` (^0.8).
+ * Name-mapping shim over the published `@zkp2p/sdk` (^0.9).
  *
  * The reference implementation imported these from internal SDK paths; the
  * published package exports them under indexer-prefixed names, and one type

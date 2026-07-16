@@ -53,18 +53,39 @@ describe('computeFillStats', () => {
     expect(stats['revolut:USD']).toBeUndefined();
   });
 
-  it('aggregates bank-scoped Zelle variants into one base-platform pair', () => {
+  it('attributes generic Zelle fills to the generic platform pair', () => {
     const stats = computeFillStats(
       [
-        deposit(CREATED, [{ method: 'zelle-chase', currency: 'USD', at: CREATED + 100 }]),
-        deposit(CREATED, [{ method: 'zelle-bofa', currency: 'USD', at: CREATED + 300 }]),
-        deposit(CREATED, [{ method: 'zelle-citi', currency: 'USD', at: CREATED + 500 }]),
+        deposit(CREATED, [{ method: 'zelle', currency: 'USD', at: CREATED + 100 }]),
+        deposit(CREATED, [{ method: 'zelle', currency: 'USD', at: CREATED + 300 }]),
+        deposit(CREATED, [{ method: 'zelle', currency: 'USD', at: CREATED + 500 }]),
       ],
       NOW,
       'staging',
     );
 
     expect(stats).toEqual({ 'zelle:USD': { fills: 3, medianFillSeconds: 300 } });
+  });
+
+  it('ignores rows whose payment method is absent from the active catalog', () => {
+    const stats = computeFillStats(
+      [
+        {
+          timestamp: CREATED,
+          intents: [
+            {
+              paymentMethodHash: `0x${'11'.repeat(32)}`,
+              fiatCurrency: 'USD',
+              fulfillTimestamp: CREATED + 100,
+            },
+          ],
+        },
+      ],
+      NOW,
+      'staging',
+    );
+
+    expect(stats).toEqual({});
   });
 
   it('normalizes both bytes32 currency hashes and plain currency codes', () => {

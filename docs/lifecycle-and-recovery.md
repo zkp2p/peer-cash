@@ -130,8 +130,8 @@ measure buyer signal to fulfillment; that would miss the buyer-arrival wait
 that users actually care about. The public shape is small: `{ seconds, label }`.
 
 `fillStats()` exposes the sampler's raw evidence for catalog filtering as
-`Record<"platform:currency", { fills, medianFillSeconds? }>`. Bank-scoped Zelle
-methods aggregate to `zelle:USD`. Consumers own thresholding; the recommended
+`Record<"platform:currency", { fills, medianFillSeconds? }>`. Generic Zelle
+fills are reported as `zelle:USD`. Consumers own thresholding; the recommended
 gate is `fills >= 10 && medianFillSeconds <= 48h`, with a fail-open fallback to
 the full capability catalog when the read fails or filtering would empty it.
 Medians are per-deposit first-fill latencies, never means or censored cohorts.

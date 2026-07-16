@@ -56,7 +56,6 @@ import {
   type FillStatsSample,
 } from './fillEta';
 import { CashError, errors, isCashError, mapChainError } from './errors';
-import { paymentMethodsForPlatform } from './platformGroups';
 import {
   readRelaySourceCapabilities,
   readRelayStatus,
@@ -495,7 +494,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
   function validatePayout(input: CashoutInput): Omit<CashDepositInput, 'amount'> {
     const { receive } = input;
-    const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
     const platform = buildCapabilities(environment).platforms.find(
       (capability) => capability.platform === receive.platform,
     );
@@ -506,13 +504,14 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (!platform.currencies.includes(receive.currency)) {
       throw errors.unsupportedPlatformCurrency(receive.platform, receive.currency);
     }
-    const paymentMethods = paymentMethodsForPlatform(receive.platform, catalog);
     return {
-      payouts: paymentMethods.map((processorName) => ({
-        processorName,
-        currency: receive.currency,
-        payeeData: receive.payee,
-      })),
+      payouts: [
+        {
+          processorName: receive.platform,
+          currency: receive.currency,
+          payeeData: receive.payee,
+        },
+      ],
     };
   }
 

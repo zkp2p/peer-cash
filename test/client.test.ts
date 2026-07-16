@@ -398,8 +398,8 @@ describe('cashout()', () => {
     expect(result.order.state).toBe('awaiting-buyer');
   });
 
-  it('expands a signed Zelle cashout into the full bank-scoped method group', async () => {
-    const payeeHashes = ['0xzelle', '0xchase', '0xbofa', '0xciti'];
+  it('creates a signed Zelle cashout with only the generic method', async () => {
+    const payeeHashes = ['0xzelle'];
     mockInstance.registerPayeeDetails.mockResolvedValue({
       depositDetails: payeeHashes.map(() => ({})),
       hashedOnchainIds: payeeHashes,
@@ -418,7 +418,7 @@ describe('cashout()', () => {
       { signer },
     );
 
-    const methods = ['zelle', 'zelle-chase', 'zelle-bofa', 'zelle-citi'];
+    const methods = ['zelle'];
     expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
       processorNames: methods,
       payeeData: methods.map(() => ({ offchainId: 'a@example.com' })),
@@ -1451,8 +1451,8 @@ describe('prepare()', () => {
     expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
   });
 
-  it('expands a prepared Zelle cashout into the full bank-scoped method group', async () => {
-    const payeeHashes = ['0xzelle', '0xchase', '0xbofa', '0xciti'];
+  it('creates a prepared Zelle cashout with only the generic method', async () => {
+    const payeeHashes = ['0xzelle'];
     mockInstance.registerPayeeDetails.mockResolvedValue({
       depositDetails: payeeHashes.map(() => ({})),
       hashedOnchainIds: payeeHashes,
@@ -1467,7 +1467,7 @@ describe('prepare()', () => {
       receive: { platform: 'zelle', currency: 'USD', payee: { offchainId: '+12025550123' } },
     });
 
-    const methods = ['zelle', 'zelle-chase', 'zelle-bofa', 'zelle-citi'];
+    const methods = ['zelle'];
     expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
       processorNames: methods,
       payeeData: methods.map(() => ({ offchainId: '+12025550123' })),
