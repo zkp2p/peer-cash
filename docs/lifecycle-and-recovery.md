@@ -130,7 +130,9 @@ measure buyer signal to fulfillment; that would miss the buyer-arrival wait
 that users actually care about. The public shape is small: `{ seconds, label }`.
 
 `fillStats()` exposes the sampler's raw evidence for catalog filtering as
-`Record<"platform:currency", { fills, medianFillSeconds? }>`. Generic Zelle
+`Record<string, { fills, medianFillSeconds? }>`. Keys are exact
+`platform:currency` pairs or sorted sets such as `revolut:EUR+GBP+USD`; set
+medians measure time to the first fill in any offered currency. Generic Zelle
 fills are reported as `zelle:USD`. Consumers own thresholding; the recommended
 gate is `fills >= 10 && medianFillSeconds <= 48h`, with a fail-open fallback to
 the full capability catalog when the read fails or filtering would empty it.

@@ -11,13 +11,16 @@ export const FILL_STATS_WINDOW_SECONDS = 30 * 24 * 60 * 60;
 const FILL_STATS_PAGE_LIMIT = 250;
 
 export interface CashPairFillStats {
-  /** Fulfilled intents through this pair inside the rolling 30-day window. */
+  /** Fulfilled intents through this pair or currency set inside the rolling 30-day window. */
   fills: number;
-  /** Median deposit-to-first-fill seconds, sampled once per deposit for this pair. */
+  /** Median deposit-to-first-fill seconds, sampled once per deposit for this pair or set. */
   medianFillSeconds?: number;
 }
 
-/** Raw demand and speed evidence keyed by `basePlatform:currencyCode`. */
+/**
+ * Raw demand and speed evidence keyed by `basePlatform:currencyCode` or a
+ * sorted multi-currency set such as `revolut:EUR+GBP+USD`.
+ */
 export type CashFillStats = Record<string, CashPairFillStats>;
 
 export interface CashFillEta {
@@ -33,11 +36,17 @@ interface IntentLike {
   fulfillTimestamp?: string | number | Date | null;
 }
 
+interface MethodCurrencyLike {
+  paymentMethodHash?: string | null;
+  currencyCode?: string | null;
+}
+
 export interface FillStatsDepositLike {
   createdAt?: string | number | Date | null;
   timestamp?: string | number | Date | null;
   updatedAt?: string | number | Date | null;
   intents?: IntentLike[] | null;
+  currencies?: MethodCurrencyLike[] | null;
 }
 
 export interface FillStatsSample {
@@ -106,6 +115,30 @@ function computeFillStatsSample(
     const createdAt = toUnixSeconds(deposit.createdAt ?? deposit.timestamp);
     const firstFillByPair = new Map<string, number>();
     const firstFillByCurrency = new Map<string, number>();
+    const offeredCurrenciesByMethod = new Map<string, Set<string>>();
+
+    for (const offered of deposit.currencies ?? []) {
+      let method: string | undefined;
+      try {
+        method = offered.paymentMethodHash
+          ? resolvePaymentMethodNameFromHash(offered.paymentMethodHash, catalog)
+          : undefined;
+      } catch {
+        method = undefined;
+      }
+      const currency = normalizeCurrencyCode(offered.currencyCode);
+      if (!method || !currency) continue;
+      const currencies = offeredCurrenciesByMethod.get(method) ?? new Set<string>();
+      currencies.add(currency);
+      offeredCurrenciesByMethod.set(method, currencies);
+    }
+
+    const multiCurrencyKeyByMethod = new Map<string, string>();
+    for (const [method, currencies] of offeredCurrenciesByMethod) {
+      if (currencies.size > 1) {
+        multiCurrencyKeyByMethod.set(method, `${method}:${[...currencies].sort().join('+')}`);
+      }
+    }
 
     for (const intent of deposit.intents ?? []) {
       const fulfilledAt = toUnixSeconds(intent.fulfillTimestamp);
@@ -124,12 +157,29 @@ function computeFillStatsSample(
 
       const pair = `${method}:${currency}`;
       fillCounts.set(pair, (fillCounts.get(pair) ?? 0) + 1);
+      const multiCurrencyKey = multiCurrencyKeyByMethod.get(method);
+      const matchingMultiCurrencyKey =
+        multiCurrencyKey && offeredCurrenciesByMethod.get(method)?.has(currency)
+          ? multiCurrencyKey
+          : undefined;
+      if (matchingMultiCurrencyKey) {
+        fillCounts.set(
+          matchingMultiCurrencyKey,
+          (fillCounts.get(matchingMultiCurrencyKey) ?? 0) + 1,
+        );
+      }
 
       if (createdAt === undefined || createdAt < windowStart || fulfilledAt < createdAt) continue;
 
       const previousPairFill = firstFillByPair.get(pair);
       if (previousPairFill === undefined || fulfilledAt < previousPairFill) {
         firstFillByPair.set(pair, fulfilledAt);
+      }
+      if (matchingMultiCurrencyKey) {
+        const previousMultiCurrencyFill = firstFillByPair.get(matchingMultiCurrencyKey);
+        if (previousMultiCurrencyFill === undefined || fulfilledAt < previousMultiCurrencyFill) {
+          firstFillByPair.set(matchingMultiCurrencyKey, fulfilledAt);
+        }
       }
       const previousCurrencyFill = firstFillByCurrency.get(currency);
       if (previousCurrencyFill === undefined || fulfilledAt < previousCurrencyFill) {
