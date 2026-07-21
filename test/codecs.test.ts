@@ -396,6 +396,18 @@ describe('capabilities codec', () => {
 });
 
 describe('CashError codec', () => {
+  it('round-trips a retryable wallet rejection', () => {
+    const error = errors.transactionRejected('cashout', new Error('User rejected the request'));
+    const restored = cashErrorFromJson(cashErrorToJson(error));
+
+    expect(restored.toJSON()).toEqual({
+      code: 'TRANSACTION_REJECTED',
+      message: 'The cashout wallet request was cancelled.',
+      retryable: true,
+      remediation: 'Retry the cashout action and approve the wallet request when you are ready.',
+    });
+  });
+
   it('rejects error codes outside the public CashError contract', () => {
     const json = errors.sourceQuoteFailed().toJSON();
     expect(cashErrorJsonSchema.safeParse({ ...json, code: 'UNKNOWN_ERROR' }).success).toBe(false);

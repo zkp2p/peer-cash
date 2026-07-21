@@ -51,7 +51,7 @@ export type {
 export type { CashFillEta, CashFillStats, CashPairFillStats } from './client/fillEta';
 
 // Typed errors
-export { CashError, isCashError, errors } from './client/errors';
+export { CashError, isCashError, isUserRejectedError, errors } from './client/errors';
 export type { CashErrorCode, CashErrorRecovery, CashErrorShape } from './client/errors';
 
 // Amount helpers

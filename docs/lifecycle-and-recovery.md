@@ -295,6 +295,7 @@ explicit override.
 | `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Relay completed and the Base tx was submitted, but its receipt is unknown. Inspect `depositTxHash`; do not resubmit while status is unknown. |
 | `INSUFFICIENT_TOKEN_BALANCE`            | no        | Wallet lacks the required token amount. Fund it, then retry.                                                                                 |
 | `ALLOWANCE_NOT_VISIBLE`                 | yes       | Approval mined but a stale RPC replica hid it. Retry the same call after the allowance becomes visible.                                      |
+| `TRANSACTION_REJECTED`                  | yes       | The wallet request was cancelled before broadcast. Retry when ready.                                                                         |
 | `TRANSACTION_FAILED`                    | no        | The on-chain call failed or reverted. Inspect the cause and transaction before another action.                                               |
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.             |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                              |

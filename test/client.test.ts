@@ -900,17 +900,19 @@ describe('cashout()', () => {
   it.each([
     {
       name: 'treats a provider timeout as an indeterminate Base submission',
-      message: 'RPC timed out after sending transaction',
+      error: new Error('RPC timed out after sending transaction'),
       code: 'SOURCE_CASHOUT_SUBMISSION_UNKNOWN',
       kind: 'inspect-base-cashout-submission',
     },
     {
-      name: 'permits Base-only retry after an explicit wallet rejection',
-      message: 'User rejected the request',
+      name: 'permits Base-only retry after a nested wallet rejection',
+      error: new Error('The on-chain createDeposit call failed', {
+        cause: Object.assign(new Error('User rejected the request'), { code: 4001 }),
+      }),
       code: 'SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED',
       kind: 'retry-base-usdc-cashout',
     },
-  ] as const)('$name', async ({ message, code, kind }) => {
+  ] as const)('$name', async ({ error, code, kind }) => {
     const relayQuote = {
       details: {
         sender: '0xmaker',
@@ -954,7 +956,7 @@ describe('cashout()', () => {
         })),
       },
     };
-    mockInstance.createDeposit.mockRejectedValue(new Error(message));
+    mockInstance.createDeposit.mockRejectedValue(error);
 
     const err = await createCashClient({
       environment: 'staging',
@@ -1162,7 +1164,10 @@ describe('cashout()', () => {
         }),
       },
     };
-    mockInstance.ensureAllowance.mockRejectedValue(new Error('approve rejected'));
+    const rejection = new Error('The on-chain approve call failed', {
+      cause: new Error('User rejected the request.'),
+    });
+    mockInstance.ensureAllowance.mockRejectedValue(rejection);
 
     await expect(
       createCashClient({
@@ -1176,7 +1181,11 @@ describe('cashout()', () => {
         },
         { signer, sourceSigner },
       ),
-    ).rejects.toMatchObject({ code: 'TRANSACTION_FAILED' });
+    ).rejects.toMatchObject({
+      code: 'TRANSACTION_REJECTED',
+      retryable: true,
+      cause: rejection,
+    });
 
     expect(relayClient.actions.getQuote).toHaveBeenCalledOnce();
     expect(mockInstance.registerPayeeDetails).toHaveBeenCalledOnce();
@@ -2027,6 +2036,21 @@ describe('prepareWithdraw()', () => {
 });
 
 describe('withdraw() - receipt safety and error mapping', () => {
+  it('classifies a nested wallet cancellation as retryable', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.withdrawDeposit.mockRejectedValue(
+      new Error('The on-chain withdraw call failed', {
+        cause: Object.assign(new Error('Request denied by user'), { code: 4001 }),
+      }),
+    );
+
+    await expect(client().withdraw(DEPOSIT_ID, { signer })).rejects.toMatchObject({
+      code: 'TRANSACTION_REJECTED',
+      retryable: true,
+      recovery: undefined,
+    });
+  });
+
   it('does not invite a duplicate submission when receipt status is unknown', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
     mockInstance.withdrawDeposit.mockResolvedValue('0xw');

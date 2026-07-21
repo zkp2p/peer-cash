@@ -187,6 +187,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Inspect `recovery.depositTxHash`; do not resubmit while its receipt is unknown             |
 | `INSUFFICIENT_TOKEN_BALANCE`            | no        | Fund the required token amount, then retry                                                 |
 | `ALLOWANCE_NOT_VISIBLE`                 | yes       | Approval mined but a stale RPC hid it; retry after it becomes visible                      |
+| `TRANSACTION_REJECTED`                  | yes       | Retry when ready and approve the wallet request                                            |
 | `TRANSACTION_FAILED`                    | no        | Inspect the failed/reverted call before another action                                     |
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | Inspect Base wallet/protocol state and the recovery action before any resubmission         |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | Inspect `recovery.transactionHash` before resubmitting                                     |

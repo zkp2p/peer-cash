@@ -37,6 +37,7 @@ export type CashErrorCode =
   | 'SIGNER_CHAIN_MISMATCH'
   | 'SIGNER_CHAIN_UNAVAILABLE'
   | 'WATCH_TIMEOUT'
+  | 'TRANSACTION_REJECTED'
   | 'TRANSACTION_FAILED'
   | 'TRANSACTION_SUBMISSION_UNKNOWN'
   | 'TRANSACTION_STATUS_UNKNOWN';
@@ -476,6 +477,16 @@ export const errors = {
       },
       { cause },
     ),
+  transactionRejected: (verb: string, cause?: unknown) =>
+    new CashError(
+      {
+        code: 'TRANSACTION_REJECTED',
+        message: `The ${verb} wallet request was cancelled.`,
+        retryable: true,
+        remediation: `Retry the ${verb} action and approve the wallet request when you are ready.`,
+      },
+      { cause },
+    ),
   transactionSubmissionUnknown: (
     operation: string,
     cause?: unknown,
@@ -538,6 +549,7 @@ export function mapChainError(
   context: { requiredAmount?: bigint } = {},
 ): CashError {
   if (isCashError(err)) return err;
+  if (isUserRejectedError(err)) return errors.transactionRejected(verb, err);
   const message = err instanceof Error ? err.message : String(err);
   if (/\bpaused\b/i.test(message)) return errors.escrowPaused();
   if (/exceeds balance|insufficient token balance/i.test(message)) {
@@ -547,4 +559,43 @@ export function mapChainError(
     return errors.allowanceNotVisible(context.requiredAmount ?? 0n);
   }
   return errors.chainCallFailed(verb, err);
+}
+
+/** Detect EIP-1193 and viem wallet cancellations, including nested provider causes. */
+export function isUserRejectedError(value: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = value;
+
+  while (
+    current !== null &&
+    (typeof current === 'object' || typeof current === 'function') &&
+    !seen.has(current)
+  ) {
+    seen.add(current);
+    const detail = current as {
+      name?: unknown;
+      message?: unknown;
+      code?: unknown;
+      cause?: unknown;
+    };
+    if (detail.code === 4001 || detail.code === '4001' || detail.code === 'ACTION_REJECTED') {
+      return true;
+    }
+    const normalized = [detail.name, detail.message, detail.code]
+      .filter((part): part is string => typeof part === 'string')
+      .join(' ')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+    if (
+      normalized.includes('userrejected') ||
+      normalized.includes('userdenied') ||
+      normalized.includes('actionrejected') ||
+      normalized.includes('requestrejected')
+    ) {
+      return true;
+    }
+    current = detail.cause;
+  }
+
+  return false;
 }
