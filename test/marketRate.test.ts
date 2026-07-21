@@ -162,6 +162,23 @@ describe('prepareCashDepositParams', () => {
     expect(client.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
+  it("uses the SDK resolver's case-insensitive processor names for catalog validation", async () => {
+    const client = mockClient();
+    await expect(
+      prepareCashDepositParams(client, {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'VENMO',
+            currency: 'USD',
+            payeeData: { offchainId: 'venmo-user' },
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ processorNames: ['VENMO'] });
+    expect(client.registerPayeeDetails).toHaveBeenCalledOnce();
+  });
+
   it('rejects before any network call when a currency has no oracle feed', async () => {
     const client = mockClient();
     await expect(

@@ -120,7 +120,9 @@ export async function prepareCashDepositParams(
       throw new Error('Payout currencies must be non-empty and unique');
     }
     const supportedCurrencyHashes = new Set(
-      (catalog[payout.processorName]?.currencies ?? []).map((hash) => hash.toLowerCase()),
+      (catalog[payout.processorName.toLowerCase()]?.currencies ?? []).map((hash) =>
+        hash.toLowerCase(),
+      ),
     );
     for (const currency of currencies) {
       if (!isMarketRateSupported(currency, adapters)) {
