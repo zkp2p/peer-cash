@@ -1,5 +1,5 @@
 /**
- * `createCashClient` - the eight-verb facade over a read-only `Zkp2pClient`.
+ * `createCashClient` - the cash lifecycle facade over a read-only `Zkp2pClient`.
  *
  * The facade keeps the outward surface tiny (capabilities / estimate / cashout
  * / order / orders / watch / withdraw / topUp) while reusing the published
@@ -17,6 +17,7 @@ import {
   type Address,
   type Hash,
   type Hex,
+  type Log,
   type Transport,
   type WalletClient,
 } from 'viem';
@@ -238,6 +239,13 @@ export interface PrepareResult {
   register: { hashedOnchainIds: string[] };
 }
 
+/** Confirmed createDeposit receipt from an externally executed prepare() plan. */
+export interface PreparedCashoutReceipt {
+  transactionHash: Hash;
+  status: 'success' | 'reverted';
+  logs: readonly Log[];
+}
+
 export interface WithdrawResult {
   depositId: string;
   /** Present when expired intents had to be pruned before withdrawal. */
@@ -294,6 +302,8 @@ export interface CashClient {
   cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult>;
   /** 2b - Unsigned path: `txs[]` for agent wallets, AA, server keys, policy layers. */
   prepare(input: CashoutInput): Promise<PrepareResult>;
+  /** Resolve an externally executed createDeposit receipt into resumable cash-out state. */
+  finalizePreparedCashout(receipt: PreparedCashoutReceipt): CashoutResult;
   /** 3 - Observe: resumable from `depositId` alone; no session state anywhere. */
   order(depositId: string): Promise<CashOrder>;
   /**
@@ -1188,6 +1198,35 @@ export function createCashClient(options: CashClientOptions): CashClient {
           },
         ],
         register: { hashedOnchainIds },
+      };
+    },
+
+    finalizePreparedCashout(receipt: PreparedCashoutReceipt): CashoutResult {
+      if (receipt.status === 'reverted') {
+        throw errors.transactionFailed(receipt.transactionHash);
+      }
+
+      const abi = readClient.escrowV2Abi ?? readClient.escrowAbi;
+      const expectedEscrowAddress = readClient.escrowV2Address ?? readClient.escrowAddress;
+      const resolved = resolveCashDepositId({
+        logs: receipt.logs,
+        abi,
+        expectedEscrowAddress,
+        expectedToken: BASE_USDC_ADDRESS,
+      });
+      if (!resolved || resolved.amount === undefined) {
+        throw errors.depositResolutionFailed(receipt.transactionHash);
+      }
+
+      return {
+        depositId: resolved.compositeId,
+        txHash: receipt.transactionHash,
+        escrowAddress: resolved.escrowAddress,
+        onchainDepositId: resolved.onchainDepositId,
+        order: deriveCashOrder(resolved.compositeId, [], {
+          remainingAmount: resolved.amount,
+          status: 'ACTIVE',
+        }),
       };
     },
 

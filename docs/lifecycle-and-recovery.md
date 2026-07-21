@@ -61,7 +61,9 @@ The unsigned `prepare()` path is Base-USDC-only and rejects `source` with
 `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`. The tool manifest follows the same
 boundary: `cash_source_quote` and `cash_source_status` quote and observe Relay,
 but the host or a signer-backed client must execute the route before
-`cash_cashout` prepares the Base-USDC order.
+`cash_cashout` prepares the Base-USDC order. Once the prepared `createDeposit`
+transaction confirms, call `finalizePreparedCashout(receipt)` to decode it with
+the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
 
 There is no static chain/token allowlist in Peer Cash. Relay decides source
 support through its metadata and quote execution, filtered to the viem/EVM

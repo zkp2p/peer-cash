@@ -13,6 +13,8 @@ import {
 const mockInstance = {
   chainId: 8453,
   runtimeEnv: 'staging' as const,
+  escrowV2Address: undefined as `0x${string}` | undefined,
+  escrowAddress: undefined as `0x${string}` | undefined,
   escrowV2Abi: undefined as Abi | undefined,
   escrowAbi: [] as Abi,
   publicClient: {
@@ -56,6 +58,7 @@ import {
 } from '@zkp2p/sdk';
 import { createCashClient, CASH_ATTRIBUTION_CODE } from '../src/client/createCashClient';
 import { isCashError, isUserRejectedError } from '../src/client/errors';
+import { BASE_USDC_ADDRESS } from '../src/engine/constants';
 
 const NOW = Math.floor(Date.now() / 1000);
 const ESCROW = '0x1111111111111111111111111111111111111111';
@@ -84,7 +87,7 @@ function depositReceivedLog(depositId: bigint): Log {
       args: {
         depositId,
         depositor: '0x2222222222222222222222222222222222222222',
-        token: '0x3333333333333333333333333333333333333333',
+        token: BASE_USDC_ADDRESS,
       },
     }),
     data: encodeAbiParameters([{ type: 'uint256' }], [5_000_000n]),
@@ -177,6 +180,8 @@ describe('isUserRejectedError()', () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockInstance.escrowV2Address = undefined;
+  mockInstance.escrowAddress = undefined;
   mockInstance.escrowV2Abi = DEPOSIT_RECEIVED_ABI;
   mockInstance.registerPayeeDetails.mockResolvedValue({
     depositDetails: [{}],
@@ -1757,6 +1762,93 @@ describe('prepare()', () => {
       }),
     ).rejects.toMatchObject({ code: 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE' });
     expect(mockInstance.prepareCreateDeposit).not.toHaveBeenCalled();
+  });
+});
+
+describe('finalizePreparedCashout()', () => {
+  it('resolves a confirmed createDeposit receipt into resumable cash-out state', () => {
+    const transactionHash = `0x${'a'.repeat(64)}` as const;
+    mockInstance.escrowV2Address = ESCROW;
+
+    const result = client().finalizePreparedCashout({
+      transactionHash,
+      status: 'success',
+      logs: [depositReceivedLog(42n)],
+    });
+
+    expect(result).toMatchObject({
+      depositId: `${ESCROW}_42`,
+      txHash: transactionHash,
+      escrowAddress: ESCROW,
+      onchainDepositId: 42n,
+      order: {
+        depositId: `${ESCROW}_42`,
+        state: 'awaiting-buyer',
+        totalAmount: 5_000_000n,
+      },
+    });
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+    expect(mockInstance.publicClient.waitForTransactionReceipt).not.toHaveBeenCalled();
+  });
+
+  it('rejects an ambiguous receipt with multiple matching deposits', () => {
+    const transactionHash = `0x${'d'.repeat(64)}` as const;
+    mockInstance.escrowV2Address = ESCROW;
+
+    expect(() =>
+      client().finalizePreparedCashout({
+        transactionHash,
+        status: 'success',
+        logs: [depositReceivedLog(41n), depositReceivedLog(42n)],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'DEPOSIT_RESOLUTION_FAILED' }));
+  });
+
+  it('rejects a deposit event emitted by an unexpected escrow', () => {
+    const transactionHash = `0x${'e'.repeat(64)}` as const;
+    mockInstance.escrowV2Address = '0x4444444444444444444444444444444444444444';
+
+    expect(() =>
+      client().finalizePreparedCashout({
+        transactionHash,
+        status: 'success',
+        logs: [depositReceivedLog(42n)],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'DEPOSIT_RESOLUTION_FAILED' }));
+  });
+
+  it('maps a reverted receipt to TRANSACTION_FAILED', () => {
+    const transactionHash = `0x${'b'.repeat(64)}` as const;
+
+    expect(() =>
+      client().finalizePreparedCashout({
+        transactionHash,
+        status: 'reverted',
+        logs: [],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'TRANSACTION_FAILED', retryable: false }));
+  });
+
+  it('preserves recovery when the DepositReceived event cannot be resolved', () => {
+    const transactionHash = `0x${'c'.repeat(64)}` as const;
+
+    expect(() =>
+      client().finalizePreparedCashout({
+        transactionHash,
+        status: 'success',
+        logs: [],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'DEPOSIT_RESOLUTION_FAILED',
+        retryable: false,
+        recovery: {
+          kind: 'inspect-base-transaction',
+          transactionHash,
+          operation: 'cashout',
+        },
+      }),
+    );
   });
 });
 

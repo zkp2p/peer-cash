@@ -13,29 +13,53 @@ export interface ResolvedCashDeposit {
   onchainDepositId: bigint;
   escrowAddress: string;
   compositeId: string;
+  /** Base-unit amount emitted by the canonical DepositReceived event. */
+  amount?: bigint;
 }
 
 export function resolveCashDepositId(params: {
-  logs: Log[];
+  logs: readonly Log[];
   abi: Abi;
+  expectedEscrowAddress?: string;
+  expectedToken?: string;
 }): ResolvedCashDeposit | null {
   let events: Array<{ address: string; args: Record<string, unknown> }>;
   try {
     events = parseEventLogs({
       abi: params.abi,
       eventName: 'DepositReceived',
-      logs: params.logs,
+      logs: [...params.logs],
     }) as unknown as Array<{ address: string; args: Record<string, unknown> }>;
   } catch {
     return null;
   }
 
-  const event = events[0];
-  if (!event) return null;
+  const matchingEvents = events.filter((event) => {
+    if (
+      params.expectedEscrowAddress !== undefined &&
+      event.address.toLowerCase() !== params.expectedEscrowAddress.toLowerCase()
+    ) {
+      return false;
+    }
+    if (
+      params.expectedToken !== undefined &&
+      String(event.args.token ?? '').toLowerCase() !== params.expectedToken.toLowerCase()
+    ) {
+      return false;
+    }
+    return true;
+  });
+  if (matchingEvents.length !== 1) return null;
+  const event = matchingEvents[0]!;
 
   const rawId = event.args.depositId;
   if (rawId === undefined || rawId === null) return null;
   const onchainDepositId = BigInt(rawId as string | number | bigint);
+  const rawAmount = event.args.amount;
+  const amount =
+    rawAmount === undefined || rawAmount === null
+      ? undefined
+      : BigInt(rawAmount as string | number | bigint);
   // Normalize to the indexer's canonical lowercase form so the escrow address,
   // the composite id, and every subsequent indexer query agree exactly.
   const escrowAddress = event.address.toLowerCase();
@@ -44,6 +68,7 @@ export function resolveCashDepositId(params: {
     onchainDepositId,
     escrowAddress,
     compositeId: createCompositeDepositId(escrowAddress, onchainDepositId),
+    ...(amount === undefined ? {} : { amount }),
   };
 }
 

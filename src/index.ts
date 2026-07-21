@@ -20,6 +20,7 @@ export type {
   CashoutInput,
   CashoutOptions,
   CashoutResult,
+  PreparedCashoutReceipt,
   PrepareResult,
   WithdrawResult,
   WithdrawOptions,
