@@ -561,17 +561,29 @@ export function mapChainError(
   return errors.chainCallFailed(verb, err);
 }
 
+function hasUserRejectionText(value: string): boolean {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return (
+    normalized.includes('userrejected') ||
+    normalized.includes('userdenied') ||
+    normalized.includes('actionrejected') ||
+    normalized.includes('requestrejected') ||
+    normalized.includes('rejectedrequest')
+  );
+}
+
 /** Detect EIP-1193 and viem wallet cancellations, including nested provider causes. */
 export function isUserRejectedError(value: unknown): boolean {
   const seen = new Set<unknown>();
   let current: unknown = value;
 
-  while (
-    current !== null &&
-    (typeof current === 'object' || typeof current === 'function') &&
-    !seen.has(current)
-  ) {
+  while (current !== null && !seen.has(current)) {
     seen.add(current);
+    if (typeof current === 'string') {
+      return hasUserRejectionText(current);
+    }
+    if (typeof current !== 'object' && typeof current !== 'function') return false;
+
     const detail = current as {
       name?: unknown;
       message?: unknown;
@@ -581,19 +593,10 @@ export function isUserRejectedError(value: unknown): boolean {
     if (detail.code === 4001 || detail.code === '4001' || detail.code === 'ACTION_REJECTED') {
       return true;
     }
-    const normalized = [detail.name, detail.message, detail.code]
+    const text = [detail.name, detail.message, detail.code]
       .filter((part): part is string => typeof part === 'string')
-      .join(' ')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '');
-    if (
-      normalized.includes('userrejected') ||
-      normalized.includes('userdenied') ||
-      normalized.includes('actionrejected') ||
-      normalized.includes('requestrejected')
-    ) {
-      return true;
-    }
+      .join(' ');
+    if (hasUserRejectionText(text)) return true;
     current = detail.cause;
   }
 

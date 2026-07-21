@@ -54,7 +54,7 @@ import {
   Zkp2pClient,
 } from '@zkp2p/sdk';
 import { createCashClient, CASH_ATTRIBUTION_CODE } from '../src/client/createCashClient';
-import { isCashError } from '../src/client/errors';
+import { isCashError, isUserRejectedError } from '../src/client/errors';
 
 const NOW = Math.floor(Date.now() / 1000);
 const ESCROW = '0x1111111111111111111111111111111111111111';
@@ -137,6 +137,17 @@ function depositRow(overrides: Record<string, unknown> = {}) {
 function client() {
   return createCashClient({ environment: 'staging' });
 }
+
+describe('isUserRejectedError()', () => {
+  it.each([
+    'Rejected request',
+    'Request rejected by user',
+    new Error('Rejected request'),
+    new Error('The wallet failed', { cause: 'User denied request' }),
+  ])('recognizes cancellation wording without requiring an error object', (error) => {
+    expect(isUserRejectedError(error)).toBe(true);
+  });
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
