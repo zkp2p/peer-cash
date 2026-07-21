@@ -145,6 +145,23 @@ describe('prepareCashDepositParams', () => {
     expect(client.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
+  it('rejects currencies unsupported by the payment method before registration', async () => {
+    const client = mockClient();
+    await expect(
+      prepareCashDepositParams(client, {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'cashapp',
+            currencies: ['USD', 'EUR'],
+            payeeData: { offchainId: 'cashtag' },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/cashapp does not support EUR/);
+    expect(client.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
   it('rejects before any network call when a currency has no oracle feed', async () => {
     const client = mockClient();
     await expect(

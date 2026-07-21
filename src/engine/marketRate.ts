@@ -108,23 +108,32 @@ export async function prepareCashDepositParams(
   const runtimeEnv = client.runtimeEnv;
   const catalog = getPaymentMethodsCatalog(chainId, runtimeEnv);
   const intentGatingService = getGatingServiceAddress(chainId, runtimeEnv) as Address;
+  const processorNames = payouts.map((p) => p.processorName);
+  const paymentMethodsOverride = processorNames.map((name) =>
+    resolvePaymentMethodHashFromCatalog(name, catalog),
+  );
 
-  // Validate every currency is oracle-priceable before any network call.
+  // Validate every platform/currency pair is supported and oracle-priceable before any network call.
   for (const payout of payouts) {
     const currencies = payoutCurrencies(payout);
     if (currencies.length === 0 || new Set(currencies).size !== currencies.length) {
       throw new Error('Payout currencies must be non-empty and unique');
     }
+    const supportedCurrencyHashes = new Set(
+      (catalog[payout.processorName]?.currencies ?? []).map((hash) => hash.toLowerCase()),
+    );
     for (const currency of currencies) {
       if (!isMarketRateSupported(currency, adapters)) {
         throw new Error(
           `${currency} has no live market-rate oracle feed; Peer Cash supports market-rate currencies only.`,
         );
       }
+      const currencyHash = currencyInfo[currency]?.currencyCodeHash;
+      if (!currencyHash || !supportedCurrencyHashes.has(currencyHash.toLowerCase())) {
+        throw new Error(`${payout.processorName} does not support ${currency}`);
+      }
     }
   }
-
-  const processorNames = payouts.map((p) => p.processorName);
 
   // Register payee details with the curator to obtain on-chain payee hashes.
   const { hashedOnchainIds } = await client.registerPayeeDetails({
@@ -134,10 +143,6 @@ export async function prepareCashDepositParams(
   if (hashedOnchainIds.length !== payouts.length) {
     throw new Error('Payee registration returned an unexpected number of hashes');
   }
-
-  const paymentMethodsOverride = processorNames.map((name) =>
-    resolvePaymentMethodHashFromCatalog(name, catalog),
-  );
 
   const paymentMethodDataOverride: DepositVerifierData[] = hashedOnchainIds.map((hid) => ({
     intentGatingService,
