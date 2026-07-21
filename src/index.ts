@@ -50,6 +50,10 @@ export type {
 } from './client/relay';
 export type { CashFillEta, CashFillStats, CashPairFillStats } from './client/fillEta';
 
+// Payee input normalization
+export { normalizeCashPayee } from './client/payee';
+export type { CashPayeeInput } from './client/payee';
+
 // Typed errors
 export { CashError, isCashError, isUserRejectedError, errors } from './client/errors';
 export type { CashErrorCode, CashErrorRecovery, CashErrorShape } from './client/errors';

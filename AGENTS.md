@@ -64,7 +64,7 @@ const stats = await cash.fillStats();
 const { depositId } = await cash.cashout(
   {
     amount: usdc(500),
-    receive: { platform: 'revolut', currency: 'EUR', payee: { offchainId: 'revtag' } },
+    receive: { platform: 'revolut', currency: 'EUR', payee: 'revtag' },
   },
   { signer },
 );
