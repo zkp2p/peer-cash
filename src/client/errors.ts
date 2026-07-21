@@ -483,7 +483,7 @@ export const errors = {
         code: 'TRANSACTION_REJECTED',
         message: `The ${verb} wallet request was cancelled.`,
         retryable: true,
-        remediation: `Retry the ${verb} action and approve the wallet request when you are ready.`,
+        remediation: `Retry the original Peer Cash action and approve the wallet request when you are ready.`,
       },
       { cause },
     ),

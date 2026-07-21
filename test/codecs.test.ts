@@ -404,7 +404,8 @@ describe('CashError codec', () => {
       code: 'TRANSACTION_REJECTED',
       message: 'The cashout wallet request was cancelled.',
       retryable: true,
-      remediation: 'Retry the cashout action and approve the wallet request when you are ready.',
+      remediation:
+        'Retry the original Peer Cash action and approve the wallet request when you are ready.',
     });
   });
 
