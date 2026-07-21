@@ -1207,7 +1207,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
       }
 
       const abi = readClient.escrowV2Abi ?? readClient.escrowAbi;
-      const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
+      const expectedEscrowAddress = readClient.escrowV2Address ?? readClient.escrowAddress;
+      const resolved = resolveCashDepositId({
+        logs: receipt.logs,
+        abi,
+        expectedEscrowAddress,
+        expectedToken: BASE_USDC_ADDRESS,
+      });
       if (!resolved || resolved.amount === undefined) {
         throw errors.depositResolutionFailed(receipt.transactionHash);
       }

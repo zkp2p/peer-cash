@@ -57,6 +57,34 @@ describe('resolveCashDepositId', () => {
     const resolved = resolveCashDepositId({ logs: [], abi: DEPOSIT_RECEIVED_ABI });
     expect(resolved).toBeNull();
   });
+
+  it('returns null when multiple DepositReceived events make the receipt ambiguous', () => {
+    const resolved = resolveCashDepositId({
+      logs: [depositReceivedLog(41n), depositReceivedLog(42n)],
+      abi: DEPOSIT_RECEIVED_ABI,
+    });
+    expect(resolved).toBeNull();
+  });
+
+  it('filters receipt events by expected escrow and token', () => {
+    const resolved = resolveCashDepositId({
+      logs: [depositReceivedLog(42n)],
+      abi: DEPOSIT_RECEIVED_ABI,
+      expectedEscrowAddress: ESCROW,
+      expectedToken: '0x3333333333333333333333333333333333333333',
+    });
+    expect(resolved?.onchainDepositId).toBe(42n);
+  });
+
+  it('rejects a DepositReceived event for an unexpected token', () => {
+    const resolved = resolveCashDepositId({
+      logs: [depositReceivedLog(42n)],
+      abi: DEPOSIT_RECEIVED_ABI,
+      expectedEscrowAddress: ESCROW,
+      expectedToken: '0x4444444444444444444444444444444444444444',
+    });
+    expect(resolved).toBeNull();
+  });
 });
 
 describe('parseCompositeDepositId', () => {

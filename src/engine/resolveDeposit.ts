@@ -20,6 +20,8 @@ export interface ResolvedCashDeposit {
 export function resolveCashDepositId(params: {
   logs: readonly Log[];
   abi: Abi;
+  expectedEscrowAddress?: string;
+  expectedToken?: string;
 }): ResolvedCashDeposit | null {
   let events: Array<{ address: string; args: Record<string, unknown> }>;
   try {
@@ -32,8 +34,23 @@ export function resolveCashDepositId(params: {
     return null;
   }
 
-  const event = events[0];
-  if (!event) return null;
+  const matchingEvents = events.filter((event) => {
+    if (
+      params.expectedEscrowAddress !== undefined &&
+      event.address.toLowerCase() !== params.expectedEscrowAddress.toLowerCase()
+    ) {
+      return false;
+    }
+    if (
+      params.expectedToken !== undefined &&
+      String(event.args.token ?? '').toLowerCase() !== params.expectedToken.toLowerCase()
+    ) {
+      return false;
+    }
+    return true;
+  });
+  if (matchingEvents.length !== 1) return null;
+  const event = matchingEvents[0]!;
 
   const rawId = event.args.depositId;
   if (rawId === undefined || rawId === null) return null;
