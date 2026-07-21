@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   encodeAbiParameters,
   encodeEventTopics,
+  TransactionRejectedRpcError,
   type Abi,
   type Log,
   type WalletClient,
@@ -146,6 +147,12 @@ describe('isUserRejectedError()', () => {
     new Error('The wallet failed', { cause: 'User denied request' }),
   ])('recognizes cancellation wording without requiring an error object', (error) => {
     expect(isUserRejectedError(error)).toBe(true);
+  });
+
+  it('does not classify an RPC transaction rejection as a user cancellation', () => {
+    const error = new TransactionRejectedRpcError(new Error('node refused transaction'));
+
+    expect(isUserRejectedError(error)).toBe(false);
   });
 });
 

@@ -566,9 +566,10 @@ function hasUserRejectionText(value: string): boolean {
   return (
     normalized.includes('userrejected') ||
     normalized.includes('userdenied') ||
-    normalized.includes('actionrejected') ||
     normalized.includes('requestrejected') ||
-    normalized.includes('rejectedrequest')
+    normalized.includes('rejectedrequest') ||
+    normalized === 'actionrejected' ||
+    normalized === 'actionrejectederror'
   );
 }
 
@@ -593,10 +594,10 @@ export function isUserRejectedError(value: unknown): boolean {
     if (detail.code === 4001 || detail.code === '4001' || detail.code === 'ACTION_REJECTED') {
       return true;
     }
-    const text = [detail.name, detail.message, detail.code]
-      .filter((part): part is string => typeof part === 'string')
-      .join(' ');
-    if (hasUserRejectionText(text)) return true;
+    const text = [detail.name, detail.message, detail.code].filter(
+      (part): part is string => typeof part === 'string',
+    );
+    if (text.some(hasUserRejectionText)) return true;
     current = detail.cause;
   }
 
