@@ -147,6 +147,7 @@ describe('isUserRejectedError()', () => {
     new Error('Rejected request'),
     new Error('The wallet failed', { cause: 'User denied request' }),
     new Error('User rejected the request', { cause: new Error('transport closed') }),
+    new Error('The wallet request failed', { cause: 4001 }),
   ])('recognizes cancellation wording without requiring an error object', (error) => {
     expect(isUserRejectedError(error)).toBe(true);
   });
@@ -160,6 +161,7 @@ describe('isUserRejectedError()', () => {
         message: 'Transaction creation failed. Details: Request rejected',
         cause: new TransactionRejectedRpcError(new Error('Request rejected')),
       },
+      new Error('Request rejected', { cause: -32003 }),
     ];
 
     for (const error of errors) expect(isUserRejectedError(error)).toBe(false);

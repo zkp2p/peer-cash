@@ -582,11 +582,15 @@ export function isUserRejectedError(value: unknown): boolean {
 
   while (current !== null && !seen.has(current)) {
     seen.add(current);
+    if (current === -32003 || current === '-32003') return false;
+    if (current === 4001 || current === '4001' || current === 5000 || current === '5000') {
+      return true;
+    }
     if (typeof current === 'string') {
       text.push(current);
       break;
     }
-    if (typeof current !== 'object' && typeof current !== 'function') return false;
+    if (typeof current !== 'object' && typeof current !== 'function') break;
 
     const detail = current as {
       name?: unknown;
