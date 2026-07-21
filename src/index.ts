@@ -14,6 +14,7 @@ export type {
   CashClient,
   CashClientOptions,
   CashLeg,
+  CashMultiCurrencyLeg,
   CashPreparedStep,
   CashPreparedStepKind,
   CashoutInput,

@@ -281,6 +281,7 @@ explicit override.
 | `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | The platform does not support that currency. Use its `capabilities()` currencies.                                                            |
 | `AMOUNT_BELOW_MINIMUM`                  | no        | Amount is below the $0.01 hard floor. The recommended minimum is 1 USDC.                                                                     |
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Min/max is non-positive, inverted, or exceeds the deposit. Correct the range.                                                                |
+| `INVALID_PAYOUT_CURRENCIES`             | no        | The currency set is empty or contains duplicates. Pass a non-empty unique set from `capabilities()`.                                         |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation. Register it through Peer first; an existing registration can be reused.                        |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |

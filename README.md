@@ -49,6 +49,20 @@ const { depositId } = await cash.cashout(
   { signer }, // any viem WalletClient on Base
 );
 
+// One method can offer several currencies. The buyer chooses the fill
+// currency, and each option resolves at its own live oracle rate.
+const fastFill = await cash.cashout(
+  {
+    amount: usdc(1000),
+    receive: {
+      platform: 'revolut',
+      currencies: ['EUR', 'GBP', 'USD'],
+      payee: { offchainId: 'revtag' },
+    },
+  },
+  { signer },
+);
+
 for await (const order of cash.watch(depositId)) {
   console.log(order.state, order.explain());
   if (order.state === 'delivered') break;

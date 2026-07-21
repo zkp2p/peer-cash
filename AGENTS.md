@@ -69,6 +69,19 @@ const { depositId } = await cash.cashout(
   { signer },
 );
 
+// Faster matching: one Revolut method, three live-oracle currency options.
+const multiCurrency = await cash.cashout(
+  {
+    amount: usdc(500),
+    receive: {
+      platform: 'revolut',
+      currencies: ['EUR', 'GBP', 'USD'],
+      payee: { offchainId: 'revtag' },
+    },
+  },
+  { signer },
+);
+
 // 4. Persist depositId ↔ your user. That row is the entire integration state.
 
 // 5. Drive the lifecycle from nextActions - no heuristics.
@@ -173,6 +186,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | Use a currency listed for that platform                                                    |
 | `AMOUNT_BELOW_MINIMUM`                  | no        | Raise amount (hard floor $0.01, recommended at least 1 USDC)                               |
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount                       |
+| `INVALID_PAYOUT_CURRENCIES`             | no        | Pass one or more unique currencies listed for the platform                                 |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | Register a new Wise/PayPal payee through Peer; an existing registered handle can be reused |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |

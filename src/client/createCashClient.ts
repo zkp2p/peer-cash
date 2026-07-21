@@ -130,6 +130,17 @@ export interface CashLeg {
   currency: CurrencyType;
   /** Raw handle or prepared curator data (needed for identity attestations). */
   payee: CashPayeeInput;
+  currencies?: never;
+}
+
+export interface CashMultiCurrencyLeg {
+  /** Platform id from `capabilities()`, e.g. `'revolut'`. */
+  platform: string;
+  /** Fiat currencies a buyer may use to fill this cash-out. */
+  currencies: readonly [CurrencyType, ...CurrencyType[]];
+  /** Raw handle or prepared curator data shared by every offered currency. */
+  payee: CashPayeeInput;
+  currency?: never;
 }
 
 export interface CashoutInput {
@@ -146,8 +157,8 @@ export interface CashoutInput {
     /** Relay amount mode. Omit for the recommended exact source-input flow. */
     tradeType?: 'EXACT_INPUT' | 'EXACT_OUTPUT' | 'EXPECTED_OUTPUT';
   };
-  /** Where the fiat should arrive. Multi-payout is a deliberate v1 cut. */
-  receive: CashLeg;
+  /** Where the fiat should arrive. One method may offer multiple currencies. */
+  receive: CashLeg | CashMultiCurrencyLeg;
   /** Per-order min/max override (USDC base units). */
   intentAmountRange?: { min: bigint; max: bigint };
 }
@@ -495,17 +506,29 @@ export function createCashClient(options: CashClientOptions): CashClient {
       (capability) => capability.platform === receive.platform,
     );
     if (!platform) throw errors.unsupportedPlatform(receive.platform);
-    if (!isMarketRateSupported(receive.currency)) {
-      throw errors.oracleUnsupportedCurrency(receive.currency);
+    const currencies =
+      receive.currencies !== undefined ? [...receive.currencies] : [receive.currency];
+    if (currencies.length === 0) {
+      throw errors.invalidPayoutCurrencies(receive.platform, 'at least one currency is required');
     }
-    if (!platform.currencies.includes(receive.currency)) {
-      throw errors.unsupportedPlatformCurrency(receive.platform, receive.currency);
+    if (new Set(currencies).size !== currencies.length) {
+      throw errors.invalidPayoutCurrencies(receive.platform, 'currencies must be unique');
+    }
+    for (const currency of currencies) {
+      if (!isMarketRateSupported(currency)) {
+        throw errors.oracleUnsupportedCurrency(currency);
+      }
+      if (!platform.currencies.includes(currency)) {
+        throw errors.unsupportedPlatformCurrency(receive.platform, currency);
+      }
     }
     return {
       payouts: [
         {
           processorName: receive.platform,
-          currency: receive.currency,
+          ...(currencies.length === 1
+            ? { currency: currencies[0]! }
+            : { currencies: currencies as [CurrencyType, ...CurrencyType[]] }),
           payeeData: normalizeCashPayee(receive.platform, receive.payee),
         },
       ],
@@ -532,9 +555,16 @@ export function createCashClient(options: CashClientOptions): CashClient {
   }
 
   function isCashPayoutSet(payouts: readonly CashPayoutInfo[]): boolean {
-    return (
-      payouts.length === 1 &&
-      payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
+    const first = payouts[0];
+    return Boolean(
+      first &&
+      payouts.every(
+        (payout) =>
+          payout.platformHash.toLowerCase() === first.platformHash.toLowerCase() &&
+          payout.payeeHash.toLowerCase() === first.payeeHash.toLowerCase() &&
+          payout.pricing.marketRate &&
+          payout.pricing.spreadBps === 0,
+      ),
     );
   }
 

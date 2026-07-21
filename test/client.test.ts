@@ -490,6 +490,61 @@ describe('cashout()', () => {
     },
   );
 
+  it('creates one signed Revolut method with three payout currencies', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: {
+          platform: 'revolut',
+          currencies: ['EUR', 'GBP', 'USD'],
+          payee: { offchainId: 'revtag' },
+        },
+      },
+      { signer },
+    );
+
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: ['revolut'],
+      payeeData: [{ offchainId: 'revtag' }],
+    });
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        processorNames: ['revolut'],
+        conversionRates: [
+          [
+            expect.objectContaining({ currency: 'EUR' }),
+            expect.objectContaining({ currency: 'GBP' }),
+            expect.objectContaining({ currency: 'USD' }),
+          ],
+        ],
+        currenciesOverride: [[expect.anything(), expect.anything(), expect.anything()]],
+      }),
+    );
+  });
+
+  it('rejects duplicate payout currencies before registration', async () => {
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: {
+            platform: 'revolut',
+            currencies: ['EUR', 'EUR'],
+            payee: { offchainId: 'revtag' },
+          },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_PAYOUT_CURRENCIES' });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
   it('registers payee, ensures allowance, creates deposit, resolves composite id', async () => {
     mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
     mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
@@ -655,7 +710,11 @@ describe('cashout()', () => {
       {
         amount: 1_000_000n,
         source: { chainId: 10, currency: '0xsource' },
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        receive: {
+          platform: 'revolut',
+          currencies: ['EUR', 'GBP', 'USD'],
+          payee: { offchainId: 'revtag' },
+        },
       },
       { signer, sourceSigner },
     );
@@ -678,6 +737,12 @@ describe('cashout()', () => {
     );
     expect(mockInstance.ensureAllowance.mock.invocationCallOrder[0]).toBeLessThan(
       relayClient.actions.execute.mock.invocationCallOrder[0]!,
+    );
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        processorNames: ['revolut'],
+        currenciesOverride: [[expect.anything(), expect.anything(), expect.anything()]],
+      }),
     );
     expect(result.source).toEqual({
       amount: 4_900_000n,
@@ -1579,6 +1644,36 @@ describe('prepare()', () => {
     },
   );
 
+  it('prepares one Revolut method with three payout currencies', async () => {
+    mockInstance.prepareCreateDeposit.mockResolvedValue({
+      depositDetails: [{}],
+      prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
+    });
+
+    const result = await client().prepare({
+      amount: 5_000_000n,
+      receive: {
+        platform: 'revolut',
+        currencies: ['EUR', 'GBP', 'USD'],
+        payee: { offchainId: 'revtag' },
+      },
+    });
+
+    expect(mockInstance.prepareCreateDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        processorNames: ['revolut'],
+        conversionRates: [
+          [
+            expect.objectContaining({ currency: 'EUR' }),
+            expect.objectContaining({ currency: 'GBP' }),
+            expect.objectContaining({ currency: 'USD' }),
+          ],
+        ],
+      }),
+    );
+    expect(result.register.hashedOnchainIds).toEqual(['0xpayeehash']);
+  });
+
   it('returns [approve, createDeposit] unsigned txs and the payee hashes', async () => {
     mockInstance.prepareCreateDeposit.mockResolvedValue({
       depositDetails: [{}],
@@ -1844,6 +1939,28 @@ describe('order() enrichment', () => {
       payeeHash: '0xpayee',
       pricing: expect.objectContaining({ marketRate: true, spreadBps: 0 }),
     });
+  });
+
+  it('recognizes one zero-spread method with multiple payout currencies', async () => {
+    const catalog = getPaymentMethodsCatalog(8453, 'staging');
+    const revolutHash = catalog['revolut']!.paymentMethodHash;
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        paymentMethods: [
+          { paymentMethodHash: revolutHash, payeeDetailsHash: '0xpayee', active: true },
+        ],
+        currencies: ['EUR', 'GBP', 'USD'].map((currency) => ({
+          paymentMethodHash: revolutHash,
+          currencyCode: currencyInfo[currency as keyof typeof currencyInfo]!.currencyCodeHash,
+          spreadBps: 0,
+          kind: 'oracle_chainlink',
+        })),
+      }),
+    ]);
+
+    const order = await client().order(DEPOSIT_ID);
+    expect(order.payouts?.map((payout) => payout.currency)).toEqual(['EUR', 'GBP', 'USD']);
+    expect(order.payouts?.every((payout) => payout.pricing.marketRate)).toBe(true);
   });
 });
 

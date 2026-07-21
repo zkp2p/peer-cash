@@ -29,7 +29,11 @@ import {
   MARKET_SPREAD_BPS,
   ORACLE_MIN_CONVERSION_RATE_SENTINEL,
 } from './constants';
-import type { CashDepositInput } from './types';
+import type { CashDepositInput, CashPayout } from './types';
+
+function payoutCurrencies(payout: CashPayout): readonly CurrencyType[] {
+  return payout.currencies ?? [payout.currency];
+}
 
 /**
  * Whether a currency can be priced at the live market rate. Only currencies with
@@ -104,10 +108,16 @@ export async function prepareCashDepositParams(
 
   // Validate every currency is oracle-priceable before any network call.
   for (const payout of payouts) {
-    if (!isMarketRateSupported(payout.currency, adapters)) {
-      throw new Error(
-        `${payout.currency} has no live market-rate oracle feed; Peer Cash supports market-rate currencies only.`,
-      );
+    const currencies = payoutCurrencies(payout);
+    if (currencies.length === 0 || new Set(currencies).size !== currencies.length) {
+      throw new Error('Payout currencies must be non-empty and unique');
+    }
+    for (const currency of currencies) {
+      if (!isMarketRateSupported(currency, adapters)) {
+        throw new Error(
+          `${currency} has no live market-rate oracle feed; Peer Cash supports market-rate currencies only.`,
+        );
+      }
     }
   }
 
@@ -132,17 +142,22 @@ export async function prepareCashDepositParams(
     data: '0x',
   }));
 
-  const currenciesOverride: OnchainCurrency[][] = payouts.map((p) => {
-    const tuple = buildMarketRateCurrencyOverride(p.currency, adapters);
-    if (!tuple) throw new Error(`Failed to build market-rate config for ${p.currency}`);
-    return [tuple];
-  });
+  const currenciesOverride: OnchainCurrency[][] = payouts.map((payout) =>
+    payoutCurrencies(payout).map((currency) => {
+      const tuple = buildMarketRateCurrencyOverride(currency, adapters);
+      if (!tuple) throw new Error(`Failed to build market-rate config for ${currency}`);
+      return tuple;
+    }),
+  );
 
   // `conversionRates` is required for the length/shape check but is unused in
   // override mode - the on-chain tuple comes from `currenciesOverride`.
-  const conversionRates = payouts.map((p) => [
-    { currency: p.currency, conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString() },
-  ]);
+  const conversionRates = payouts.map((payout) =>
+    payoutCurrencies(payout).map((currency) => ({
+      currency,
+      conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString(),
+    })),
+  );
 
   const intentAmountRange = input.intentAmountRange ?? buildIntentAmountRange(input.amount);
 

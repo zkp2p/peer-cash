@@ -162,15 +162,22 @@ export interface CashBuyerProfile {
   lastSeenAt?: number;
 }
 
-/** A single payout leg of a cash-out (one platform + currency + payee). */
-export interface CashPayout {
+interface CashPayoutBase {
   /** Payment platform / processor name, e.g. `'venmo'`, `'revolut'`, `'wise'`. */
   processorName: string;
-  /** Fiat currency the user wants to receive. */
-  currency: CurrencyType;
   /** The user's payee handle for that platform (e.g. a Venmo username, Wisetag). */
   payeeData: CuratorPayeeDataInput;
 }
+
+/** One payment method offering either one currency or a non-empty currency set. */
+export type CashPayout = CashPayoutBase &
+  (
+    | { currency: CurrencyType; currencies?: never }
+    | {
+        currency?: never;
+        currencies: readonly [CurrencyType, ...CurrencyType[]];
+      }
+  );
 
 /**
  * Input to create a market-rate (0% spread) cash-out deposit.
@@ -184,7 +191,7 @@ export interface CashDepositInput {
   token?: Address;
   /** Total amount to cash out, in USDC base units (6 decimals). */
   amount: bigint;
-  /** One or more payout legs (platform + currency + payee). */
+  /** One or more payout legs (platform + currency choice + payee). */
   payouts: CashPayout[];
   /** Per-order min/max in USDC base units. Defaults derive from {@link buildIntentAmountRange}. */
   intentAmountRange?: { min: bigint; max: bigint };
