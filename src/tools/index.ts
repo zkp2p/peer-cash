@@ -165,17 +165,25 @@ const builtInCashTools = [
             },
             currency: { type: 'string', description: 'Fiat currency code, e.g. "USD"' },
             payee: {
-              type: 'object',
-              description: 'Payee handle for the platform',
-              properties: {
-                offchainId: {
+              description: 'Raw payee handle or structured curator payee data',
+              oneOf: [
+                {
                   type: 'string',
                   description:
-                    'The handle, e.g. "@andrew" for Venmo - see payeeHint in cash_capabilities',
+                    'User-entered handle, e.g. "@andrew" for Venmo; Peer Cash normalizes it for the selected platform',
                 },
-              },
-              required: ['offchainId'],
-              additionalProperties: true,
+                {
+                  type: 'object',
+                  properties: {
+                    offchainId: {
+                      type: 'string',
+                      description: 'Already-normalized handle for the platform',
+                    },
+                  },
+                  required: ['offchainId'],
+                  additionalProperties: true,
+                },
+              ],
             },
           },
           required: ['platform', 'currency', 'payee'],

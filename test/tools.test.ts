@@ -56,6 +56,21 @@ describe('tools manifest', () => {
     expect(cashout?.inputSchema.properties).not.toHaveProperty('source');
   });
 
+  it('lets tool hosts pass a raw payee handle', () => {
+    const cashout = cashTools.find((tool) => tool.name === 'cash_cashout');
+    const cashoutSchema = cashout?.inputSchema as {
+      properties?: { receive?: unknown };
+    };
+    const receive = cashoutSchema.properties?.receive as {
+      properties?: { payee?: { oneOf?: Array<{ type?: string }> } };
+    };
+
+    expect(receive.properties?.payee?.oneOf?.map((shape) => shape.type)).toEqual([
+      'string',
+      'object',
+    ]);
+  });
+
   it('is JSON-serializable as-is', () => {
     expect(() => JSON.stringify(cashToolManifest)).not.toThrow();
     const parsed = JSON.parse(JSON.stringify(cashToolManifest));

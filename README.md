@@ -44,7 +44,7 @@ const pairStats = (await cash.fillStats())['venmo:USD'];
 const { depositId } = await cash.cashout(
   {
     amount: usdc(1000),
-    receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@you' } },
+    receive: { platform: 'venmo', currency: 'USD', payee: '@you' },
   },
   { signer }, // any viem WalletClient on Base
 );

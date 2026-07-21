@@ -27,13 +27,7 @@ import {
   appendAttributionToCalldata,
   createCompositeDepositId,
 } from '@zkp2p/sdk';
-import type {
-  CurrencyType,
-  CuratorPayeeDataInput,
-  PreparedTransaction,
-  RuntimeEnv,
-  TxOverrides,
-} from '../sdk-types';
+import type { CurrencyType, PreparedTransaction, RuntimeEnv, TxOverrides } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, CASH_ORDER_STATUSES } from '../engine/constants';
 import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
 import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
@@ -61,6 +55,7 @@ import {
   type FillStatsSample,
 } from './fillEta';
 import { CashError, errors, isCashError, mapChainError } from './errors';
+import { normalizeCashPayee, type CashPayeeInput } from './payee';
 import {
   readRelaySourceCapabilities,
   readRelayStatus,
@@ -133,8 +128,8 @@ export interface CashLeg {
   platform: string;
   /** Fiat currency to receive. */
   currency: CurrencyType;
-  /** Payee details, e.g. `{ offchainId: '@andrew' }`. */
-  payee: CuratorPayeeDataInput;
+  /** Raw handle or prepared curator data (needed for identity attestations). */
+  payee: CashPayeeInput;
 }
 
 export interface CashoutInput {
@@ -514,7 +509,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         {
           processorName: receive.platform,
           currency: receive.currency,
-          payeeData: receive.payee,
+          payeeData: normalizeCashPayee(receive.platform, receive.payee),
         },
       ],
     };
