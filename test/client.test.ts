@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   encodeAbiParameters,
   encodeEventTopics,
+  TransactionRejectedRpcError,
   type Abi,
   type Log,
   type WalletClient,
@@ -54,7 +55,7 @@ import {
   Zkp2pClient,
 } from '@zkp2p/sdk';
 import { createCashClient, CASH_ATTRIBUTION_CODE } from '../src/client/createCashClient';
-import { isCashError } from '../src/client/errors';
+import { isCashError, isUserRejectedError } from '../src/client/errors';
 
 const NOW = Math.floor(Date.now() / 1000);
 const ESCROW = '0x1111111111111111111111111111111111111111';
@@ -137,6 +138,42 @@ function depositRow(overrides: Record<string, unknown> = {}) {
 function client() {
   return createCashClient({ environment: 'staging' });
 }
+
+describe('isUserRejectedError()', () => {
+  it.each([
+    'Rejected request',
+    'Request rejected by user',
+    'sendTransaction failed: ACTION_REJECTED',
+    new Error('Rejected request'),
+    new Error('The wallet failed', { cause: 'User denied request' }),
+    new Error('User rejected the request', { cause: new Error('transport closed') }),
+    new Error('The wallet request failed', { cause: 4001 }),
+  ])('recognizes cancellation wording without requiring an error object', (error) => {
+    expect(isUserRejectedError(error)).toBe(true);
+  });
+
+  it('does not classify an RPC transaction rejection as a user cancellation', () => {
+    const errors = [
+      new TransactionRejectedRpcError(new Error('node refused transaction')),
+      new TransactionRejectedRpcError(new Error('Request rejected')),
+      { code: -32003, message: 'Request rejected' },
+      {
+        message: 'Transaction creation failed. Details: Request rejected',
+        cause: new TransactionRejectedRpcError(new Error('Request rejected')),
+      },
+      new Error('Request rejected', { cause: -32003 }),
+    ];
+
+    for (const error of errors) expect(isUserRejectedError(error)).toBe(false);
+  });
+
+  it.each([5000, '5000', { name: 'UserRejectedRequestError', message: 'Request failed' }])(
+    'recognizes viem and CAIP-25 user rejection identity',
+    (error) => {
+      expect(isUserRejectedError(typeof error === 'object' ? error : { code: error })).toBe(true);
+    },
+  );
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -900,17 +937,19 @@ describe('cashout()', () => {
   it.each([
     {
       name: 'treats a provider timeout as an indeterminate Base submission',
-      message: 'RPC timed out after sending transaction',
+      error: new Error('RPC timed out after sending transaction'),
       code: 'SOURCE_CASHOUT_SUBMISSION_UNKNOWN',
       kind: 'inspect-base-cashout-submission',
     },
     {
-      name: 'permits Base-only retry after an explicit wallet rejection',
-      message: 'User rejected the request',
+      name: 'permits Base-only retry after a nested wallet rejection',
+      error: new Error('The on-chain createDeposit call failed', {
+        cause: Object.assign(new Error('User rejected the request'), { code: 4001 }),
+      }),
       code: 'SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED',
       kind: 'retry-base-usdc-cashout',
     },
-  ] as const)('$name', async ({ message, code, kind }) => {
+  ] as const)('$name', async ({ error, code, kind }) => {
     const relayQuote = {
       details: {
         sender: '0xmaker',
@@ -954,7 +993,7 @@ describe('cashout()', () => {
         })),
       },
     };
-    mockInstance.createDeposit.mockRejectedValue(new Error(message));
+    mockInstance.createDeposit.mockRejectedValue(error);
 
     const err = await createCashClient({
       environment: 'staging',
@@ -1162,7 +1201,10 @@ describe('cashout()', () => {
         }),
       },
     };
-    mockInstance.ensureAllowance.mockRejectedValue(new Error('approve rejected'));
+    const rejection = new Error('The on-chain approve call failed', {
+      cause: new Error('User rejected the request.'),
+    });
+    mockInstance.ensureAllowance.mockRejectedValue(rejection);
 
     await expect(
       createCashClient({
@@ -1176,7 +1218,11 @@ describe('cashout()', () => {
         },
         { signer, sourceSigner },
       ),
-    ).rejects.toMatchObject({ code: 'TRANSACTION_FAILED' });
+    ).rejects.toMatchObject({
+      code: 'TRANSACTION_REJECTED',
+      retryable: true,
+      cause: rejection,
+    });
 
     expect(relayClient.actions.getQuote).toHaveBeenCalledOnce();
     expect(mockInstance.registerPayeeDetails).toHaveBeenCalledOnce();
@@ -2027,6 +2073,21 @@ describe('prepareWithdraw()', () => {
 });
 
 describe('withdraw() - receipt safety and error mapping', () => {
+  it('classifies a nested wallet cancellation as retryable', async () => {
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
+    mockInstance.withdrawDeposit.mockRejectedValue(
+      new Error('The on-chain withdraw call failed', {
+        cause: Object.assign(new Error('Request denied by user'), { code: 4001 }),
+      }),
+    );
+
+    await expect(client().withdraw(DEPOSIT_ID, { signer })).rejects.toMatchObject({
+      code: 'TRANSACTION_REJECTED',
+      retryable: true,
+      recovery: undefined,
+    });
+  });
+
   it('does not invite a duplicate submission when receipt status is unknown', async () => {
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([depositRow()]);
     mockInstance.withdrawDeposit.mockResolvedValue('0xw');

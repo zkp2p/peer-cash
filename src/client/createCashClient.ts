@@ -362,7 +362,7 @@ async function submitAndConfirm(
     hash = (await send()) as Hash;
   } catch (err) {
     const mapped = mapChainError(verb, err);
-    if (isKnownPreBroadcastFailure(err, mapped)) throw mapped;
+    if (isKnownPreBroadcastFailure(mapped)) throw mapped;
     throw errors.transactionSubmissionUnknown(verb, err, {
       kind: 'inspect-base-operation-submission',
       operation: verb,
@@ -378,16 +378,13 @@ async function submitAndConfirm(
   return hash;
 }
 
-function isKnownPreBroadcastFailure(err: unknown, mapped: CashError): boolean {
-  if (
+function isKnownPreBroadcastFailure(mapped: CashError): boolean {
+  return (
+    mapped.code === 'TRANSACTION_REJECTED' ||
     mapped.code === 'INSUFFICIENT_TOKEN_BALANCE' ||
     mapped.code === 'ALLOWANCE_NOT_VISIBLE' ||
     mapped.code === 'ESCROW_PAUSED'
-  ) {
-    return true;
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return /user rejected|user denied|rejected request|action_rejected/i.test(message);
+  );
 }
 
 /** The indexer aggregate fields both deposit queries share. */
@@ -1018,7 +1015,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           const mapped = mapChainError('createDeposit', err, {
             requiredAmount: depositInput.amount,
           });
-          if (isKnownPreBroadcastFailure(err, mapped)) {
+          if (isKnownPreBroadcastFailure(mapped)) {
             throw errors.sourceRouteCompletedCashoutFailed(routedSource, mapped);
           }
           throw errors.sourceCashoutSubmissionUnknown(routedSource, owner, mapped);
@@ -1086,7 +1083,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         const mapped = mapChainError('createDeposit', err, {
           requiredAmount: depositInput.amount,
         });
-        if (isKnownPreBroadcastFailure(err, mapped)) throw mapped;
+        if (isKnownPreBroadcastFailure(mapped)) throw mapped;
         throw errors.transactionSubmissionUnknown('cashout', err, {
           kind: 'inspect-base-cashout-submission',
           amount: depositInput.amount.toString(),
