@@ -17,12 +17,18 @@ export function normalizeCashPayee(platform: string, payee: CashPayeeInput): Cur
 
   const trimmed = payee.trim();
   switch (platform) {
+    case 'venmo':
+      return { offchainId: trimmed.replace(/^@+/, '') };
+    case 'cashapp':
+      return { offchainId: trimmed.replace(/^\$+/, '') };
     case 'chime':
       return { offchainId: trimmed.toLowerCase() };
     case 'n26':
       return { offchainId: trimmed.replace(/\s/g, '') };
     case 'paypal':
       return { offchainId: normalizePaypalHandle(trimmed) };
+    case 'zelle':
+      return { offchainId: trimmed.toLowerCase() };
     default:
       return { offchainId: trimmed };
   }

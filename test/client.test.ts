@@ -425,26 +425,33 @@ describe('orders()', () => {
 });
 
 describe('cashout()', () => {
-  it('normalizes a raw ChimeSign before signed payee registration', async () => {
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-      status: 'success',
-      logs: [depositReceivedLog(5n)],
-    });
+  it.each([
+    ['chime', '  $SellerTag  ', '$sellertag'],
+    ['venmo', '  @SellerTag  ', 'SellerTag'],
+    ['cashapp', '  $SellerTag  ', 'SellerTag'],
+  ] as const)(
+    'normalizes a raw %s handle before signed payee registration',
+    async (platform, payee, offchainId) => {
+      mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+        status: 'success',
+        logs: [depositReceivedLog(5n)],
+      });
 
-    await client().cashout(
-      {
-        amount: 5_000_000n,
-        receive: { platform: 'chime', currency: 'USD', payee: '  $SellerTag  ' },
-      },
-      { signer },
-    );
+      await client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform, currency: 'USD', payee },
+        },
+        { signer },
+      );
 
-    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
-      processorNames: ['chime'],
-      payeeData: [{ offchainId: '$sellertag' }],
-    });
-  });
+      expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+        processorNames: [platform],
+        payeeData: [{ offchainId }],
+      });
+    },
+  );
 
   it('registers payee, ensures allowance, creates deposit, resolves composite id', async () => {
     mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
@@ -1503,22 +1510,28 @@ describe('cashout()', () => {
 });
 
 describe('prepare()', () => {
-  it('normalizes a raw ChimeSign before preparing the cash-out', async () => {
-    mockInstance.prepareCreateDeposit.mockResolvedValue({
-      depositDetails: [{}],
-      prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
-    });
+  it.each([
+    ['chime', 'USD', '  $SellerTag  ', '$sellertag'],
+    ['zelle', 'USD', ' Alice@Example.COM ', 'alice@example.com'],
+  ] as const)(
+    'normalizes a raw %s handle before preparing the cash-out',
+    async (platform, currency, payee, offchainId) => {
+      mockInstance.prepareCreateDeposit.mockResolvedValue({
+        depositDetails: [{}],
+        prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
+      });
 
-    await client().prepare({
-      amount: 5_000_000n,
-      receive: { platform: 'chime', currency: 'USD', payee: '  $SellerTag  ' },
-    });
+      await client().prepare({
+        amount: 5_000_000n,
+        receive: { platform, currency, payee },
+      });
 
-    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
-      processorNames: ['chime'],
-      payeeData: [{ offchainId: '$sellertag' }],
-    });
-  });
+      expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+        processorNames: [platform],
+        payeeData: [{ offchainId }],
+      });
+    },
+  );
 
   it('returns [approve, createDeposit] unsigned txs and the payee hashes', async () => {
     mockInstance.prepareCreateDeposit.mockResolvedValue({
