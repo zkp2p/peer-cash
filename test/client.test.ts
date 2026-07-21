@@ -1760,6 +1760,66 @@ describe('prepare()', () => {
   });
 });
 
+describe('finalizePreparedCashout()', () => {
+  it('resolves a confirmed createDeposit receipt into resumable cash-out state', () => {
+    const transactionHash = `0x${'a'.repeat(64)}` as const;
+
+    const result = client().finalizePreparedCashout({
+      transactionHash,
+      status: 'success',
+      logs: [depositReceivedLog(42n)],
+    });
+
+    expect(result).toMatchObject({
+      depositId: `${ESCROW}_42`,
+      txHash: transactionHash,
+      escrowAddress: ESCROW,
+      onchainDepositId: 42n,
+      order: {
+        depositId: `${ESCROW}_42`,
+        state: 'awaiting-buyer',
+        totalAmount: 5_000_000n,
+      },
+    });
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+    expect(mockInstance.publicClient.waitForTransactionReceipt).not.toHaveBeenCalled();
+  });
+
+  it('maps a reverted receipt to TRANSACTION_FAILED', () => {
+    const transactionHash = `0x${'b'.repeat(64)}` as const;
+
+    expect(() =>
+      client().finalizePreparedCashout({
+        transactionHash,
+        status: 'reverted',
+        logs: [],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'TRANSACTION_FAILED', retryable: false }));
+  });
+
+  it('preserves recovery when the DepositReceived event cannot be resolved', () => {
+    const transactionHash = `0x${'c'.repeat(64)}` as const;
+
+    expect(() =>
+      client().finalizePreparedCashout({
+        transactionHash,
+        status: 'success',
+        logs: [],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'DEPOSIT_RESOLUTION_FAILED',
+        retryable: false,
+        recovery: {
+          kind: 'inspect-base-transaction',
+          transactionHash,
+          operation: 'cashout',
+        },
+      }),
+    );
+  });
+});
+
 describe('withdraw()', () => {
   it('rejects a malformed deposit id before any indexer or chain call', async () => {
     await expect(client().withdraw(`${ESCROW}_`, { signer })).rejects.toMatchObject({

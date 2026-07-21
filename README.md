@@ -102,6 +102,7 @@ console.log(source?.transactions?.origin, source?.transactions?.destination);
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
 | `cashout(input, { signer })`                                   | Registers your payee, creates the protocol-held order, returns the `depositId`                                                  |
+| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, then resolve the confirmed createDeposit receipt into a resumable result                              |
 | `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
@@ -116,8 +117,35 @@ transaction does before signing. `prepare()` is Base-USDC-only and rejects a
 `source` with `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`. A signer-backed app can
 use `cashout({ source }, { signer, sourceSigner })`; a custody-separated host
 must execute and confirm its Relay route before preparing the Base-USDC
-cashout. Every Peer Cash transaction, including approves, carries ERC-8021
+cashout. After externally executing a prepared `createDeposit`, pass its
+confirmed receipt to `finalizePreparedCashout()` to recover the same
+`CashoutResult` shape as `cashout()` without importing protocol ABIs. Every
+Peer Cash transaction, including approves, carries ERC-8021
 attribution: `peer-cash` first, your own `referrer` code(s) after it.
+
+```ts
+const prepared = await cash.prepare({
+  amount: 5_000_000n,
+  receive: {
+    platform: 'venmo',
+    currency: 'USD',
+    payee: { offchainId: '@maker' },
+  },
+});
+
+let createDepositReceipt;
+for (const [index, transaction] of prepared.txs.entries()) {
+  const receipt = await externalRuntime.sendAndWait(transaction);
+  if (prepared.steps[index]?.kind === 'createDeposit') {
+    createDepositReceipt = receipt;
+  }
+}
+if (!createDepositReceipt) throw new Error('createDeposit receipt missing');
+
+const result = cash.finalizePreparedCashout(createDepositReceipt);
+await persistDepositId(result.depositId);
+const liveOrder = await cash.order(result.depositId);
+```
 
 `capabilities()` presents Zelle as one platform. A cashout with
 `receive.platform: 'zelle'` attaches only the generic Zelle payment method to

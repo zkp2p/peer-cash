@@ -13,10 +13,12 @@ export interface ResolvedCashDeposit {
   onchainDepositId: bigint;
   escrowAddress: string;
   compositeId: string;
+  /** Base-unit amount emitted by the canonical DepositReceived event. */
+  amount?: bigint;
 }
 
 export function resolveCashDepositId(params: {
-  logs: Log[];
+  logs: readonly Log[];
   abi: Abi;
 }): ResolvedCashDeposit | null {
   let events: Array<{ address: string; args: Record<string, unknown> }>;
@@ -24,7 +26,7 @@ export function resolveCashDepositId(params: {
     events = parseEventLogs({
       abi: params.abi,
       eventName: 'DepositReceived',
-      logs: params.logs,
+      logs: [...params.logs],
     }) as unknown as Array<{ address: string; args: Record<string, unknown> }>;
   } catch {
     return null;
@@ -36,6 +38,11 @@ export function resolveCashDepositId(params: {
   const rawId = event.args.depositId;
   if (rawId === undefined || rawId === null) return null;
   const onchainDepositId = BigInt(rawId as string | number | bigint);
+  const rawAmount = event.args.amount;
+  const amount =
+    rawAmount === undefined || rawAmount === null
+      ? undefined
+      : BigInt(rawAmount as string | number | bigint);
   // Normalize to the indexer's canonical lowercase form so the escrow address,
   // the composite id, and every subsequent indexer query agree exactly.
   const escrowAddress = event.address.toLowerCase();
@@ -44,6 +51,7 @@ export function resolveCashDepositId(params: {
     onchainDepositId,
     escrowAddress,
     compositeId: createCompositeDepositId(escrowAddress, onchainDepositId),
+    ...(amount === undefined ? {} : { amount }),
   };
 }
 

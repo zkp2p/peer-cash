@@ -443,6 +443,11 @@ export const errors = {
       message: `Deposit transaction ${txHash} succeeded but no DepositReceived event was found in the receipt.`,
       retryable: false,
       remediation: `Inspect the transaction on Basescan; recover the depositId from the DepositReceived log manually, then resume with order(depositId).`,
+      recovery: {
+        kind: 'inspect-base-transaction',
+        transactionHash: txHash,
+        operation: 'cashout',
+      },
     }),
   signerRequired: (verb: string) =>
     new CashError({

@@ -50,6 +50,7 @@ describe('resolveCashDepositId', () => {
     expect(resolved?.onchainDepositId).toBe(42n);
     expect(resolved?.escrowAddress.toLowerCase()).toBe(ESCROW);
     expect(resolved?.compositeId).toBe(`${ESCROW}_42`);
+    expect(resolved?.amount).toBe(5_000_000n);
   });
 
   it('returns null when no DepositReceived event is present', () => {

@@ -16,7 +16,9 @@ can withdraw an unmatched deposit.
    human approval step) → use `prepare()` / `prepareTopUp()` /
    `prepareWithdraw()`. Each returns unsigned `txs[]`
    (`{ to, data, value, chainId }`) plus same-index `steps[]` labels; inspect
-   the plan, submit the transactions in order, and wait for each receipt.
+   the plan, submit the transactions in order, and wait for each receipt. After
+   `createDeposit` confirms, pass its receipt to `finalizePreparedCashout()` and
+   persist the returned `depositId`.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
    `@zkp2p/cash/tools` and map the tool names to the verbs above. Base-USDC
    mutating tools return unsigned transactions. `cash_source_quote` is a quote,
