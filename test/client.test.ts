@@ -143,6 +143,7 @@ describe('isUserRejectedError()', () => {
   it.each([
     'Rejected request',
     'Request rejected by user',
+    'sendTransaction failed: ACTION_REJECTED',
     new Error('Rejected request'),
     new Error('The wallet failed', { cause: 'User denied request' }),
   ])('recognizes cancellation wording without requiring an error object', (error) => {
@@ -150,9 +151,13 @@ describe('isUserRejectedError()', () => {
   });
 
   it('does not classify an RPC transaction rejection as a user cancellation', () => {
-    const error = new TransactionRejectedRpcError(new Error('node refused transaction'));
+    const errors = [
+      new TransactionRejectedRpcError(new Error('node refused transaction')),
+      new TransactionRejectedRpcError(new Error('Request rejected')),
+      { code: -32003, message: 'Request rejected' },
+    ];
 
-    expect(isUserRejectedError(error)).toBe(false);
+    for (const error of errors) expect(isUserRejectedError(error)).toBe(false);
   });
 });
 

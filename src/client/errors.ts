@@ -568,6 +568,7 @@ function hasUserRejectionText(value: string): boolean {
     normalized.includes('userdenied') ||
     normalized.includes('requestrejected') ||
     normalized.includes('rejectedrequest') ||
+    /(^|[^a-z0-9])action[_ -]?rejected(?:error)?($|[^a-z0-9])/i.test(value) ||
     normalized === 'actionrejected' ||
     normalized === 'actionrejectederror'
   );
@@ -591,6 +592,13 @@ export function isUserRejectedError(value: unknown): boolean {
       code?: unknown;
       cause?: unknown;
     };
+    if (
+      detail.code === -32003 ||
+      detail.code === '-32003' ||
+      detail.name === 'TransactionRejectedRpcError'
+    ) {
+      return false;
+    }
     if (detail.code === 4001 || detail.code === '4001' || detail.code === 'ACTION_REJECTED') {
       return true;
     }
