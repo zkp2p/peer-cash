@@ -546,6 +546,25 @@ describe('cashout()', () => {
     expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
+  it('rejects ambiguous singular and multi-currency payout input before wallet access', async () => {
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: {
+            platform: 'revolut',
+            currency: 'EUR',
+            currencies: ['GBP'],
+            payee: { offchainId: 'revtag' },
+          },
+        } as never,
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_PAYOUT_CURRENCIES' });
+    expect(signer.getChainId).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
   it('registers payee, ensures allowance, creates deposit, resolves composite id', async () => {
     mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
     mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({

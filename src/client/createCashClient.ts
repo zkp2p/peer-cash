@@ -506,6 +506,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
       (capability) => capability.platform === receive.platform,
     );
     if (!platform) throw errors.unsupportedPlatform(receive.platform);
+    if ((receive.currency === undefined) === (receive.currencies === undefined)) {
+      throw errors.invalidPayoutCurrencies(
+        receive.platform,
+        'pass exactly one of currency or currencies',
+      );
+    }
     const currencies =
       receive.currencies !== undefined ? [...receive.currencies] : [receive.currency];
     if (currencies.length === 0) {

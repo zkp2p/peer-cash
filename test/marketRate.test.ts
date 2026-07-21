@@ -127,6 +127,24 @@ describe('prepareCashDepositParams', () => {
     expect(client.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
+  it('rejects ambiguous singular and multi-currency payouts before registration', async () => {
+    const client = mockClient();
+    await expect(
+      prepareCashDepositParams(client, {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'revolut',
+            currency: 'EUR',
+            currencies: ['GBP'],
+            payeeData: { offchainId: 'revtag' },
+          } as never,
+        ],
+      }),
+    ).rejects.toThrow(/exactly one/);
+    expect(client.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
   it('rejects before any network call when a currency has no oracle feed', async () => {
     const client = mockClient();
     await expect(

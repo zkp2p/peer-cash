@@ -32,6 +32,9 @@ import {
 import type { CashDepositInput, CashPayout } from './types';
 
 function payoutCurrencies(payout: CashPayout): readonly CurrencyType[] {
+  if ((payout.currency === undefined) === (payout.currencies === undefined)) {
+    throw new Error('Pass exactly one of payout currency or currencies');
+  }
   return payout.currencies ?? [payout.currency];
 }
 
