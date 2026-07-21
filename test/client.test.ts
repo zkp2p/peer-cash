@@ -542,6 +542,7 @@ describe('cashout()', () => {
         { signer },
       ),
     ).rejects.toMatchObject({ code: 'INVALID_PAYOUT_CURRENCIES' });
+    expect(signer.getChainId).not.toHaveBeenCalled();
     expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
   });
 

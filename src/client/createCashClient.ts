@@ -946,9 +946,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
     },
 
     async cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult> {
+      const payoutInput = validatePayout(input);
       const client = await signingClient('cashout', opts);
       const owner = opts.signer.account!.address;
-      const payoutInput = validatePayout(input);
 
       let sourceResult: CashoutResult['source'];
       let cashoutAmount = input.amount;
