@@ -146,6 +146,7 @@ describe('isUserRejectedError()', () => {
     'sendTransaction failed: ACTION_REJECTED',
     new Error('Rejected request'),
     new Error('The wallet failed', { cause: 'User denied request' }),
+    new Error('User rejected the request', { cause: new Error('transport closed') }),
   ])('recognizes cancellation wording without requiring an error object', (error) => {
     expect(isUserRejectedError(error)).toBe(true);
   });
@@ -155,10 +156,21 @@ describe('isUserRejectedError()', () => {
       new TransactionRejectedRpcError(new Error('node refused transaction')),
       new TransactionRejectedRpcError(new Error('Request rejected')),
       { code: -32003, message: 'Request rejected' },
+      {
+        message: 'Transaction creation failed. Details: Request rejected',
+        cause: new TransactionRejectedRpcError(new Error('Request rejected')),
+      },
     ];
 
     for (const error of errors) expect(isUserRejectedError(error)).toBe(false);
   });
+
+  it.each([5000, '5000', { name: 'UserRejectedRequestError', message: 'Request failed' }])(
+    'recognizes viem and CAIP-25 user rejection identity',
+    (error) => {
+      expect(isUserRejectedError(typeof error === 'object' ? error : { code: error })).toBe(true);
+    },
+  );
 });
 
 beforeEach(() => {

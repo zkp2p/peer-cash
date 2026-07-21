@@ -577,12 +577,14 @@ function hasUserRejectionText(value: string): boolean {
 /** Detect EIP-1193 and viem wallet cancellations, including nested provider causes. */
 export function isUserRejectedError(value: unknown): boolean {
   const seen = new Set<unknown>();
+  const text: string[] = [];
   let current: unknown = value;
 
   while (current !== null && !seen.has(current)) {
     seen.add(current);
     if (typeof current === 'string') {
-      return hasUserRejectionText(current);
+      text.push(current);
+      break;
     }
     if (typeof current !== 'object' && typeof current !== 'function') return false;
 
@@ -599,15 +601,24 @@ export function isUserRejectedError(value: unknown): boolean {
     ) {
       return false;
     }
-    if (detail.code === 4001 || detail.code === '4001' || detail.code === 'ACTION_REJECTED') {
+    if (
+      detail.code === 4001 ||
+      detail.code === '4001' ||
+      detail.code === 5000 ||
+      detail.code === '5000' ||
+      detail.code === 'ACTION_REJECTED' ||
+      detail.name === 'UserRejectedRequestError'
+    ) {
       return true;
     }
-    const text = [detail.name, detail.message, detail.code].filter(
-      (part): part is string => typeof part === 'string',
+    text.push(
+      ...[detail.name, detail.message, detail.code].filter(
+        (part): part is string => typeof part === 'string',
+      ),
     );
-    if (text.some(hasUserRejectionText)) return true;
+    if (detail.cause === undefined) break;
     current = detail.cause;
   }
 
-  return false;
+  return text.some(hasUserRejectionText);
 }
