@@ -71,6 +71,20 @@ describe('tools manifest', () => {
     ]);
   });
 
+  it('offers mutually exclusive single and multi-currency cashout inputs', () => {
+    const cashout = cashTools.find((tool) => tool.name === 'cash_cashout');
+    const receive = (cashout?.inputSchema as { properties: { receive: Record<string, unknown> } })
+      .properties.receive;
+    const properties = receive['properties'] as Record<string, Record<string, unknown>>;
+
+    expect(properties['currencies']).toMatchObject({
+      type: 'array',
+      minItems: 1,
+      uniqueItems: true,
+    });
+    expect(receive['oneOf']).toEqual([{ required: ['currency'] }, { required: ['currencies'] }]);
+  });
+
   it('is JSON-serializable as-is', () => {
     expect(() => JSON.stringify(cashToolManifest)).not.toThrow();
     const parsed = JSON.parse(JSON.stringify(cashToolManifest));

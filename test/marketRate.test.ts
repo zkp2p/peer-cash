@@ -81,6 +81,104 @@ describe('prepareCashDepositParams', () => {
     expect(client.registerPayeeDetails).toHaveBeenCalledOnce();
   });
 
+  it('builds one payment method with multiple zero-spread currencies', async () => {
+    const client = mockClient();
+    const params = await prepareCashDepositParams(client, {
+      amount: 5_000_000n,
+      payouts: [
+        {
+          processorName: 'revolut',
+          currencies: ['EUR', 'GBP', 'USD'],
+          payeeData: { offchainId: 'revtag' },
+        },
+      ],
+    });
+
+    expect(params.processorNames).toEqual(['revolut']);
+    expect(params.conversionRates[0]?.map(({ currency }) => currency)).toEqual([
+      'EUR',
+      'GBP',
+      'USD',
+    ]);
+    expect(params.currenciesOverride?.[0]).toHaveLength(3);
+    expect(
+      params.currenciesOverride?.[0]?.map((currency) => currency.oracleRateConfig?.spreadBps),
+    ).toEqual([0, 0, 0]);
+    expect(client.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: ['revolut'],
+      payeeData: [{ offchainId: 'revtag' }],
+    });
+  });
+
+  it('rejects duplicate multi-currency payouts before registration', async () => {
+    const client = mockClient();
+    await expect(
+      prepareCashDepositParams(client, {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'revolut',
+            currencies: ['EUR', 'EUR'],
+            payeeData: { offchainId: 'revtag' },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/unique/);
+    expect(client.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous singular and multi-currency payouts before registration', async () => {
+    const client = mockClient();
+    await expect(
+      prepareCashDepositParams(client, {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'revolut',
+            currency: 'EUR',
+            currencies: ['GBP'],
+            payeeData: { offchainId: 'revtag' },
+          } as never,
+        ],
+      }),
+    ).rejects.toThrow(/exactly one/);
+    expect(client.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects currencies unsupported by the payment method before registration', async () => {
+    const client = mockClient();
+    await expect(
+      prepareCashDepositParams(client, {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'cashapp',
+            currencies: ['USD', 'EUR'],
+            payeeData: { offchainId: 'cashtag' },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/cashapp does not support EUR/);
+    expect(client.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it("uses the SDK resolver's case-insensitive processor names for catalog validation", async () => {
+    const client = mockClient();
+    await expect(
+      prepareCashDepositParams(client, {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'VENMO',
+            currency: 'USD',
+            payeeData: { offchainId: 'venmo-user' },
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ processorNames: ['VENMO'] });
+    expect(client.registerPayeeDetails).toHaveBeenCalledOnce();
+  });
+
   it('rejects before any network call when a currency has no oracle feed', async () => {
     const client = mockClient();
     await expect(

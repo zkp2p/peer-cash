@@ -29,7 +29,14 @@ import {
   MARKET_SPREAD_BPS,
   ORACLE_MIN_CONVERSION_RATE_SENTINEL,
 } from './constants';
-import type { CashDepositInput } from './types';
+import type { CashDepositInput, CashPayout } from './types';
+
+function payoutCurrencies(payout: CashPayout): readonly CurrencyType[] {
+  if ((payout.currency === undefined) === (payout.currencies === undefined)) {
+    throw new Error('Pass exactly one of payout currency or currencies');
+  }
+  return payout.currencies ?? [payout.currency];
+}
 
 /**
  * Whether a currency can be priced at the live market rate. Only currencies with
@@ -101,17 +108,34 @@ export async function prepareCashDepositParams(
   const runtimeEnv = client.runtimeEnv;
   const catalog = getPaymentMethodsCatalog(chainId, runtimeEnv);
   const intentGatingService = getGatingServiceAddress(chainId, runtimeEnv) as Address;
+  const processorNames = payouts.map((p) => p.processorName);
+  const paymentMethodsOverride = processorNames.map((name) =>
+    resolvePaymentMethodHashFromCatalog(name, catalog),
+  );
 
-  // Validate every currency is oracle-priceable before any network call.
+  // Validate every platform/currency pair is supported and oracle-priceable before any network call.
   for (const payout of payouts) {
-    if (!isMarketRateSupported(payout.currency, adapters)) {
-      throw new Error(
-        `${payout.currency} has no live market-rate oracle feed; Peer Cash supports market-rate currencies only.`,
-      );
+    const currencies = payoutCurrencies(payout);
+    if (currencies.length === 0 || new Set(currencies).size !== currencies.length) {
+      throw new Error('Payout currencies must be non-empty and unique');
+    }
+    const supportedCurrencyHashes = new Set(
+      (catalog[payout.processorName.toLowerCase()]?.currencies ?? []).map((hash) =>
+        hash.toLowerCase(),
+      ),
+    );
+    for (const currency of currencies) {
+      if (!isMarketRateSupported(currency, adapters)) {
+        throw new Error(
+          `${currency} has no live market-rate oracle feed; Peer Cash supports market-rate currencies only.`,
+        );
+      }
+      const currencyHash = currencyInfo[currency]?.currencyCodeHash;
+      if (!currencyHash || !supportedCurrencyHashes.has(currencyHash.toLowerCase())) {
+        throw new Error(`${payout.processorName} does not support ${currency}`);
+      }
     }
   }
-
-  const processorNames = payouts.map((p) => p.processorName);
 
   // Register payee details with the curator to obtain on-chain payee hashes.
   const { hashedOnchainIds } = await client.registerPayeeDetails({
@@ -122,27 +146,28 @@ export async function prepareCashDepositParams(
     throw new Error('Payee registration returned an unexpected number of hashes');
   }
 
-  const paymentMethodsOverride = processorNames.map((name) =>
-    resolvePaymentMethodHashFromCatalog(name, catalog),
-  );
-
   const paymentMethodDataOverride: DepositVerifierData[] = hashedOnchainIds.map((hid) => ({
     intentGatingService,
     payeeDetails: hid,
     data: '0x',
   }));
 
-  const currenciesOverride: OnchainCurrency[][] = payouts.map((p) => {
-    const tuple = buildMarketRateCurrencyOverride(p.currency, adapters);
-    if (!tuple) throw new Error(`Failed to build market-rate config for ${p.currency}`);
-    return [tuple];
-  });
+  const currenciesOverride: OnchainCurrency[][] = payouts.map((payout) =>
+    payoutCurrencies(payout).map((currency) => {
+      const tuple = buildMarketRateCurrencyOverride(currency, adapters);
+      if (!tuple) throw new Error(`Failed to build market-rate config for ${currency}`);
+      return tuple;
+    }),
+  );
 
   // `conversionRates` is required for the length/shape check but is unused in
   // override mode - the on-chain tuple comes from `currenciesOverride`.
-  const conversionRates = payouts.map((p) => [
-    { currency: p.currency, conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString() },
-  ]);
+  const conversionRates = payouts.map((payout) =>
+    payoutCurrencies(payout).map((currency) => ({
+      currency,
+      conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString(),
+    })),
+  );
 
   const intentAmountRange = input.intentAmountRange ?? buildIntentAmountRange(input.amount);
 

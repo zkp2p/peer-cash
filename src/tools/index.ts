@@ -164,6 +164,13 @@ const builtInCashTools = [
               description: 'Platform id from cash_capabilities, e.g. "venmo"',
             },
             currency: { type: 'string', description: 'Fiat currency code, e.g. "USD"' },
+            currencies: {
+              type: 'array',
+              minItems: 1,
+              uniqueItems: true,
+              items: { type: 'string' },
+              description: 'Fiat currency choices for one payment method, e.g. ["EUR", "GBP"]',
+            },
             payee: {
               description: 'Raw payee handle or structured curator payee data',
               oneOf: [
@@ -186,7 +193,8 @@ const builtInCashTools = [
               ],
             },
           },
-          required: ['platform', 'currency', 'payee'],
+          required: ['platform', 'payee'],
+          oneOf: [{ required: ['currency'] }, { required: ['currencies'] }],
           additionalProperties: false,
         },
       },
