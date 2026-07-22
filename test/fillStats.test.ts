@@ -14,6 +14,8 @@ const hashes = Object.fromEntries(
   Object.entries(catalog).map(([method, entry]) => [method, entry.paymentMethodHash]),
 ) as Record<string, string>;
 const USD_HASH = currencyInfo['USD']!.currencyCodeHash;
+const EUR_HASH = currencyInfo['EUR']!.currencyCodeHash;
+const GBP_HASH = currencyInfo['GBP']!.currencyCodeHash;
 
 type Fill = {
   method: string;
@@ -42,8 +44,8 @@ describe('computeFillStats', () => {
         { paymentMethodHash: hashes['revolut'] },
       ],
       currencies: [
-        { paymentMethodHash: hashes['venmo'], currencyCode: USD_HASH },
-        { paymentMethodHash: hashes['revolut'], currencyCode: USD_HASH },
+        { paymentMethodHash: hashes['venmo']!, currencyCode: USD_HASH },
+        { paymentMethodHash: hashes['revolut']!, currencyCode: USD_HASH },
       ],
     };
 
@@ -115,6 +117,35 @@ describe('computeFillStats', () => {
     );
 
     expect(stats['revolut:EUR']).toEqual({ fills: 3, medianFillSeconds: 200 });
+  });
+
+  it('calculates first-fill time across an exact multi-currency set', () => {
+    const offeredCurrencies = [USD_HASH, EUR_HASH, GBP_HASH].map((currencyCode) => ({
+      paymentMethodHash: hashes['revolut']!,
+      currencyCode,
+    }));
+    const stats = computeFillStats(
+      [
+        {
+          ...deposit(CREATED, [
+            { method: 'revolut', currency: 'EUR', at: CREATED + 300 },
+            { method: 'revolut', currency: 'USD', at: CREATED + 100 },
+          ]),
+          currencies: offeredCurrencies,
+        },
+        {
+          ...deposit(CREATED, [{ method: 'revolut', currency: 'GBP', at: CREATED + 500 }]),
+          currencies: offeredCurrencies,
+        },
+      ],
+      NOW,
+      'staging',
+    );
+
+    expect(stats['revolut:EUR+GBP+USD']).toEqual({
+      fills: 3,
+      medianFillSeconds: 300,
+    });
   });
 
   it('includes the exact window boundary and omits latency for older deposits', () => {

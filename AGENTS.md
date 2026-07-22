@@ -59,8 +59,9 @@ const est = await cash.estimate({ amount: usdc(500), currency: 'EUR' });
 // Progressive UI: do not let indexer-backed history hold up the oracle rate.
 const rateOnly = await cash.estimate({ amount: usdc(500), currency: 'EUR' }, { includeEta: false });
 
-// Optional: raw demand + speed evidence per offered platform:currency pair.
+// Optional: raw demand + speed evidence per offered pair or sorted currency set.
 const stats = await cash.fillStats();
+console.log(stats['revolut:EUR+GBP+USD']);
 
 // 3. Execute.
 const { depositId } = await cash.cashout(

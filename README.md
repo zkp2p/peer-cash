@@ -39,7 +39,9 @@ const rateOnly = await cash.estimate(
   { amount: usdc(1000), currency: 'USD' },
   { includeEta: false },
 );
-const pairStats = (await cash.fillStats())['venmo:USD'];
+const fillStats = await cash.fillStats();
+const pairStats = fillStats['venmo:USD'];
+const multiCurrencyStats = fillStats['revolut:EUR+GBP+USD'];
 
 const { depositId } = await cash.cashout(
   {
@@ -97,7 +99,7 @@ console.log(source?.transactions?.origin, source?.transactions?.destination);
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
 | `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
-| `fillStats()`                                                  | Cached 30-day fill counts and median first-fill time per exact `platform:currency` pair                                         |
+| `fillStats()`                                                  | Cached 30-day fill counts and median first-fill time per exact `platform:currency` pair or sorted multi-currency set            |
 | `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
@@ -235,7 +237,9 @@ awaiting-buyer ──────────► matched ───────�
   by the same rolling 30-day, intent-attributed pair sampler as `fillStats()`,
   measured from deposit creation to the first fulfilled fill through the pair.
   The raw snapshot is cached for 15 minutes per client and each ETA is still
-  resolved from its exact normalized `platform:currency` key. Use
+  resolved from its exact normalized `platform:currency` key. Multi-currency
+  deposits also produce sorted keys such as `revolut:EUR+GBP+USD`, measured to
+  the first fill in any offered currency. Use
   `{ includeEta: false }` when rate and receive amount should render first.
 - **Availability thresholds belong to the consumer.** `fillStats()` returns raw
   evidence. A recommended gate is `fills >= 10 && medianFillSeconds <= 48h`.
