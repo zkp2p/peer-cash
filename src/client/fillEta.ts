@@ -97,8 +97,9 @@ function etaLabel(seconds: number | undefined): string {
 
 /**
  * Compute raw demand and speed evidence from already-fetched indexer deposits.
- * Fills are attributed only from each intent's own payment method and currency;
- * a deposit's advertised method set is deliberately ignored.
+ * Pair fills are attributed from each intent's own payment method and currency.
+ * Multi-currency set keys come from the deposit's advertised currencies and
+ * count only fulfilled intents within that exact set.
  */
 function computeFillStatsSample(
   deposits: readonly FillStatsDepositLike[],
