@@ -272,10 +272,11 @@ export interface CashClient {
   /** 0b - Discovery with live Relay-supported EVM source chains/tokens. */
   capabilities(options: { includeRelaySources: true }): Promise<CashCapabilities>;
   /**
-   * 0c - Raw 30-day demand and first-fill speed evidence keyed by
-   * `platform:currency`. A recommended consumer gate is `fills >= 10 &&
-   * medianFillSeconds <= 48h`; fail open to the full capability catalog when
-   * stats are unavailable or the gate would remove every pair.
+   * 0c - Raw 30-day demand and first-fill speed evidence keyed by an exact
+   * `platform:currency` pair or sorted multi-currency set. A recommended
+   * consumer gate is `fills >= 10 && medianFillSeconds <= 48h`; fail open to
+   * the full capability catalog when stats are unavailable or the gate would
+   * remove every pair.
    */
   fillStats(): Promise<CashFillStats>;
   /** Relay-only source discovery helper. */

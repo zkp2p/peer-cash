@@ -22,10 +22,11 @@ Key facts:
   resolves at fill time. ETA is `{ seconds, label }` from the same rolling
   30-day, intent-attributed pair sampler as fillStats(), not a guarantee.
 - fillStats() returns raw `{ fills, medianFillSeconds? }` evidence keyed by
-  `platform:currency`. Recommended consumer gate: fills >= 10 and median <=
-  48h; fail open to capabilities() if unavailable or filtering empties it.
-  Its raw environment snapshot is cached for 15 minutes, while lookups remain
-  exact to the normalized platform:currency pair.
+  `platform:currency` or a sorted set such as `revolut:EUR+GBP+USD`. Set
+  medians measure time to the first fill in any offered currency. Recommended
+  consumer gate: fills >= 10 and median <= 48h; fail open to capabilities() if
+  unavailable or filtering empties it. Its raw environment snapshot is cached
+  for 15 minutes.
 - Progressive UIs can call estimate(input, { includeEta: false }) so the
   oracle rate is not blocked by indexer history, then load the exact pair from
   fillStats() separately.
