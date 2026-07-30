@@ -71,11 +71,11 @@ Deprecated or archived context:
 
 | Repo                                                   | Role                                                                                                                                                                            | Upstream inputs                                                                                                                                      | Downstream consumers                                                                                                                                          |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zkp2p-contracts`                                      | Public contracts package, ABIs, addresses, constants, payment-method catalogs, deployment metadata; OrchestratorV3 is currently staging-only.                                   | Solidity/deploy changes.                                                                                                                             | `attestation-service`, `zkp2p-indexer`, `curator`, `zkp2p-clients`, `pay`, `zkp2p-mobile`, `notification-server`. Skip PRs here unless explicitly requested.  |
+| `zkp2p-contracts`                                      | Package, ABIs, addresses, and deployments; V2 guardian/group/policy is live on production and staging, while V3 is staging-only.                                                   | Solidity/deploy changes.                                                                                                                             | `attestation-service`, `zkp2p-indexer`, `curator`, `zkp2p-clients`, `pay`, `zkp2p-mobile`, `notification-server`. Skip PRs here unless explicitly requested.  |
 | `attestation-service`                                  | Verifies payment proofs, signs EIP-712 attestations, owns buyer TEE and seller credential attestation surfaces, publishes `@zkp2p/zkp2p-attestation`.                           | `@zkp2p/contracts-v2`, payment app behavior, Curator provider templates, Nitro deployment config.                                                    | `curator`, `zkp2p-clients` SDK/extension/web, `pay`, `zkp2p-mobile` embedded RN SDK/app.                                                                      |
-| `zkp2p-indexer`                                        | Envio event ingestion, GraphQL entities, webhook/event payloads, and published `@zkp2p/indexer-schema`.                                                                         | `@zkp2p/contracts-v2`, contract events, deployment config.                                                                                           | `curator`, `zkp2p-clients`, `pay` analytics/admin flows, `notification-server`, `zkp2p-indexer-proxy`, support bot, CLIs/SDK products, and active dashboards. |
-| `curator`                                              | Quotes, maker/taker APIs, deployment-gated `/v3` quote/orderbook/tier/signing, seller verification, credential store, provider hosting at `/providers` and `/providers/mobile`. | `@zkp2p/indexer-schema`, `@zkp2p/contracts-v2`, `@zkp2p/zkp2p-attestation`, attestation-service behavior, payment app/provider behavior.             | `zkp2p-clients`, `pay`, `zkp2p-mobile`, `notification-server`, PeerHQ/admin tools, support/admin workflows.                                                   |
-| `zkp2p-clients`                                        | Web app, browser extension, developer portal, public docs, support center, public `@zkp2p/sdk`, `@zkp2p/core`, and React hooks.                                                 | Contracts, indexer schema, curator APIs/provider templates, attestation-service routes/package, user-visible product behavior.                       | Web users, extension, developer tooling, docs/support readers, `pay`, `zkp2p-mobile` embedded RN SDK via `@zkp2p/sdk`, external SDK consumers.                |
+| `zkp2p-indexer`                                        | Envio events/GraphQL, guardian/group/policy bindings and projections, and `@zkp2p/indexer-schema`.                                                                               | `@zkp2p/contracts-v2`, contract events, deployment config.                                                                                           | `curator`, `zkp2p-clients`, `pay` analytics/admin flows, `notification-server`, `zkp2p-indexer-proxy`, support bot, CLIs/SDK products, and active dashboards. |
+| `curator`                                              | APIs including authenticated `/v2/relay/quote` and deployment-gated `/v3`; credentials and provider hosting.                                                              | `@zkp2p/indexer-schema`, `@zkp2p/contracts-v2`, `@zkp2p/zkp2p-attestation`, attestation-service behavior, payment app/provider behavior.             | `zkp2p-clients`, `pay`, `zkp2p-mobile`, `notification-server`, PeerHQ/admin tools, support/admin workflows.                                                   |
+| `zkp2p-clients`                                        | Web app, browser extension, developer portal, public docs, support center, public `@zkp2p/sdk`, `@zkp2p/core`, React hooks, and group/access-policy state APIs that are not yet admission enforcement. | Contracts, indexer schema, curator APIs/provider templates, attestation-service routes/package, user-visible product behavior.                       | Web users, extension, developer tooling, docs/support readers, `pay`, `zkp2p-mobile` embedded RN SDK via `@zkp2p/sdk`, external SDK consumers.                |
 | `pay`                                                  | Merchant checkout/API surfaces using curator, attestation-service, and `@zkp2p/sdk`.                                                                                            | `@zkp2p/sdk`, curator APIs, attestation-service verification shape, contracts.                                                                       | Merchants, checkout users, support workflows.                                                                                                                 |
 | `zkp2p-mobile`                                         | Peer mobile app plus active `packages/zkp2p-react-native-sdk` workspace for mobile proof capture, attestation helpers, and SDK wrapping.                                        | Embedded RN SDK package, `@zkp2p/sdk`, `@zkp2p/zkp2p-attestation`, contracts, curator `/providers/mobile` and APIs, attestation-service URL/routing. | App releases, mobile users, published mobile SDK package when released from this monorepo.                                                                    |
 | `notification-server`                                  | Push notification service consuming indexer and Curator webhooks, indexer GraphQL quote data, and contract metadata; owns notification preferences and delivery APIs.           | Indexer webhook payloads/schema and GraphQL, Curator notification events, `@zkp2p/contracts-v2`.                                                     | `zkp2p-mobile`, web notification consumers, and notification/support workflows.                                                                               |
@@ -86,8 +86,8 @@ Deprecated or archived context:
 | `zkp2p-clients/clients/docs`                           | Public developer/protocol docs workspace.                                                                                                                                       | SDK, contracts, attestation, provider, Pay/offramp, and mobile SDK behavior.                                                                         | External developers, integrators, agent/LLM docs. Update in the same clients PR when affected.                                                                |
 | `peer-cash`                                            | Public-facing cash-out SDK/facade over `@zkp2p/sdk`.                                                                                                                            | `@zkp2p/sdk`, curator payee registration, indexer deposit/intent aggregates, identity-attestation requirements, payment methods.                     | Cash-out integrators and React/Node SDK users.                                                                                                                |
 | `peer-cli`                                             | CLI/MCP surface over `@zkp2p/sdk`, ProtocolViewer, indexer reads, curator payee registration, and proof/attestation fulfillment commands.                                       | `@zkp2p/sdk`, indexer schema/root fields, curator registration behavior, attestation fulfillment shape, contract/payment method catalogs.            | Internal and external CLI users, docs, MCP tools.                                                                                                             |
-| `PeerHQ-Admin`                                         | Private control-plane dashboard that mirrors Curator Prisma schema and reads indexer payout/tier state.                                                                         | Curator DB schema/migrations, Curator runtime config semantics, indexer GraphQL payout/tier queries.                                                 | Ops/admin users; sometimes paired Curator PRs are required first.                                                                                             |
-| `protocol-dashboard`, `SAR-dashboard`, `arm-dashboard` | Active private operational dashboards.                                                                                                                                          | Curator APIs/DB mirrors, indexer GraphQL fields, attestation/relayer semantics, contract addresses, env names.                                       | Protocol, SAR, and ARM/feed operators.                                                                                                                        |
+| `PeerHQ-Admin`                                         | Curator-schema admin plus consolidated protocol, ARM, and SAR analytics.                                                                                                            | Curator DB/schema, indexer queries, attestation/Pay enrichment, contract and feed state.                                                             | Ops/admin users; sometimes paired Curator PRs are required first.                                                                                             |
+| `protocol-dashboard`, `SAR-dashboard`, `arm-dashboard` | Standalone ops dashboards; SAR/ARM stay active until separately authorized retirement.                                                                                          | Curator APIs/DB mirrors, indexer GraphQL fields, attestation/relayer semantics, contract addresses, env names.                                       | Protocol, SAR, and ARM/feed operators.                                                                                                                        |
 | `zkp2p-relayer`                                        | Shared OpenZeppelin Relayer configuration for Pay and Curator transaction submission.                                                                                           | Contract addresses/whitelists, signer/relayer IDs, chain env, Pay/Curator transaction flow.                                                          | Pay signal/fulfill relays and Curator guardian operations.                                                                                                    |
 
 ## Trigger Matrix
@@ -108,19 +108,22 @@ Treat these as downstream-impact triggers:
   attestation responses, proof resubmission, payment matching, or support/debug
   tooling can observe the changed shape.
 - Contract package, deployment address, ABI, event, payment method, verifier,
-  hook or policy, fee, or oracle changes: inspect `zkp2p-indexer`, attestation-service
+  guardian, address group, whitelist/access policy, hook, fee, or oracle
+  changes: inspect `zkp2p-indexer`, attestation-service
   contract resolution, curator contract usage, SDK/core, pay, mobile embedded
   SDK/app, `peer-cash`, `peer-cli`, `zkp2p-relayer` when relayer whitelists or
   signer flows are affected, and `notification-server` when events, webhooks,
   or address matching are affected.
-- Indexer entity, GraphQL schema, enum, webhook event, field naming, or
-  published `@zkp2p/indexer-schema` changes: inspect curator typed consumers,
+- Indexer entity, GraphQL schema, enum, webhook event, contract binding,
+  access-policy projection, field naming, or published
+  `@zkp2p/indexer-schema` changes: inspect curator typed consumers,
   clients SDK/core/indexer queries, pay/admin analytics, `notification-server`,
   `zkp2p-indexer-proxy` fixtures/query assumptions, `zkp2p-support-bot`,
   `peer-cash`, `peer-cli`, active miniapps, PeerHQ/admin
   dashboards, and other dashboards that read those fields.
-- Curator API request/response/status/auth/quote/orderbook/tier/signing/verify/
-  provider, deployment-guard, or notification webhook changes:
+- Curator API request/response/status/auth/quote, including authenticated Relay
+  deposit quotes, orderbook/tier/signing/verify/provider, deployment-guard, or
+  notification webhook changes:
   inspect `zkp2p-clients`, `pay`, `zkp2p-mobile`, `peer-cash`, `peer-cli`,
   active miniapps, PeerHQ/admin dashboards, `notification-server`,
   `zkp2p-support-bot`, `clients/support`, and `clients/docs`
@@ -129,7 +132,8 @@ Treat these as downstream-impact triggers:
   field, delivery API, deep link, or alert semantics changes: inspect
   `notification-server`, the producing owner, `zkp2p-mobile`, web consumers,
   and affected support or ops tooling.
-- SDK exports, package versions, or runtime URL/routing defaults: inspect
+- SDK exports, group/access-policy APIs, package versions, or runtime
+  URL/routing defaults: inspect
   `pay`, `zkp2p-mobile`, `peer-cash`, `peer-cli`, `zkp2p-support-bot`,
   extension/web callers, external SDK docs, and mobile's embedded RN SDK if the
   mobile runtime wraps or re-exports the changed surface.
@@ -175,7 +179,8 @@ Treat these as downstream-impact triggers:
 
 6. If approved or explicitly requested, create focused downstream PRs in
    topological order: upstream package/schema/API first, consumers second.
-7. Link every downstream PR to its upstream PR and call out publish/deploy order.
+7. Link PRs, call out publish/deploy order, and follow the producer's
+   `NPM_RELEASE.md` workflow.
 
 ## Impact Report Template
 
@@ -226,7 +231,8 @@ Stack impact:
   behavior change.
 - Create PRs for active dashboards (`protocol-dashboard`, `SAR-dashboard`, and
   `arm-dashboard`) only when their concrete Curator, indexer, attestation,
-  relayer, or contract inputs change.
+  relayer, or contract inputs change. PeerHQ consolidation alone does not
+  retire the standalone deployments.
 - Create PRs for `zkp2p-relayer` when contract whitelist addresses, relayer IDs,
   signer flow, chain env, or Pay/Curator transaction submission semantics
   change. Do not mutate live relayer config without explicit approval.
