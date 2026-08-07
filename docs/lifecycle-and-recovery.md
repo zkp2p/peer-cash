@@ -197,7 +197,9 @@ receipts.
 Orders also carry their `payouts` legs reconstructed from the chain -
 platform, currency, payee hash, and a pricing proof (`spreadBps: 0`,
 `kind: 'oracle_chainlink'`, `marketRate: true`): the zero-spread claim is a
-queryable fact, not marketing copy.
+queryable fact, not marketing copy. An order created with several payout
+platforms (`receive` as an array of legs) surfaces one entry per
+platform-currency pair, every one of them at the zero-spread oracle rate.
 
 Reconstruction is fail-closed: every payment method on the indexed deposit
 must resolve through the active SDK catalog, and the result must be exactly
@@ -286,6 +288,7 @@ explicit override.
 | `AMOUNT_BELOW_MINIMUM`                  | no        | Amount is below the $0.01 hard floor. The recommended minimum is 1 USDC.                                                                     |
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Min/max is non-positive, inverted, or exceeds the deposit. Correct the range.                                                                |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | The currency set is empty or contains duplicates. Pass a non-empty unique set from `capabilities()`.                                         |
+| `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation. Register it through Peer first; an existing registration can be reused.                        |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |

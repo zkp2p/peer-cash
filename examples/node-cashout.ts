@@ -23,6 +23,8 @@ import type { CurrencyType } from '@zkp2p/cash';
 const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
 const signer = createWalletClient({ account, chain: base, transport: http() });
 
+// One leg here; `receive` also accepts an array of legs to offer several
+// platforms on one order (each platform at most once, all at the oracle rate).
 const receive = {
   platform: process.env.CASH_PLATFORM ?? 'venmo',
   currency: (process.env.CASH_CURRENCY ?? 'USD') as CurrencyType,

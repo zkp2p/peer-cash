@@ -205,6 +205,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `AMOUNT_BELOW_MINIMUM`                  | no        | Raise amount (hard floor $0.01, recommended at least 1 USDC)                               |
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount                       |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | Pass one or more unique currencies listed for the platform                                 |
+| `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                         |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | Register a new Wise/PayPal payee through Peer; an existing registered handle can be reused |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |
