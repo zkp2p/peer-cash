@@ -323,6 +323,7 @@ describe('prepared tx + result codecs', () => {
         { kind: 'createDeposit' as const, description: 'Create the order.' },
       ],
       register: { hashedOnchainIds: ['0x1'] },
+      accessPolicyRequired: true,
     };
     expect(prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(result))))).toEqual(
       result,
@@ -336,6 +337,7 @@ describe('prepared tx + result codecs', () => {
       escrowAddress: '0xescrow',
       onchainDepositId: 1n,
       order,
+      accessPolicyTxHash: '0xaccess' as const,
       source: {
         amount: 1_000_000n,
         requestId: 'relay-request',
@@ -349,6 +351,7 @@ describe('prepared tx + result codecs', () => {
     const restored = cashoutResultFromJson(JSON.parse(JSON.stringify(cashoutResultToJson(result))));
     expect(restored.onchainDepositId).toBe(1n);
     expect(restored.source?.amount).toBe(1_000_000n);
+    expect(restored.accessPolicyTxHash).toBe('0xaccess');
     expect(restored.source?.transactions).toEqual(result.source.transactions);
     expect(restored.order.state).toBe(order.state);
     expect(restored.order.explain()).toBe(order.explain());
@@ -428,6 +431,19 @@ describe('CashError codec', () => {
     const restored = cashErrorFromJson(JSON.parse(JSON.stringify(cashErrorToJson(error))));
 
     expect(isCashError(restored)).toBe(true);
+    expect(restored.toJSON()).toEqual(error.toJSON());
+  });
+
+  it('round-trips required access-policy recovery without losing the deposit', () => {
+    const error = errors.accessPolicyConfigurationFailed(
+      '0xescrow_7',
+      ['0xplus', '0xpro', '0xmakers', '0xpeerpay'],
+      new Error('receipt unavailable'),
+      '0xpolicy',
+    );
+
+    const restored = cashErrorFromJson(cashErrorToJson(error));
+
     expect(restored.toJSON()).toEqual(error.toJSON());
   });
 

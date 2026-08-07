@@ -267,6 +267,7 @@ export const cashoutResultJsonSchema = z.object({
   escrowAddress: z.string(),
   onchainDepositId: nonNegativeBigintString,
   order: cashOrderJsonSchema,
+  accessPolicyTxHash: z.string().optional(),
   source: z
     .object({
       amount: nonNegativeBigintString,
@@ -281,6 +282,7 @@ export const prepareResultJsonSchema = z.object({
   txs: z.array(preparedTransactionJsonSchema),
   steps: z.array(cashPreparedStepJsonSchema),
   register: z.object({ hashedOnchainIds: z.array(z.string()) }),
+  accessPolicyRequired: z.boolean(),
 });
 
 export const withdrawResultJsonSchema = z.object({
@@ -365,6 +367,7 @@ const CASH_ERROR_CODES = defineCashErrorCodes([
   'SOURCE_CASHOUT_SUBMISSION_UNKNOWN',
   'SOURCE_CASHOUT_STATUS_UNKNOWN',
   'DEPOSIT_RESOLUTION_FAILED',
+  'ACCESS_POLICY_CONFIGURATION_FAILED',
   'ALLOWANCE_NOT_VISIBLE',
   'SIGNER_REQUIRED',
   'SIGNER_CHAIN_MISMATCH',
@@ -423,6 +426,14 @@ export const cashErrorRecoveryJsonSchema = z.discriminatedUnion('kind', [
       kind: z.literal('inspect-base-transaction'),
       transactionHash: z.string(),
       operation: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('configure-cashout-access-policy'),
+      depositId: z.string(),
+      groupIds: z.array(z.string()),
+      transactionHash: z.string().optional(),
     })
     .strict(),
 ]);

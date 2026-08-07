@@ -64,6 +64,10 @@ but the host or a signer-backed client must execute the route before
 `cash_cashout` prepares the Base-USDC order. Once the prepared `createDeposit`
 transaction confirms, call `finalizePreparedCashout(receipt)` to decode it with
 the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
+When `prepare()` returned `accessPolicyRequired: true`, submit and confirm
+`prepareAccessPolicy(depositId)` before treating the cash-out as complete. It
+attaches Plus, Pro, Peer Makers, and Peer Pay using the selected environment's
+canonical registry IDs.
 
 There is no static chain/token allowlist in Peer Cash. Relay decides source
 support through its metadata and quote execution, filtered to the viem/EVM
@@ -308,6 +312,7 @@ explicit override.
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.             |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                              |
 | `DEPOSIT_RESOLUTION_FAILED`             | no        | Base tx succeeded but no `DepositReceived` was decoded. Inspect its logs and recover the composite id.                                       |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | The cash-out exists, but its required four-group policy was not confirmed. Use `recovery.depositId` and `groupIds`; never create it again.   |
 | `INVALID_DEPOSIT_ID`                    | no        | The id is not `escrowAddress_onchainId`. A bare number cannot cold-hydrate; use the value returned by `cashout()`.                           |
 | `ORDER_NOT_FOUND`                       | yes       | Unknown id or immediate indexer lag. Verify the id and retry shortly after creation.                                                         |
 | `INDEXER_LAG`                           | yes       | Indexer trails the chain. Retry the read shortly.                                                                                            |

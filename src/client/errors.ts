@@ -35,6 +35,7 @@ export type CashErrorCode =
   | 'SOURCE_CASHOUT_SUBMISSION_UNKNOWN'
   | 'SOURCE_CASHOUT_STATUS_UNKNOWN'
   | 'DEPOSIT_RESOLUTION_FAILED'
+  | 'ACCESS_POLICY_CONFIGURATION_FAILED'
   | 'ALLOWANCE_NOT_VISIBLE'
   | 'SIGNER_REQUIRED'
   | 'SIGNER_CHAIN_MISMATCH'
@@ -90,6 +91,12 @@ export type CashErrorRecovery =
       kind: 'inspect-base-transaction';
       transactionHash: string;
       operation: string;
+    }
+  | {
+      kind: 'configure-cashout-access-policy';
+      depositId: string;
+      groupIds: string[];
+      transactionHash?: string;
     };
 
 export class CashError extends Error implements CashErrorShape {
@@ -542,6 +549,27 @@ export const errors = {
           kind: 'inspect-base-transaction',
           transactionHash: txHash,
           operation,
+        },
+      },
+      { cause },
+    ),
+  accessPolicyConfigurationFailed: (
+    depositId: string,
+    groupIds: readonly string[],
+    cause?: unknown,
+    transactionHash?: string,
+  ) =>
+    new CashError(
+      {
+        code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
+        message: `Cash-out deposit ${depositId} was created, but its required access policy was not confirmed.`,
+        retryable: false,
+        remediation: `Do not call cashout() again. Inspect the existing deposit and any access-policy transaction, then configure that deposit with recovery.groupIds through @zkp2p/sdk accessPolicy.`,
+        recovery: {
+          kind: 'configure-cashout-access-policy',
+          depositId,
+          groupIds: [...groupIds],
+          ...(transactionHash ? { transactionHash } : {}),
         },
       },
       { cause },

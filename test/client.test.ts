@@ -32,6 +32,9 @@ const mockInstance = {
   registerPayeeDetails: vi.fn(),
   createDeposit: vi.fn(),
   prepareCreateDeposit: vi.fn(),
+  accessPolicy: {
+    prepareConfigureDeposit: vi.fn(),
+  },
   ensureAllowance: vi.fn(),
   withdrawDeposit: Object.assign(vi.fn(), { prepare: vi.fn() }),
   pruneExpiredIntents: Object.assign(vi.fn(), { prepare: vi.fn() }),
@@ -63,7 +66,7 @@ import {
   toCashReferralAttributionCode,
 } from '../src/client/createCashClient';
 import { isCashError, isUserRejectedError } from '../src/client/errors';
-import { BASE_USDC_ADDRESS } from '../src/engine/constants';
+import { BASE_USDC_ADDRESS, CASH_ACCESS_GROUP_IDS } from '../src/engine/constants';
 
 const NOW = Math.floor(Date.now() / 1000);
 const ESCROW = '0x1111111111111111111111111111111111111111';
@@ -109,6 +112,7 @@ const signer = {
   account: { address: '0xmaker' },
   chain: { id: 8453 },
   getChainId: vi.fn(async () => 8453),
+  sendTransaction: vi.fn(async () => '0xaccess'),
 } as unknown as WalletClient;
 const sourceSigner = {
   account: { address: '0xmaker' },
@@ -193,6 +197,13 @@ beforeEach(() => {
     hashedOnchainIds: ['0xpayeehash'],
   });
   mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: true });
+  mockInstance.accessPolicy.prepareConfigureDeposit.mockReturnValue({
+    to: '0x3333333333333333333333333333333333333333',
+    data: '0xaccess',
+    value: 0n,
+    chainId: 8453,
+  });
+  vi.mocked(signer.sendTransaction).mockResolvedValue('0xaccess');
 });
 
 describe('environment routing', () => {
@@ -753,7 +764,78 @@ describe('cashout()', () => {
     expect(result.depositId).toBe(`${ESCROW}_5`);
     expect(result.onchainDepositId).toBe(5n);
     expect(result.txHash).toBe('0xhash');
+    expect(result.accessPolicyTxHash).toBe('0xaccess');
     expect(result.order.state).toBe('awaiting-buyer');
+  });
+
+  it.each(['venmo', 'cashapp', 'paypal'])(
+    'attaches %s cash-outs to Plus, Pro, Peer Makers, and Peer Pay',
+    async (platform) => {
+      mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+        status: 'success',
+        logs: [depositReceivedLog(5n)],
+      });
+
+      const result = await client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: {
+            platform,
+            currency: 'USD',
+            payee: { offchainId: platform === 'paypal' ? 'seller@example.com' : '@seller' },
+          },
+        },
+        { signer },
+      );
+
+      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
+        escrow: ESCROW,
+        depositId: 5n,
+        enabled: true,
+        groupIds: CASH_ACCESS_GROUP_IDS.staging,
+        takers: [],
+        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
+      });
+      expect(signer.sendTransaction).toHaveBeenCalledWith({
+        account: signer.account,
+        chain: signer.chain,
+        to: '0x3333333333333333333333333333333333333333',
+        data: '0xaccess',
+        value: 0n,
+      });
+      expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenLastCalledWith({
+        hash: '0xaccess',
+      });
+      expect(result.accessPolicyTxHash).toBe('0xaccess');
+    },
+  );
+
+  it('reports the existing deposit when required access configuration fails', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+    vi.mocked(signer.sendTransaction).mockRejectedValueOnce(new Error('User rejected request'));
+
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@seller' } },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({
+      code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
+      retryable: false,
+      recovery: {
+        kind: 'configure-cashout-access-policy',
+        depositId: `${ESCROW}_5`,
+        groupIds: CASH_ACCESS_GROUP_IDS.staging,
+      },
+    });
   });
 
   it('creates a signed Zelle cashout with only the generic method', async () => {
@@ -792,6 +874,7 @@ describe('cashout()', () => {
         ),
       }),
     );
+    expect(mockInstance.accessPolicy.prepareConfigureDeposit).not.toHaveBeenCalled();
   });
 
   it('does not invite duplicate Base cashouts when submission returns no hash', async () => {
@@ -1865,7 +1948,7 @@ describe('prepare()', () => {
       prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
     });
 
-    const { txs, steps, register } = await client().prepare({
+    const { txs, steps, register, accessPolicyRequired } = await client().prepare({
       amount: 5_000_000n,
       receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
     });
@@ -1876,6 +1959,7 @@ describe('prepare()', () => {
     expect(txs[0]?.data.startsWith('0x095ea7b3')).toBe(true); // approve selector
     expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xdeposit' });
     expect(register.hashedOnchainIds).toEqual(['0xpayeehash']);
+    expect(accessPolicyRequired).toBe(true);
     // No signing surface touched.
     expect(mockInstance.createDeposit).not.toHaveBeenCalled();
     expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
@@ -1911,6 +1995,7 @@ describe('prepare()', () => {
       }),
     );
     expect(result.register.hashedOnchainIds).toEqual(payeeHashes);
+    expect(result.accessPolicyRequired).toBe(false);
   });
 
   it('rejects Relay source routing because prepare cannot execute the bridge pre-step', async () => {
@@ -2010,6 +2095,38 @@ describe('finalizePreparedCashout()', () => {
       }),
     );
   });
+});
+
+describe('prepareAccessPolicy()', () => {
+  it('prepares the canonical four-group policy for an externally created cash-out', () => {
+    const prepared = client().prepareAccessPolicy(DEPOSIT_ID);
+
+    expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
+      escrow: ESCROW,
+      depositId: 5n,
+      enabled: true,
+      groupIds: CASH_ACCESS_GROUP_IDS.staging,
+      takers: [],
+      txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
+    });
+    expect(prepared).toEqual({
+      to: '0x3333333333333333333333333333333333333333',
+      data: '0xaccess',
+      value: 0n,
+      chainId: 8453,
+    });
+  });
+
+  it.each(['production', 'preproduction'] as const)(
+    'uses the production group registry for %s',
+    (environment) => {
+      createCashClient({ environment }).prepareAccessPolicy(DEPOSIT_ID);
+
+      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith(
+        expect.objectContaining({ groupIds: CASH_ACCESS_GROUP_IDS.production }),
+      );
+    },
+  );
 });
 
 describe('withdraw()', () => {
