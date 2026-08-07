@@ -5,7 +5,11 @@ import {
   isMarketRateSupported,
   prepareCashDepositParams,
 } from '../src/engine/marketRate';
-import { BASE_USDC_ADDRESS, ORACLE_MIN_CONVERSION_RATE_SENTINEL } from '../src/engine/constants';
+import {
+  BASE_USDC_ADDRESS,
+  CASH_INTENT_GUARDIAN_ADDRESS,
+  ORACLE_MIN_CONVERSION_RATE_SENTINEL,
+} from '../src/engine/constants';
 import type { Zkp2pClient } from '../src/sdk-types';
 
 describe('isMarketRateSupported', () => {
@@ -64,6 +68,7 @@ describe('prepareCashDepositParams', () => {
     expect(params.token).toBe(BASE_USDC_ADDRESS);
     expect(params.amount).toBe(5_000_000n);
     expect(params.intentAmountRange).toEqual({ min: 1_000_000n, max: 5_000_000n });
+    expect(params.intentGuardian).toBe(CASH_INTENT_GUARDIAN_ADDRESS);
     expect(params.processorNames).toEqual(['venmo']);
     expect(params.retainOnEmpty).toBe(false);
 

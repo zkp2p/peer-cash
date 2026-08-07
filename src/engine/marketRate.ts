@@ -25,6 +25,7 @@ import type {
 } from '../sdk-types';
 import {
   BASE_USDC_ADDRESS,
+  CASH_INTENT_GUARDIAN_ADDRESS,
   CASH_RETAIN_ON_EMPTY,
   MARKET_SPREAD_BPS,
   ORACLE_MIN_CONVERSION_RATE_SENTINEL,
@@ -180,6 +181,7 @@ export async function prepareCashDepositParams(
     paymentMethodsOverride,
     paymentMethodDataOverride,
     currenciesOverride,
+    intentGuardian: CASH_INTENT_GUARDIAN_ADDRESS,
     retainOnEmpty: CASH_RETAIN_ON_EMPTY,
   } as CreateDepositParamsArg;
 }
