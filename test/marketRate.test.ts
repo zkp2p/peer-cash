@@ -1,15 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import { decodeFunctionData } from 'viem';
+import { Zkp2pClient as RuntimeZkp2pClient } from '@zkp2p/sdk';
 import {
   buildIntentAmountRange,
   buildMarketRateCurrencyOverride,
   isMarketRateSupported,
   prepareCashDepositParams,
 } from '../src/engine/marketRate';
-import {
-  BASE_USDC_ADDRESS,
-  CASH_INTENT_GUARDIAN_ADDRESS,
-  ORACLE_MIN_CONVERSION_RATE_SENTINEL,
-} from '../src/engine/constants';
+import { BASE_USDC_ADDRESS, ORACLE_MIN_CONVERSION_RATE_SENTINEL } from '../src/engine/constants';
 import type { Zkp2pClient } from '../src/sdk-types';
 
 describe('isMarketRateSupported', () => {
@@ -68,7 +66,7 @@ describe('prepareCashDepositParams', () => {
     expect(params.token).toBe(BASE_USDC_ADDRESS);
     expect(params.amount).toBe(5_000_000n);
     expect(params.intentAmountRange).toEqual({ min: 1_000_000n, max: 5_000_000n });
-    expect(params.intentGuardian).toBe(CASH_INTENT_GUARDIAN_ADDRESS);
+    expect(params).not.toHaveProperty('intentGuardian');
     expect(params.processorNames).toEqual(['venmo']);
     expect(params.retainOnEmpty).toBe(false);
 
@@ -84,6 +82,36 @@ describe('prepareCashDepositParams', () => {
     expect(currency.minConversionRate).toBe(ORACLE_MIN_CONVERSION_RATE_SENTINEL);
     expect(currency.oracleRateConfig?.spreadBps).toBe(0);
     expect(client.registerPayeeDetails).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['staging', '0x3355bb8CEFA54509d244384CFA7f2A71fdb1FDD6'],
+    ['production', '0x83671606454fA72ba1e2831E18C5090D25629414'],
+  ] as const)('encodes the %s guardian from the contracts bundle', async (runtimeEnv, guardian) => {
+    const client = new RuntimeZkp2pClient({
+      walletClient: {
+        chain: {
+          id: 8453,
+          rpcUrls: { default: { http: ['https://base-rpc.invalid'] } },
+        },
+        account: { address: '0x1111111111111111111111111111111111111111' },
+      } as never,
+      chainId: 8453,
+      runtimeEnv,
+    });
+    vi.spyOn(client, 'registerPayeeDetails').mockResolvedValue({
+      depositDetails: [{ processorName: 'venmo', offchainId: '@a' }],
+      hashedOnchainIds: [`0x${'22'.repeat(32)}`],
+    });
+
+    const params = await prepareCashDepositParams(client, {
+      amount: 5_000_000n,
+      payouts: [{ processorName: 'venmo', currency: 'USD', payeeData: { offchainId: '@a' } }],
+    });
+    const { prepared } = await client.prepareCreateDeposit(params);
+    const decoded = decodeFunctionData({ abi: client.escrowAbi, data: prepared.data });
+
+    expect(decoded.args?.[0]).toMatchObject({ intentGuardian: guardian });
   });
 
   it('builds one payment method with multiple zero-spread currencies', async () => {

@@ -17,9 +17,6 @@ export const BASE_CHAIN_ID = 8453;
 /** Canonical USDC on Base (6 decimals). The deposit asset for every cash-out. */
 export const BASE_USDC_ADDRESS = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' as const;
 
-/** Paid intent guardian attached to every Peer Cash deposit. */
-export const CASH_INTENT_GUARDIAN_ADDRESS = '0x83671606454fA72ba1e2831E18C5090D25629414' as const;
-
 /** Chargeback-exposed payout rails that require restricted deposit access. */
 export const CASH_RESTRICTED_PLATFORMS = new Set(['venmo', 'cashapp', 'paypal']);
 
