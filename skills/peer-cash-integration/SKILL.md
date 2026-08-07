@@ -61,6 +61,8 @@ const res = await cash.cashout(
   {
     // 2 execute
     amount: usdc(100),
+    // or an array of legs to offer several platforms on one order:
+    // receive: [{ platform: 'venmo', ... }, { platform: 'revolut', ... }]
     receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@handle' } },
   },
   { signer },

@@ -10,6 +10,7 @@ export type CashErrorCode =
   | 'AMOUNT_BELOW_MINIMUM'
   | 'INVALID_INTENT_AMOUNT_RANGE'
   | 'INVALID_PAYOUT_CURRENCIES'
+  | 'INVALID_PAYOUT_PLATFORMS'
   | 'INVALID_REFERRAL_CODE'
   | 'ACTIVE_INTENT_BLOCKS_WITHDRAWAL'
   | 'NOTHING_TO_WITHDRAW'
@@ -175,6 +176,13 @@ export const errors = {
       message: `The ${platform} payout currency set is invalid: ${reason}.`,
       retryable: false,
       remediation: `Pass one or more unique currencies listed for ${platform} by capabilities().`,
+    }),
+  invalidPayoutPlatforms: (reason: string) =>
+    new CashError({
+      code: 'INVALID_PAYOUT_PLATFORMS',
+      message: `The payout platform set is invalid: ${reason}.`,
+      retryable: false,
+      remediation: `Pass one payout leg, or an array of legs using each platform from capabilities() at most once.`,
     }),
   invalidReferralCode: () =>
     new CashError({

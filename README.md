@@ -65,6 +65,19 @@ const fastFill = await cash.cashout(
   { signer },
 );
 
+// One order can also offer several platforms (each at most once). The buyer
+// picks the leg they can pay; every leg fills at the live oracle market rate.
+const widestReach = await cash.cashout(
+  {
+    amount: usdc(1000),
+    receive: [
+      { platform: 'venmo', currency: 'USD', payee: '@you' },
+      { platform: 'revolut', currencies: ['EUR', 'GBP'], payee: { offchainId: 'revtag' } },
+    ],
+  },
+  { signer },
+);
+
 for await (const order of cash.watch(depositId)) {
   console.log(order.state, order.explain());
   if (order.state === 'delivered') break;

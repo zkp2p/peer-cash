@@ -320,6 +320,86 @@ describe('order()', () => {
     expect(order.nextActions).toEqual(['wait']);
   });
 
+  it('reconstructs a multi-platform cash order with every leg at zero spread', async () => {
+    const catalog = getPaymentMethodsCatalog(8453, 'staging');
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        paymentMethods: [
+          {
+            paymentMethodHash: catalog['venmo']!.paymentMethodHash,
+            payeeDetailsHash: '0xvenmo',
+            active: true,
+          },
+          {
+            paymentMethodHash: catalog['revolut']!.paymentMethodHash,
+            payeeDetailsHash: '0xrevolut',
+            active: true,
+          },
+        ],
+        currencies: [
+          {
+            paymentMethodHash: catalog['venmo']!.paymentMethodHash,
+            currencyCode: currencyInfo['USD']!.currencyCodeHash,
+            spreadBps: 0,
+            kind: 'oracle_chainlink',
+          },
+          {
+            paymentMethodHash: catalog['revolut']!.paymentMethodHash,
+            currencyCode: currencyInfo['EUR']!.currencyCodeHash,
+            spreadBps: 0,
+            kind: 'oracle_chainlink',
+          },
+        ],
+      }),
+    ]);
+
+    const order = await client().order(DEPOSIT_ID);
+
+    expect(order.payouts?.map((p) => [p.platform, p.currency])).toEqual([
+      ['venmo', 'USD'],
+      ['revolut', 'EUR'],
+    ]);
+    expect(order.payouts?.every((p) => p.pricing.marketRate && p.pricing.spreadBps === 0)).toBe(
+      true,
+    );
+  });
+
+  it('still refuses a multi-platform deposit when any leg is not market-rate', async () => {
+    const catalog = getPaymentMethodsCatalog(8453, 'staging');
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
+      depositRow({
+        paymentMethods: [
+          {
+            paymentMethodHash: catalog['venmo']!.paymentMethodHash,
+            payeeDetailsHash: '0xvenmo',
+            active: true,
+          },
+          {
+            paymentMethodHash: catalog['revolut']!.paymentMethodHash,
+            payeeDetailsHash: '0xrevolut',
+            active: true,
+          },
+        ],
+        currencies: [
+          {
+            paymentMethodHash: catalog['venmo']!.paymentMethodHash,
+            currencyCode: currencyInfo['USD']!.currencyCodeHash,
+            spreadBps: 0,
+            kind: 'oracle_chainlink',
+          },
+          {
+            paymentMethodHash: catalog['revolut']!.paymentMethodHash,
+            currencyCode: currencyInfo['EUR']!.currencyCodeHash,
+            spreadBps: 100,
+            kind: 'fixed',
+          },
+        ],
+      }),
+    ]);
+
+    await expect(client().order(DEPOSIT_ID)).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' });
+  });
+
   it('refuses an indexed deposit containing a method outside the active catalog', async () => {
     const genericHash = getPaymentMethodsCatalog(8453, 'staging')['zelle']!.paymentMethodHash;
     mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([
@@ -536,6 +616,81 @@ describe('cashout()', () => {
         currenciesOverride: [[expect.anything(), expect.anything(), expect.anything()]],
       }),
     );
+  });
+
+  it('creates one deposit spanning several payout platforms', async () => {
+    const payeeHashes = ['0xvenmohash', '0xrevoluthash'];
+    mockInstance.registerPayeeDetails.mockResolvedValue({
+      depositDetails: payeeHashes.map(() => ({})),
+      hashedOnchainIds: payeeHashes,
+    });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: [
+          { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          { platform: 'revolut', currencies: ['EUR', 'GBP'], payee: { offchainId: 'revtag' } },
+        ],
+      },
+      { signer },
+    );
+
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: ['venmo', 'revolut'],
+      payeeData: [{ offchainId: '@andrew' }, { offchainId: 'revtag' }],
+    });
+    const catalog = getPaymentMethodsCatalog(8453, 'staging');
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        processorNames: ['venmo', 'revolut'],
+        paymentMethodsOverride: [
+          catalog['venmo']!.paymentMethodHash,
+          catalog['revolut']!.paymentMethodHash,
+        ],
+        paymentMethodDataOverride: payeeHashes.map((payeeDetails) =>
+          expect.objectContaining({ payeeDetails }),
+        ),
+        conversionRates: [
+          [expect.objectContaining({ currency: 'USD' })],
+          [
+            expect.objectContaining({ currency: 'EUR' }),
+            expect.objectContaining({ currency: 'GBP' }),
+          ],
+        ],
+        currenciesOverride: [[expect.anything()], [expect.anything(), expect.anything()]],
+      }),
+    );
+  });
+
+  it('rejects a duplicate platform across payout legs before wallet access', async () => {
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: [
+            { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+            { platform: 'venmo', currency: 'USD', payee: { offchainId: '@b' } },
+          ],
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_PAYOUT_PLATFORMS' });
+    expect(signer.getChainId).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty payout leg array before wallet access', async () => {
+    await expect(
+      client().cashout({ amount: 5_000_000n, receive: [] as never }, { signer }),
+    ).rejects.toMatchObject({ code: 'INVALID_PAYOUT_PLATFORMS' });
+    expect(signer.getChainId).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
   it('rejects duplicate payout currencies before registration', async () => {

@@ -55,6 +55,9 @@ Key facts:
   their on-chain hashes, plain-number rates from 1e18 precision.
 - Fills are receipts: locked rate + fiat owed at signal; verified fiat paid,
   payment id, released USDC, and fill latency after the proof.
+- `receive` takes one payout leg or an array of legs across different
+  platforms (each platform at most once); every leg fills at the live oracle
+  market rate.
 - Orders carry their payout legs (platform, currency, payee hash) plus a
   verifiable pricing proof (spreadBps: 0, oracle kind) from indexed data.
 - Order reads fail closed when any deposit method is absent from the active

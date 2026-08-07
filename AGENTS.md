@@ -87,6 +87,19 @@ const multiCurrency = await cash.cashout(
   { signer },
 );
 
+// Widest reach: several platforms on one order (each platform at most once);
+// the buyer picks the leg they can pay, every leg at the live oracle rate.
+const multiPlatform = await cash.cashout(
+  {
+    amount: usdc(500),
+    receive: [
+      { platform: 'venmo', currency: 'USD', payee: '@handle' },
+      { platform: 'revolut', currencies: ['EUR', 'GBP'], payee: { offchainId: 'revtag' } },
+    ],
+  },
+  { signer },
+);
+
 // 4. Persist depositId ↔ your user. That row is the entire integration state.
 
 // 5. Drive the lifecycle from nextActions - no heuristics.

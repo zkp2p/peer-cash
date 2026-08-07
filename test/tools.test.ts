@@ -56,33 +56,41 @@ describe('tools manifest', () => {
     expect(cashout?.inputSchema.properties).not.toHaveProperty('source');
   });
 
-  it('lets tool hosts pass a raw payee handle', () => {
-    const cashout = cashTools.find((tool) => tool.name === 'cash_cashout');
-    const cashoutSchema = cashout?.inputSchema as {
-      properties?: { receive?: unknown };
-    };
-    const receive = cashoutSchema.properties?.receive as {
-      properties?: { payee?: { oneOf?: Array<{ type?: string }> } };
-    };
-
-    expect(receive.properties?.payee?.oneOf?.map((shape) => shape.type)).toEqual([
-      'string',
-      'object',
-    ]);
-  });
-
-  it('offers mutually exclusive single and multi-currency cashout inputs', () => {
+  function receiveVariants(): { leg: Record<string, unknown>; array: Record<string, unknown> } {
     const cashout = cashTools.find((tool) => tool.name === 'cash_cashout');
     const receive = (cashout?.inputSchema as { properties: { receive: Record<string, unknown> } })
       .properties.receive;
-    const properties = receive['properties'] as Record<string, Record<string, unknown>>;
+    const [leg, array] = receive['oneOf'] as [Record<string, unknown>, Record<string, unknown>];
+    return { leg, array };
+  }
+
+  it('lets tool hosts pass a raw payee handle', () => {
+    const { leg } = receiveVariants();
+    const properties = leg['properties'] as {
+      payee?: { oneOf?: Array<{ type?: string }> };
+    };
+
+    expect(properties.payee?.oneOf?.map((shape) => shape.type)).toEqual(['string', 'object']);
+  });
+
+  it('offers mutually exclusive single and multi-currency cashout inputs', () => {
+    const { leg } = receiveVariants();
+    const properties = leg['properties'] as Record<string, Record<string, unknown>>;
 
     expect(properties['currencies']).toMatchObject({
       type: 'array',
       minItems: 1,
       uniqueItems: true,
     });
-    expect(receive['oneOf']).toEqual([{ required: ['currency'] }, { required: ['currencies'] }]);
+    expect(leg['oneOf']).toEqual([{ required: ['currency'] }, { required: ['currencies'] }]);
+  });
+
+  it('accepts one payout leg or an array of legs across platforms', () => {
+    const { leg, array } = receiveVariants();
+
+    expect(leg).toMatchObject({ type: 'object' });
+    expect(array).toMatchObject({ type: 'array', minItems: 1 });
+    expect(array['items']).toBe(leg);
   });
 
   it('is JSON-serializable as-is', () => {

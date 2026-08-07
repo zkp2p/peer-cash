@@ -46,6 +46,49 @@ const chainId = {
   maximum: Number.MAX_SAFE_INTEGER,
 } as const;
 
+const receiveLeg = {
+  type: 'object',
+  description: 'One payout leg: platform + currency choice + payee',
+  properties: {
+    platform: {
+      type: 'string',
+      description: 'Platform id from cash_capabilities, e.g. "venmo"',
+    },
+    currency: { type: 'string', description: 'Fiat currency code, e.g. "USD"' },
+    currencies: {
+      type: 'array',
+      minItems: 1,
+      uniqueItems: true,
+      items: { type: 'string' },
+      description: 'Fiat currency choices for one payment method, e.g. ["EUR", "GBP"]',
+    },
+    payee: {
+      description: 'Raw payee handle or structured curator payee data',
+      oneOf: [
+        {
+          type: 'string',
+          description:
+            'User-entered handle, e.g. "@andrew" for Venmo; Peer Cash normalizes it for the selected platform',
+        },
+        {
+          type: 'object',
+          properties: {
+            offchainId: {
+              type: 'string',
+              description: 'Already-normalized handle for the platform',
+            },
+          },
+          required: ['offchainId'],
+          additionalProperties: true,
+        },
+      ],
+    },
+  },
+  required: ['platform', 'payee'],
+  oneOf: [{ required: ['currency'] }, { required: ['currencies'] }],
+  additionalProperties: false,
+} as const;
+
 const builtInCashTools = [
   {
     name: 'cash_capabilities',
@@ -156,46 +199,17 @@ const builtInCashTools = [
       properties: {
         amount: bigintString,
         receive: {
-          type: 'object',
-          description: 'Where the fiat should arrive',
-          properties: {
-            platform: {
-              type: 'string',
-              description: 'Platform id from cash_capabilities, e.g. "venmo"',
-            },
-            currency: { type: 'string', description: 'Fiat currency code, e.g. "USD"' },
-            currencies: {
+          description:
+            'Where the fiat should arrive: one payout leg, or an array of legs to offer several platforms (each platform at most once; every leg fills at the live oracle market rate)',
+          oneOf: [
+            receiveLeg,
+            {
               type: 'array',
               minItems: 1,
-              uniqueItems: true,
-              items: { type: 'string' },
-              description: 'Fiat currency choices for one payment method, e.g. ["EUR", "GBP"]',
+              items: receiveLeg,
+              description: 'Multiple payout legs across different platforms',
             },
-            payee: {
-              description: 'Raw payee handle or structured curator payee data',
-              oneOf: [
-                {
-                  type: 'string',
-                  description:
-                    'User-entered handle, e.g. "@andrew" for Venmo; Peer Cash normalizes it for the selected platform',
-                },
-                {
-                  type: 'object',
-                  properties: {
-                    offchainId: {
-                      type: 'string',
-                      description: 'Already-normalized handle for the platform',
-                    },
-                  },
-                  required: ['offchainId'],
-                  additionalProperties: true,
-                },
-              ],
-            },
-          },
-          required: ['platform', 'payee'],
-          oneOf: [{ required: ['currency'] }, { required: ['currencies'] }],
-          additionalProperties: false,
+          ],
         },
       },
       required: ['amount', 'receive'],

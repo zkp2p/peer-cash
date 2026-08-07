@@ -42,7 +42,12 @@ import type {
   CashOrder,
   CashPayoutInfo,
 } from '../engine/types';
-import { buildCapabilities, MIN_CASHOUT_AMOUNT, type CashCapabilities } from './capabilities';
+import {
+  buildCapabilities,
+  platformRequiresIdentityAttestation,
+  MIN_CASHOUT_AMOUNT,
+  type CashCapabilities,
+} from './capabilities';
 import {
   readEstimate,
   type CashEstimate,
@@ -160,6 +165,9 @@ export interface CashMultiCurrencyLeg {
   currency?: never;
 }
 
+/** One payout leg of a cash-out - single-currency or multi-currency. */
+export type CashReceiveLeg = CashLeg | CashMultiCurrencyLeg;
+
 export interface CashoutInput {
   /**
    * Amount to cash out. Without `source`, this is Base USDC base units. With
@@ -174,8 +182,12 @@ export interface CashoutInput {
     /** Relay amount mode. Omit for the recommended exact source-input flow. */
     tradeType?: 'EXACT_INPUT' | 'EXACT_OUTPUT' | 'EXPECTED_OUTPUT';
   };
-  /** Where the fiat should arrive. One method may offer multiple currencies. */
-  receive: CashLeg | CashMultiCurrencyLeg;
+  /**
+   * Where the fiat should arrive. One leg, or an array of legs to offer the
+   * buyer several payout platforms (each platform at most once). One method
+   * may offer multiple currencies; every leg fills at the live oracle rate.
+   */
+  receive: CashReceiveLeg | readonly [CashReceiveLeg, ...CashReceiveLeg[]];
   /** Per-order min/max override (USDC base units). */
   intentAmountRange?: { min: bigint; max: bigint };
 }
@@ -531,44 +543,55 @@ export function createCashClient(options: CashClientOptions): CashClient {
   }
 
   function validatePayout(input: CashoutInput): Omit<CashDepositInput, 'amount'> {
-    const { receive } = input;
-    const platform = buildCapabilities(environment).platforms.find(
-      (capability) => capability.platform === receive.platform,
-    );
-    if (!platform) throw errors.unsupportedPlatform(receive.platform);
-    if ((receive.currency === undefined) === (receive.currencies === undefined)) {
-      throw errors.invalidPayoutCurrencies(
-        receive.platform,
-        'pass exactly one of currency or currencies',
+    const legs: readonly CashReceiveLeg[] = Array.isArray(input.receive)
+      ? input.receive
+      : [input.receive as CashReceiveLeg];
+    if (legs.length === 0) {
+      throw errors.invalidPayoutPlatforms('at least one payout leg is required');
+    }
+    const capabilities = buildCapabilities(environment);
+    const seenPlatforms = new Set<string>();
+    const payouts = legs.map((leg): CashDepositInput['payouts'][number] => {
+      const platform = capabilities.platforms.find(
+        (capability) => capability.platform === leg.platform,
       );
-    }
-    const currencies =
-      receive.currencies !== undefined ? [...receive.currencies] : [receive.currency];
-    if (currencies.length === 0) {
-      throw errors.invalidPayoutCurrencies(receive.platform, 'at least one currency is required');
-    }
-    if (new Set(currencies).size !== currencies.length) {
-      throw errors.invalidPayoutCurrencies(receive.platform, 'currencies must be unique');
-    }
-    for (const currency of currencies) {
-      if (!isMarketRateSupported(currency)) {
-        throw errors.oracleUnsupportedCurrency(currency);
+      if (!platform) throw errors.unsupportedPlatform(leg.platform);
+      if (seenPlatforms.has(leg.platform)) {
+        throw errors.invalidPayoutPlatforms(
+          `${leg.platform} appears more than once - each platform may carry one leg`,
+        );
       }
-      if (!platform.currencies.includes(currency)) {
-        throw errors.unsupportedPlatformCurrency(receive.platform, currency);
+      seenPlatforms.add(leg.platform);
+      if ((leg.currency === undefined) === (leg.currencies === undefined)) {
+        throw errors.invalidPayoutCurrencies(
+          leg.platform,
+          'pass exactly one of currency or currencies',
+        );
       }
-    }
-    return {
-      payouts: [
-        {
-          processorName: receive.platform,
-          ...(currencies.length === 1
-            ? { currency: currencies[0]! }
-            : { currencies: currencies as [CurrencyType, ...CurrencyType[]] }),
-          payeeData: normalizeCashPayee(receive.platform, receive.payee),
-        },
-      ],
-    };
+      const currencies = leg.currencies !== undefined ? [...leg.currencies] : [leg.currency];
+      if (currencies.length === 0) {
+        throw errors.invalidPayoutCurrencies(leg.platform, 'at least one currency is required');
+      }
+      if (new Set(currencies).size !== currencies.length) {
+        throw errors.invalidPayoutCurrencies(leg.platform, 'currencies must be unique');
+      }
+      for (const currency of currencies) {
+        if (!isMarketRateSupported(currency)) {
+          throw errors.oracleUnsupportedCurrency(currency);
+        }
+        if (!platform.currencies.includes(currency)) {
+          throw errors.unsupportedPlatformCurrency(leg.platform, currency);
+        }
+      }
+      return {
+        processorName: leg.platform,
+        ...(currencies.length === 1
+          ? { currency: currencies[0]! }
+          : { currencies: currencies as [CurrencyType, ...CurrencyType[]] }),
+        payeeData: normalizeCashPayee(leg.platform, leg.payee),
+      };
+    });
+    return { payouts };
   }
 
   function validateDepositInput(
@@ -591,16 +614,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
   }
 
   function isCashPayoutSet(payouts: readonly CashPayoutInfo[]): boolean {
-    const first = payouts[0];
-    return Boolean(
-      first &&
-      payouts.every(
-        (payout) =>
-          payout.platformHash.toLowerCase() === first.platformHash.toLowerCase() &&
-          payout.payeeHash.toLowerCase() === first.payeeHash.toLowerCase() &&
-          payout.pricing.marketRate &&
-          payout.pricing.spreadBps === 0,
-      ),
+    // The product invariant, verifiable from indexed data alone: every payout
+    // leg (one or several platforms) is priced by an oracle at zero spread.
+    return (
+      payouts.length > 0 &&
+      payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
     );
   }
 
@@ -612,7 +630,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
       // The curator rejects Wise/PayPal payees that lack a signed attestation.
       const message = err instanceof Error ? err.message : String(err);
       if (/identityAttestation is required|identity attestation/i.test(message)) {
-        const platform = depositInput.payouts[0]?.processorName ?? 'this platform';
+        const platforms = depositInput.payouts.map((payout) => payout.processorName);
+        const platform =
+          platforms.find(platformRequiresIdentityAttestation) ?? platforms[0] ?? 'this platform';
         throw errors.payeeVerificationRequired(platform, err);
       }
       throw errors.payeeRegistrationFailed(err);
@@ -1286,7 +1306,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
             catalog,
           );
           // ERC-8021 attribution is not indexed, so the strongest on-chain
-          // identity is the product invariant: one Base-USDC payout leg at a
+          // identity is the product invariant: every Base-USDC payout leg at a
           // zero-spread oracle rate. Exclude unrelated fixed-rate/vault rows.
           if (!isCashPayoutSet(payouts)) {
             return [];

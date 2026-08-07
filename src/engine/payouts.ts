@@ -57,9 +57,9 @@ function toPricing(tuple: MethodCurrencyLike | undefined): CashPayoutPricing {
 /**
  * Decode a deposit's payment methods + currency tuples into payout legs.
  * Pure - the environment arrives via the catalog. One leg per
- * (method, currency) pair; cash orders create exactly one in v1. If any
- * method is absent from the active catalog, reject the whole set instead of
- * partially reclassifying a mixed historical deposit.
+ * (method, currency) pair; a cash order carries one or several platforms. If
+ * any method is absent from the active catalog, reject the whole set instead
+ * of partially reclassifying a mixed historical deposit.
  */
 export function derivePayouts(
   paymentMethods: ReadonlyArray<PaymentMethodLike>,
