@@ -5,6 +5,7 @@
  */
 import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
+import { CASH_RESTRICTED_PLATFORMS } from '../engine/constants';
 import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
 import type { CashFillStats } from '../client/fillEta';
@@ -479,6 +480,8 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
     platforms: parsed.platforms.map((p) => ({
       ...p,
       currencies: p.currencies as CurrencyType[],
+      requiresAtomicAccessPolicy:
+        p.requiresAtomicAccessPolicy ?? CASH_RESTRICTED_PLATFORMS.has(p.platform),
     })),
     currencies: parsed.currencies as CurrencyType[],
     amount: {

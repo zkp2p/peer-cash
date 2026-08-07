@@ -563,11 +563,7 @@ describe('orders()', () => {
 });
 
 describe('cashout()', () => {
-  it.each([
-    ['chime', '  $SellerTag  ', '$sellertag'],
-    ['venmo', '  @SellerTag  ', 'SellerTag'],
-    ['cashapp', '  $SellerTag  ', 'SellerTag'],
-  ] as const)(
+  it.each([['chime', '  $SellerTag  ', '$sellertag']] as const)(
     'normalizes a raw %s handle before signed payee registration',
     async (platform, payee, offchainId) => {
       mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
@@ -630,7 +626,7 @@ describe('cashout()', () => {
   });
 
   it('creates one deposit spanning several payout platforms', async () => {
-    const payeeHashes = ['0xvenmohash', '0xrevoluthash'];
+    const payeeHashes = ['0xchimehash', '0xrevoluthash'];
     mockInstance.registerPayeeDetails.mockResolvedValue({
       depositDetails: payeeHashes.map(() => ({})),
       hashedOnchainIds: payeeHashes,
@@ -645,7 +641,7 @@ describe('cashout()', () => {
       {
         amount: 5_000_000n,
         receive: [
-          { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
           { platform: 'revolut', currencies: ['EUR', 'GBP'], payee: { offchainId: 'revtag' } },
         ],
       },
@@ -653,15 +649,15 @@ describe('cashout()', () => {
     );
 
     expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
-      processorNames: ['venmo', 'revolut'],
-      payeeData: [{ offchainId: '@andrew' }, { offchainId: 'revtag' }],
+      processorNames: ['chime', 'revolut'],
+      payeeData: [{ offchainId: '$andrew' }, { offchainId: 'revtag' }],
     });
     const catalog = getPaymentMethodsCatalog(8453, 'staging');
     expect(mockInstance.createDeposit).toHaveBeenCalledWith(
       expect.objectContaining({
-        processorNames: ['venmo', 'revolut'],
+        processorNames: ['chime', 'revolut'],
         paymentMethodsOverride: [
-          catalog['venmo']!.paymentMethodHash,
+          catalog['chime']!.paymentMethodHash,
           catalog['revolut']!.paymentMethodHash,
         ],
         paymentMethodDataOverride: payeeHashes.map((payeeDetails) =>
@@ -751,7 +747,7 @@ describe('cashout()', () => {
     const result = await client().cashout(
       {
         amount: 5_000_000n,
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
       },
       { signer },
     );
@@ -764,78 +760,64 @@ describe('cashout()', () => {
     expect(result.depositId).toBe(`${ESCROW}_5`);
     expect(result.onchainDepositId).toBe(5n);
     expect(result.txHash).toBe('0xhash');
-    expect(result.accessPolicyTxHash).toBe('0xaccess');
+    expect(result.accessPolicyTxHash).toBeUndefined();
     expect(result.order.state).toBe('awaiting-buyer');
   });
 
   it.each(['venmo', 'cashapp', 'paypal'])(
-    'attaches %s cash-outs to Plus, Pro, Peer Makers, and Peer Pay',
+    'rejects %s before any side effect because generic creation is not atomic',
     async (platform) => {
-      mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-        status: 'success',
-        logs: [depositReceivedLog(5n)],
-      });
-
-      const result = await client().cashout(
-        {
-          amount: 5_000_000n,
-          receive: {
-            platform,
-            currency: 'USD',
-            payee: { offchainId: platform === 'paypal' ? 'seller@example.com' : '@seller' },
+      await expect(
+        client().cashout(
+          {
+            amount: 5_000_000n,
+            receive: {
+              platform,
+              currency: 'USD',
+              payee: { offchainId: platform === 'paypal' ? 'seller@example.com' : '@seller' },
+            },
           },
-        },
-        { signer },
-      );
+          { signer },
+        ),
+      ).rejects.toMatchObject({
+        code: 'ATOMIC_ACCESS_POLICY_REQUIRED',
+        retryable: false,
+        recovery: undefined,
+      });
 
-      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
-        escrow: ESCROW,
-        depositId: 5n,
-        enabled: true,
-        groupIds: CASH_ACCESS_GROUP_IDS.staging,
-        takers: [],
-        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
-      });
-      expect(signer.sendTransaction).toHaveBeenCalledWith({
-        account: signer.account,
-        chain: signer.chain,
-        to: '0x3333333333333333333333333333333333333333',
-        data: '0xaccess',
-        value: 0n,
-      });
-      expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenLastCalledWith({
-        hash: '0xaccess',
-      });
-      expect(result.accessPolicyTxHash).toBe('0xaccess');
+      expect(signer.getChainId).not.toHaveBeenCalled();
+      expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+      expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+      expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+      expect(signer.sendTransaction).not.toHaveBeenCalled();
     },
   );
 
-  it('reports the existing deposit when required access configuration fails', async () => {
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-      status: 'success',
-      logs: [depositReceivedLog(5n)],
-    });
-    vi.mocked(signer.sendTransaction).mockRejectedValueOnce(new Error('User rejected request'));
+  it('rejects a protected payout before quoting or executing a Relay source route', async () => {
+    const relayClient = {
+      actions: {
+        getQuote: vi.fn(),
+        execute: vi.fn(),
+      },
+    };
 
     await expect(
-      client().cashout(
+      createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
         {
-          amount: 5_000_000n,
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
           receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@seller' } },
         },
-        { signer },
+        { signer, sourceSigner },
       ),
-    ).rejects.toMatchObject({
-      code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-      retryable: false,
-      recovery: {
-        kind: 'configure-cashout-access-policy',
-        depositId: `${ESCROW}_5`,
-        groupIds: CASH_ACCESS_GROUP_IDS.staging,
-      },
-    });
+    ).rejects.toMatchObject({ code: 'ATOMIC_ACCESS_POLICY_REQUIRED' });
+
+    expect(relayClient.actions.getQuote).not.toHaveBeenCalled();
+    expect(relayClient.actions.execute).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
   it('creates a signed Zelle cashout with only the generic method', async () => {
@@ -884,7 +866,7 @@ describe('cashout()', () => {
       .cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer },
       )
@@ -1119,7 +1101,7 @@ describe('cashout()', () => {
           chainId: 8453,
           currency: '0x0000000000000000000000000000000000000000',
         },
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+        receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
       },
       { signer: sameChainSigner },
     );
@@ -1230,7 +1212,7 @@ describe('cashout()', () => {
         currency: '0x0000000000000000000000000000000000000000',
       },
       receive: {
-        platform: 'venmo' as const,
+        platform: 'chime' as const,
         currency: 'USD' as const,
         payee: { offchainId: '@andrew' },
       },
@@ -1364,7 +1346,7 @@ describe('cashout()', () => {
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer, sourceSigner },
       )
@@ -1443,7 +1425,7 @@ describe('cashout()', () => {
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer, sourceSigner },
       )
@@ -1475,7 +1457,7 @@ describe('cashout()', () => {
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer },
       ),
@@ -1522,7 +1504,7 @@ describe('cashout()', () => {
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer, sourceSigner },
       ),
@@ -1575,7 +1557,7 @@ describe('cashout()', () => {
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer, sourceSigner },
       ),
@@ -1615,7 +1597,7 @@ describe('cashout()', () => {
             currency: '0xsource',
             recipient: '0x3333333333333333333333333333333333333333',
           },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer, sourceSigner },
       ),
@@ -1695,7 +1677,7 @@ describe('cashout()', () => {
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@andrew' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$andrew' } },
         },
         { signer, sourceSigner },
       ),
@@ -1711,7 +1693,7 @@ describe('cashout()', () => {
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer: {} as WalletClient },
       ),
@@ -1729,7 +1711,7 @@ describe('cashout()', () => {
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer: wrongChainSigner },
       ),
@@ -1751,7 +1733,7 @@ describe('cashout()', () => {
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer: chainlessWrongSigner },
       ),
@@ -1773,7 +1755,7 @@ describe('cashout()', () => {
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer: disconnectedSigner },
       ),
@@ -1797,7 +1779,7 @@ describe('cashout()', () => {
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer, sourceSigner: wrongSourceSigner },
       ),
@@ -1849,7 +1831,7 @@ describe('cashout()', () => {
         {
           amount: 5_000_000n,
           intentAmountRange: { min: 4_000_000n, max: 3_000_000n },
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer },
       ),
@@ -1863,7 +1845,7 @@ describe('cashout()', () => {
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer },
       ),
@@ -1880,7 +1862,7 @@ describe('cashout()', () => {
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer },
       ),
@@ -1889,6 +1871,25 @@ describe('cashout()', () => {
 });
 
 describe('prepare()', () => {
+  it.each(['venmo', 'cashapp', 'paypal'])(
+    'rejects a prepared %s cash-out before registration or transaction construction',
+    async (platform) => {
+      await expect(
+        client().prepare({
+          amount: 5_000_000n,
+          receive: {
+            platform,
+            currency: 'USD',
+            payee: { offchainId: platform === 'paypal' ? 'seller@example.com' : '@seller' },
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'ATOMIC_ACCESS_POLICY_REQUIRED' });
+
+      expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+      expect(mockInstance.prepareCreateDeposit).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ['chime', 'USD', '  $SellerTag  ', '$sellertag'],
     ['zelle', 'USD', ' Alice@Example.COM ', 'alice@example.com'],
@@ -1950,7 +1951,7 @@ describe('prepare()', () => {
 
     const { txs, steps, register, accessPolicyRequired } = await client().prepare({
       amount: 5_000_000n,
-      receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+      receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
     });
 
     expect(txs).toHaveLength(2);
@@ -1959,7 +1960,7 @@ describe('prepare()', () => {
     expect(txs[0]?.data.startsWith('0x095ea7b3')).toBe(true); // approve selector
     expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xdeposit' });
     expect(register.hashedOnchainIds).toEqual(['0xpayeehash']);
-    expect(accessPolicyRequired).toBe(true);
+    expect(accessPolicyRequired).toBe(false);
     // No signing surface touched.
     expect(mockInstance.createDeposit).not.toHaveBeenCalled();
     expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
@@ -2398,7 +2399,7 @@ describe('ERC-8021 attribution', () => {
     await client().cashout(
       {
         amount: 5_000_000n,
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
       },
       { signer },
     );
@@ -2422,7 +2423,7 @@ describe('ERC-8021 attribution', () => {
     await cash.cashout(
       {
         amount: 5_000_000n,
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
       },
       { signer },
     );
@@ -2449,7 +2450,7 @@ describe('ERC-8021 attribution', () => {
     await cash.cashout(
       {
         amount: 5_000_000n,
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+        receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
       },
       { signer },
     );
@@ -2488,7 +2489,7 @@ describe('ERC-8021 attribution', () => {
 
     const { txs } = await client().prepare({
       amount: 5_000_000n,
-      receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+      receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
     });
 
     const suffix = getAttributionDataSuffix([CASH_ATTRIBUTION_CODE]).slice(2);
@@ -2767,7 +2768,7 @@ describe('cashout() - allowance visibility', () => {
       client().cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+          receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
         },
         { signer },
       ),
@@ -2786,7 +2787,7 @@ describe('cashout() - allowance visibility', () => {
         .cashout(
           {
             amount: 5_000_000n,
-            receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+            receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
           },
           { signer },
         )
@@ -2813,7 +2814,7 @@ describe('cashout() - allowance visibility', () => {
         .cashout(
           {
             amount: 5_000_000n,
-            receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+            receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
           },
           { signer },
         )

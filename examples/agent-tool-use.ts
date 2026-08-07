@@ -104,10 +104,16 @@ console.log(`manifest: ${cashToolManifest.name}@${cashToolManifest.version}`);
 console.log(`tools: ${cashToolManifest.tools.map((t) => t.name).join(', ')}\n`);
 
 const caps = (await executeTool('cash_capabilities', {})) as {
-  platforms: { platform: string; currencies: string[]; payeeHint: string }[];
+  platforms: {
+    platform: string;
+    currencies: string[];
+    payeeHint: string;
+    requiresAtomicAccessPolicy: boolean;
+  }[];
 };
-console.log(`agent sees ${caps.platforms.length} platforms; venmo hint:`);
-console.log(`  "${caps.platforms.find((p) => p.platform === 'venmo')?.payeeHint}"\n`);
+const venmo = caps.platforms.find((p) => p.platform === 'venmo');
+console.log(`agent sees ${caps.platforms.length} platforms; venmo capability:`);
+console.log(`  hint="${venmo?.payeeHint}" atomic=${venmo?.requiresAtomicAccessPolicy}\n`);
 
 const est = await executeTool('cash_estimate', {
   amount: usdc(250).toString(),

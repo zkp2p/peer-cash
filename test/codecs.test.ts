@@ -396,6 +396,23 @@ describe('capabilities codec', () => {
     const restored = capabilitiesFromJson(JSON.parse(JSON.stringify(capabilitiesToJson(caps))));
     expect(restored).toEqual(caps);
   });
+
+  it('derives atomic-policy requirements when decoding a pre-0.4.5 snapshot', () => {
+    const json = capabilitiesToJson(buildCapabilities('staging'));
+    const legacy = {
+      ...json,
+      platforms: json.platforms.map(({ requiresAtomicAccessPolicy: _, ...platform }) => platform),
+    };
+
+    const restored = capabilitiesFromJson(legacy);
+
+    expect(restored.platforms.find((platform) => platform.platform === 'venmo')).toMatchObject({
+      requiresAtomicAccessPolicy: true,
+    });
+    expect(restored.platforms.find((platform) => platform.platform === 'chime')).toMatchObject({
+      requiresAtomicAccessPolicy: false,
+    });
+  });
 });
 
 describe('CashError codec', () => {
@@ -445,6 +462,15 @@ describe('CashError codec', () => {
     const restored = cashErrorFromJson(cashErrorToJson(error));
 
     expect(restored.toJSON()).toEqual(error.toJSON());
+  });
+
+  it('round-trips the preflight atomic-policy requirement without recovery data', () => {
+    const error = errors.atomicAccessPolicyRequired(['venmo']);
+
+    const restored = cashErrorFromJson(cashErrorToJson(error));
+
+    expect(restored.toJSON()).toEqual(error.toJSON());
+    expect(restored.recovery).toBeUndefined();
   });
 
   it('round-trips an indeterminate Base transaction recovery without losing its hash', () => {
