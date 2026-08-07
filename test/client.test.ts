@@ -56,7 +56,12 @@ import {
   getPaymentMethodsCatalog,
   Zkp2pClient,
 } from '@zkp2p/sdk';
-import { createCashClient, CASH_ATTRIBUTION_CODE } from '../src/client/createCashClient';
+import {
+  createCashClient,
+  CASH_ATTRIBUTION_CODE,
+  CASH_REFERRAL_ATTRIBUTION_PREFIX,
+  toCashReferralAttributionCode,
+} from '../src/client/createCashClient';
 import { isCashError, isUserRejectedError } from '../src/client/errors';
 import { BASE_USDC_ADDRESS } from '../src/engine/constants';
 
@@ -2155,6 +2160,52 @@ describe('ERC-8021 attribution', () => {
         txOverrides: { referrer: [CASH_ATTRIBUTION_CODE, 'acme-app'] },
       }),
     );
+  });
+
+  it('normalizes a six-character Peer referral code into the prioritized marker', async () => {
+    const cash = createCashClient({
+      environment: 'staging',
+      referralCode: ' abc123 ',
+      referrer: 'acme-app',
+    });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await cash.cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+      },
+      { signer },
+    );
+
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txOverrides: {
+          referrer: [
+            CASH_ATTRIBUTION_CODE,
+            `${CASH_REFERRAL_ATTRIBUTION_PREFIX}ABC123`,
+            'acme-app',
+          ],
+        },
+      }),
+    );
+  });
+
+  it.each(['', 'ABC12', 'ABC1234', 'ABC-12', 'abcdef!'])(
+    'rejects invalid Peer referral code %j before building the client',
+    (referralCode) => {
+      expect(() => createCashClient({ environment: 'staging', referralCode })).toThrow(
+        expect.objectContaining({ code: 'INVALID_REFERRAL_CODE', retryable: false }),
+      );
+    },
+  );
+
+  it('exports the exact namespaced attribution formatter', () => {
+    expect(toCashReferralAttributionCode('z9k2p1')).toBe('peer-ref-Z9K2P1');
   });
 
   it('prepare() appends the attribution suffix to the manual approve calldata', async () => {

@@ -106,8 +106,23 @@ first; use signed `cashout({ source }, { signer, sourceSigner })`, or execute
 and confirm Relay in the host before preparing a Base-USDC cashout.
 `cash_source_quote` and `cash_source_status` are quote/read tools, not a
 host-side execution path.
-Every protocol transaction carries ERC-8021 attribution (`peer-cash` + your
-`createCashClient({ referrer })` codes).
+Every protocol transaction carries ERC-8021 attribution. To receive the
+deposit-level integration share, copy the six-character code from your Peer
+mobile or web referral screen and configure it directly:
+
+```ts
+const cash = createCashClient({
+  environment: 'production',
+  referralCode: 'ABC123',
+});
+```
+
+The SDK emits `peer-cash`, then `peer-ref-ABC123`, then any analytics-only
+`createCashClient({ referrer })` codes. No API key or referral-enrollment
+transaction is required. Curator pays the eligible code owner 50 bps (capped
+by the Peer service-fee budget) instead of applying the maker L1/L2 ladder for
+that deposit. Use one referral code per deposit. Renaming the displayed code
+later does not change the owner of an already-attributed open deposit.
 
 Wise and PayPal require an identity attestation for a new payee registration.
 Do not disable them outright: a previously registered handle can be reused

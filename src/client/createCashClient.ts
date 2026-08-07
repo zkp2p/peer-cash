@@ -79,11 +79,21 @@ const FILL_STATS_CACHE_MS = 15 * 60 * 1000;
 
 /**
  * ERC-8021 attribution code stamped on every transaction this package
- * produces (signed and prepare paths, including approves). Integrator codes
- * from `CashClientOptions.referrer` are appended after it; the SDK always
- * appends the Base builder code last.
+ * produces (signed and prepare paths, including approves). The optional
+ * namespaced `CashClientOptions.referralCode` marker and analytics-only
+ * `referrer` codes follow it; the SDK appends the Base builder code last.
  */
 export const CASH_ATTRIBUTION_CODE = 'peer-cash';
+export const CASH_REFERRAL_ATTRIBUTION_PREFIX = 'peer-ref-';
+
+const PEER_REFERRAL_CODE_RE = /^[A-Z0-9]{6}$/;
+
+/** Convert a Peer referral code into its financially meaningful ERC-8021 marker. */
+export function toCashReferralAttributionCode(rawCode: string): string {
+  const code = rawCode.trim().toUpperCase();
+  if (!PEER_REFERRAL_CODE_RE.test(code)) throw errors.invalidReferralCode();
+  return `${CASH_REFERRAL_ATTRIBUTION_PREFIX}${code}`;
+}
 
 /**
  * The SDK selects the indexer from `runtimeEnv` but defaults the curator to
@@ -117,8 +127,14 @@ export interface CashClientOptions {
   /** Relay API configuration for source assets outside Base USDC. */
   relay?: RelayOptions;
   /**
-   * Your own ERC-8021 attribution code(s), appended after
-   * {@link CASH_ATTRIBUTION_CODE} on every transaction (e.g. `'acme-app'`).
+   * Your six-character referral code from the Peer mobile or web app. The SDK
+   * emits `peer-ref-XXXXXX`; when this deposit fills, Curator routes the
+   * integration share to the Privy wallet that owns the code.
+   */
+  referralCode?: string;
+  /**
+   * Analytics-only ERC-8021 attribution code(s), appended after the Peer Cash
+   * and optional integration-referral markers (e.g. `'acme-app'`).
    */
   referrer?: string | string[];
 }
@@ -443,10 +459,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
   const { environment } = options;
   const transport = options.transport ?? http(options.rpcUrl ?? DEFAULT_RPC_URL);
 
-  // ERC-8021: 'peer-cash' first, then integrator codes; the SDK appends the
-  // Base builder code last. Applied to every mutating call on both paths.
+  // ERC-8021: 'peer-cash' first, then the one financially meaningful referral
+  // marker, then analytics codes. The SDK appends the Base builder code last.
   const referrerCodes = [
     CASH_ATTRIBUTION_CODE,
+    ...(options.referralCode === undefined
+      ? []
+      : [toCashReferralAttributionCode(options.referralCode)]),
     ...(options.referrer === undefined
       ? []
       : Array.isArray(options.referrer)

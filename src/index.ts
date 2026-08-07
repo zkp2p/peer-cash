@@ -9,7 +9,12 @@
  */
 
 // The client - the verbs
-export { createCashClient, CASH_ATTRIBUTION_CODE } from './client/createCashClient';
+export {
+  createCashClient,
+  CASH_ATTRIBUTION_CODE,
+  CASH_REFERRAL_ATTRIBUTION_PREFIX,
+  toCashReferralAttributionCode,
+} from './client/createCashClient';
 export type {
   CashClient,
   CashClientOptions,
