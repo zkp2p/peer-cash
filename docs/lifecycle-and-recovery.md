@@ -64,10 +64,16 @@ but the host or a signer-backed client must execute the route before
 `cash_cashout` prepares the Base-USDC order. Once the prepared `createDeposit`
 transaction confirms, call `finalizePreparedCashout(receipt)` to decode it with
 the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
-When `prepare()` returned `accessPolicyRequired: true`, submit and confirm
-`prepareAccessPolicy(depositId)` before treating the cash-out as complete. It
-attaches Plus, Pro, Peer Makers, and Peer Pay using the selected environment's
-canonical registry IDs.
+
+Venmo, Cash App, and PayPal require atomic deposit creation and access-policy
+configuration. The generic `cashout()` and `prepare()` paths reject these rails
+with `ATOMIC_ACCESS_POLICY_REQUIRED` before wallet access, Relay work, payee
+registration, allowance, or deposit submission. Peer web performs the required
+guard-before, create, guard-after, and policy configuration in one Curator-backed
+batch. A host must provide the same atomic guarantee to support these rails.
+Discovery marks them with `requiresAtomicAccessPolicy: true`.
+`prepareAccessPolicy(depositId)` is retained only to recover a restricted
+deposit already created by `0.4.4`; it is not a safe new-order sequence.
 
 There is no static chain/token allowlist in Peer Cash. Relay decides source
 support through its metadata and quote execution, filtered to the viem/EVM
@@ -295,6 +301,7 @@ explicit override.
 | `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation. Register it through Peer first; an existing registration can be reused.                        |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
+| `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Venmo, Cash App, or PayPal needs atomic creation and group policy setup. Use Peer web or an equivalent atomic host; nothing was submitted.   |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                        |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Relay source discovery failed. Retry or use Base USDC.                                                                                       |
@@ -312,7 +319,7 @@ explicit override.
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.             |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                              |
 | `DEPOSIT_RESOLUTION_FAILED`             | no        | Base tx succeeded but no `DepositReceived` was decoded. Inspect its logs and recover the composite id.                                       |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | The cash-out exists, but its required four-group policy was not confirmed. Use `recovery.depositId` and `groupIds`; never create it again.   |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | A `0.4.4` cash-out exists without confirmed group policy. Configure that existing deposit from recovery data; never create it again.         |
 | `INVALID_DEPOSIT_ID`                    | no        | The id is not `escrowAddress_onchainId`. A bare number cannot cold-hydrate; use the value returned by `cashout()`.                           |
 | `ORDER_NOT_FOUND`                       | yes       | Unknown id or immediate indexer lag. Verify the id and retry shortly after creation.                                                         |
 | `INDEXER_LAG`                           | yes       | Indexer trails the chain. Retry the read shortly.                                                                                            |

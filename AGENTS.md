@@ -32,7 +32,13 @@ Every transaction (including approves) carries ERC-8021 attribution:
 code. The namespaced referral marker gives its Peer Privy wallet the direct
 deposit-level integration share instead of applying maker L1/L2.
 
-**Two platform caveats, both surfaced in `capabilities()`:**
+**Platform caveats, all surfaced in `capabilities()`:**
+
+- **Venmo, Cash App, and PayPal** carry
+  `requiresAtomicAccessPolicy: true`. Generic `cashout()` and `prepare()` reject
+  them with `ATOMIC_ACCESS_POLICY_REQUIRED` before any side effect. Use Peer
+  web's Curator-backed atomic flow or a host with the same atomic guarantee;
+  never create the deposit and attach the group policy sequentially.
 
 - **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
@@ -93,7 +99,7 @@ const multiPlatform = await cash.cashout(
   {
     amount: usdc(500),
     receive: [
-      { platform: 'venmo', currency: 'USD', payee: '@handle' },
+      { platform: 'chime', currency: 'USD', payee: '$handle' },
       { platform: 'revolut', currencies: ['EUR', 'GBP'], payee: { offchainId: 'revtag' } },
     ],
   },
@@ -208,6 +214,8 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                         |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | Register a new Wise/PayPal payee through Peer; an existing registered handle can be reused |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
+| `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Use Peer web or an equivalent atomic host for Venmo, Cash App, or PayPal; nothing moved    |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Recover an existing `0.4.4` deposit from its policy recovery data; do not create it again  |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                                   |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                                  |

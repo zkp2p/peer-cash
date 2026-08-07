@@ -11,8 +11,10 @@
  * The curator validates supported handles against the live platform, so the
  * payee must be a real account. A new Wise/PayPal registration also needs the
  * identity attestation created by Peer; an existing registered handle can be
- * reused. Override the demo corridor with:
- *   CASH_PLATFORM=venmo CASH_CURRENCY=USD CASH_PAYEE=@your-venmo
+ * reused. Venmo, Cash App, and PayPal require Peer web or another host that
+ * creates the deposit and access policy atomically, so this generic demo uses
+ * Chime by default. Override the demo corridor with:
+ *   CASH_PLATFORM=revolut CASH_CURRENCY=EUR CASH_PAYEE=your-revtag
  */
 import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -26,9 +28,9 @@ const signer = createWalletClient({ account, chain: base, transport: http() });
 // One leg here; `receive` also accepts an array of legs to offer several
 // platforms on one order (each platform at most once, all at the oracle rate).
 const receive = {
-  platform: process.env.CASH_PLATFORM ?? 'venmo',
+  platform: process.env.CASH_PLATFORM ?? 'chime',
   currency: (process.env.CASH_CURRENCY ?? 'USD') as CurrencyType,
-  payee: { offchainId: process.env.CASH_PAYEE ?? '@your-venmo' },
+  payee: { offchainId: process.env.CASH_PAYEE ?? '$your-chime-sign' },
 };
 
 const cash = createCashClient({ environment: 'staging' });
