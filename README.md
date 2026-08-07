@@ -71,6 +71,31 @@ for await (const order of cash.watch(depositId)) {
 }
 ```
 
+## Earn the integration share
+
+Use the same six-character referral code shown in your Peer mobile or web app.
+No API key, registration transaction, or separate receiving address is needed:
+the referral code already belongs to your Peer Privy wallet.
+
+```ts
+const cash = createCashClient({
+  environment: 'production',
+  referralCode: 'ABC123',
+});
+```
+
+The SDK normalizes the value and stamps `peer-ref-ABC123` into ERC-8021
+attribution on the deposit transaction. When that liquidity is filled, Curator
+pays the code owner 50 bps, capped by the configured Peer service fee. This is
+the deposit-level integration path: it replaces the maker L1/L2 referral split
+for that deposit instead of enrolling the cashing-out user as your referee.
+
+The mapping is permanent. If you later customize your displayed Peer referral
+code, open deposits carrying the old code still pay the same wallet. Include at
+most one `peer-ref-XXXXXX` marker; an unknown or conflicting marker receives no
+integration share. The existing `referrer` option remains available for
+analytics-only ERC-8021 codes such as `acme-app`.
+
 Source asset path:
 
 ```ts
@@ -122,8 +147,9 @@ must execute and confirm its Relay route before preparing the Base-USDC
 cashout. After externally executing a prepared `createDeposit`, pass its
 confirmed receipt to `finalizePreparedCashout()` to recover the same
 `CashoutResult` shape as `cashout()` without importing protocol ABIs. Every
-Peer Cash transaction, including approves, carries ERC-8021
-attribution: `peer-cash` first, your own `referrer` code(s) after it.
+Peer Cash transaction, including approves, carries ERC-8021 attribution:
+`peer-cash` first, optional `peer-ref-XXXXXX` from `referralCode` next, and your
+analytics-only `referrer` code(s) after it.
 
 ```ts
 const prepared = await cash.prepare({

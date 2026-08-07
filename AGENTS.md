@@ -27,8 +27,10 @@ can withdraw an unmatched deposit.
    Base-USDC `cash_cashout` tool. Never pass `source` into `prepare()`.
 
 Every transaction (including approves) carries ERC-8021 attribution:
-`peer-cash`, then any `referrer` codes from `createCashClient` options, then
-the Base builder code.
+`peer-cash`, then optional `peer-ref-XXXXXX` from the six-character
+`referralCode`, then any analytics-only `referrer` codes, then the Base builder
+code. The namespaced referral marker gives its Peer Privy wallet the direct
+deposit-level integration share instead of applying maker L1/L2.
 
 **Two platform caveats, both surfaced in `capabilities()`:**
 

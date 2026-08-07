@@ -89,5 +89,8 @@ Key facts:
 - [Engine](src/engine/): pure order-state derivation and deposit-param
   construction (no I/O)
 - [Client](src/client/createCashClient.ts): the verb facade
+- Deposit integration referrals: pass the six-character Peer app code as
+  `createCashClient({ referralCode })`; the SDK emits `peer-ref-XXXXXX` and no
+  API key or referral-enrollment transaction is required.
 - [Tools manifest](src/tools/index.ts): JSON-schema definitions of the verbs
 - [Codecs](src/codecs/): zod schemas + lossless JSON round-trips

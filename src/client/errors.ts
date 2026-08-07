@@ -10,6 +10,7 @@ export type CashErrorCode =
   | 'AMOUNT_BELOW_MINIMUM'
   | 'INVALID_INTENT_AMOUNT_RANGE'
   | 'INVALID_PAYOUT_CURRENCIES'
+  | 'INVALID_REFERRAL_CODE'
   | 'ACTIVE_INTENT_BLOCKS_WITHDRAWAL'
   | 'NOTHING_TO_WITHDRAW'
   | 'INSUFFICIENT_AVAILABLE_FUNDS'
@@ -174,6 +175,13 @@ export const errors = {
       message: `The ${platform} payout currency set is invalid: ${reason}.`,
       retryable: false,
       remediation: `Pass one or more unique currencies listed for ${platform} by capabilities().`,
+    }),
+  invalidReferralCode: () =>
+    new CashError({
+      code: 'INVALID_REFERRAL_CODE',
+      message: `The Peer referral code must be exactly six letters or numbers.`,
+      retryable: false,
+      remediation: `Copy your six-character referral code from the Peer mobile or web app and pass it as referralCode.`,
     }),
   activeIntentBlocksWithdrawal: (depositId: string) =>
     new CashError({
