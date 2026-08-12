@@ -4,12 +4,7 @@
  */
 import { getPaymentMethodsCatalog, getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
-import {
-  BASE_CHAIN_ID,
-  BASE_USDC_ADDRESS,
-  CASH_RESTRICTED_PLATFORMS,
-  USDC_DECIMALS,
-} from '../engine/constants';
+import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
 import type { CashSourceCapabilities } from './relay';
 
@@ -63,11 +58,6 @@ export interface CashPlatformCapability {
    * `PAYEE_VERIFICATION_REQUIRED`.
    */
   requiresIdentityAttestation: boolean;
-  /**
-   * When true, the platform needs deposit creation and access-policy setup in
-   * one atomic host operation. Generic `cashout()` and `prepare()` fail closed.
-   */
-  requiresAtomicAccessPolicy: boolean;
 }
 
 export interface CashCapabilities {
@@ -110,7 +100,6 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
         currencies: [...new Set(currencies)].sort(),
         payeeHint: PAYEE_HINTS[platform] ?? 'Your payment handle for this platform',
         requiresIdentityAttestation: IDENTITY_ATTESTATION_PLATFORMS.has(platform),
-        requiresAtomicAccessPolicy: CASH_RESTRICTED_PLATFORMS.has(platform),
       };
     })
     .filter((p) => p.currencies.length > 0)

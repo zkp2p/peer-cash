@@ -24,7 +24,6 @@ export type CashErrorCode =
   | 'ORDER_NOT_FOUND'
   | 'PAYEE_REGISTRATION_FAILED'
   | 'PAYEE_VERIFICATION_REQUIRED'
-  | 'ATOMIC_ACCESS_POLICY_REQUIRED'
   | 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE'
   | 'SOURCE_RECIPIENT_MISMATCH'
   | 'SOURCE_CAPABILITIES_FAILED'
@@ -294,13 +293,6 @@ export const errors = {
       },
       { cause },
     ),
-  atomicAccessPolicyRequired: (platforms: readonly string[]) =>
-    new CashError({
-      code: 'ATOMIC_ACCESS_POLICY_REQUIRED',
-      message: `${platforms.join(', ')} cash-outs require atomic deposit creation and access-policy configuration.`,
-      retryable: false,
-      remediation: `Use Peer web or a host that atomically batches guard-before, createDeposit, guard-after, and configureDeposit. Nothing was submitted by this call.`,
-    }),
   sourceRouteUnsupportedInPrepare: () =>
     new CashError({
       code: 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE',
@@ -572,7 +564,7 @@ export const errors = {
         code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
         message: `Cash-out deposit ${depositId} was created, but its required access policy was not confirmed.`,
         retryable: false,
-        remediation: `Do not call cashout() again. Inspect the existing deposit and any access-policy transaction, then configure that deposit with recovery.groupIds through @zkp2p/sdk accessPolicy.`,
+        remediation: `Do not call cashout() again. Inspect the existing deposit and any access-policy transaction, then submit prepareAccessPolicy(recovery.depositId) with the same depositor wallet.`,
         recovery: {
           kind: 'configure-cashout-access-policy',
           depositId,

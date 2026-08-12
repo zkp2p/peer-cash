@@ -9,9 +9,9 @@ can withdraw an unmatched deposit.
 
 ## Decision tree: pick your entry point
 
-1. **You control a signer in-process** (viem `WalletClient`, e.g. a local
-   key or embedded wallet) → use `cashout()` / `topUp()` / `withdraw()`
-   directly.
+1. **You control a signer in-process** (any viem `WalletClient`, including a
+   local or externally connected EOA) → use `cashout()` / `topUp()` /
+   `withdraw()` directly. No Privy wallet is required.
 2. **Signing happens elsewhere** (AA bundler, policy engine, custody service,
    human approval step) → use `prepare()` / `prepareTopUp()` /
    `prepareWithdraw()`. Each returns unsigned `txs[]`
@@ -32,13 +32,12 @@ Every transaction (including approves) carries ERC-8021 attribution:
 code. The namespaced referral marker gives its Peer Privy wallet the direct
 deposit-level integration share instead of applying maker L1/L2.
 
-**Platform caveats, all surfaced in `capabilities()`:**
+**Platform caveats:**
 
-- **Venmo, Cash App, and PayPal** carry
-  `requiresAtomicAccessPolicy: true`. Generic `cashout()` and `prepare()` reject
-  them with `ATOMIC_ACCESS_POLICY_REQUIRED` before any side effect. Use Peer
-  web's Curator-backed atomic flow or a host with the same atomic guarantee;
-  never create the deposit and attach the group policy sequentially.
+- **Venmo, Cash App, and PayPal** attach Plus, Pro, Peer Makers, and Peer Pay
+  after deposit creation. Signed `cashout()` sends and confirms that policy
+  transaction with the same wallet. For `prepare()`, submit
+  `prepareAccessPolicy(depositId)` when `accessPolicyRequired` is true.
 
 - **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
@@ -214,8 +213,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                         |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | Register a new Wise/PayPal payee through Peer; an existing registered handle can be reused |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
-| `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Use Peer web or an equivalent atomic host for Venmo, Cash App, or PayPal; nothing moved    |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Recover an existing `0.4.4` deposit from its policy recovery data; do not create it again  |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Recover the existing deposit from its policy recovery data; do not create it again         |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                                   |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                                  |
