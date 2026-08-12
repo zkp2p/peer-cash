@@ -46,9 +46,9 @@ const multiCurrencyStats = fillStats['revolut:EUR+GBP+USD'];
 const { depositId } = await cash.cashout(
   {
     amount: usdc(1000),
-    receive: { platform: 'chime', currency: 'USD', payee: '$you' },
+    receive: { platform: 'venmo', currency: 'USD', payee: '@you' },
   },
-  { signer }, // any viem WalletClient on Base
+  { signer }, // any viem WalletClient on Base, including an EOA
 );
 
 // One method can offer several currencies. The buyer chooses the fill
@@ -71,7 +71,7 @@ const widestReach = await cash.cashout(
   {
     amount: usdc(1000),
     receive: [
-      { platform: 'chime', currency: 'USD', payee: '$you' },
+      { platform: 'venmo', currency: 'USD', payee: '@you' },
       { platform: 'revolut', currencies: ['EUR', 'GBP'], payee: { offchainId: 'revtag' } },
     ],
   },
@@ -120,7 +120,7 @@ const { depositId, source } = await cash.cashout(
       currency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
       tradeType: 'EXACT_INPUT',
     },
-    receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$you' } },
+    receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@you' } },
   },
   { signer, sourceSigner },
 );
@@ -141,9 +141,9 @@ console.log(source?.transactions?.origin, source?.transactions?.destination);
 | `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
-| `cashout(input, { signer })`                                   | Registers the payee and creates an unrestricted-rail order; protected rails fail before any side effect                         |
-| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare unrestricted-rail external signing, then resolve the confirmed createDeposit receipt into resumable state               |
-| `prepareAccessPolicy(depositId)`                               | Recover a restricted-rail deposit created by the unsafe `0.4.4` sequential flow; never use it to create a new order             |
+| `cashout(input, { signer })`                                   | Creates the order with any viem wallet; Venmo, Cash App, and PayPal then attach the canonical access groups                     |
+| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then check `accessPolicyRequired` for the follow-up                              |
+| `prepareAccessPolicy(depositId)`                               | Prepare the post-deposit Plus, Pro, Peer Makers, and Peer Pay policy transaction                                                |
 | `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
@@ -165,21 +165,22 @@ Peer Cash transaction, including approves, carries ERC-8021 attribution:
 `peer-cash` first, optional `peer-ref-XXXXXX` from `referralCode` next, and your
 analytics-only `referrer` code(s) after it.
 
-Venmo, Cash App, and PayPal must attach Plus, Pro, Peer Makers, and Peer Pay in
-the same atomic operation that creates the deposit. A create-then-configure
-sequence leaves a public interval in which an unapproved taker can signal an
-intent. The generic `cashout()` and `prepare()` paths therefore throw
-`ATOMIC_ACCESS_POLICY_REQUIRED` before wallet access, Relay quoting, payee
-registration, allowance, or deposit submission. Peer web supports these rails
-through its atomic Curator-backed flow. Other hosts must provide an equivalent
-atomic batch rather than composing the two public SDK calls sequentially.
-`capabilities()` marks these platforms with
-`requiresAtomicAccessPolicy: true`.
+No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
+work with any viem `WalletClient`, including a local or externally connected
+EOA; no Privy wallet or signer API is required. The deprecated
+`requiresAtomicAccessPolicy` capability remains for wire compatibility and is
+always `false`.
 
-`prepareAccessPolicy(depositId)` remains available only to recover a restricted
-deposit already created by `0.4.4`. Configure that existing deposit immediately;
-do not call `cashout()` again and do not use this recovery helper as a new-order
-flow.
+Venmo, Cash App, and PayPal cash-outs attach Plus, Pro, Peer Makers, and Peer
+Pay groups by default. Signed `cashout()` creates the deposit first, then uses
+the same wallet to submit and confirm the policy transaction; this intentionally
+leaves a brief non-atomic interval. Prepared integrations receive
+`accessPolicyRequired: true` for those platforms and, after confirming
+`createDeposit`, must call `finalizePreparedCashout(receipt)` followed by
+`prepareAccessPolicy(depositId)`. Other platforms do not need the follow-up.
+If policy attachment fails, `ACCESS_POLICY_CONFIGURATION_FAILED.recovery`
+identifies the existing deposit and any submitted policy transaction. Do not
+create another cash-out; resume the policy step with the same depositor wallet.
 
 `capabilities()` presents Zelle as one platform. A cashout with
 `receive.platform: 'zelle'` attaches only the generic Zelle payment method to
@@ -239,6 +240,9 @@ they are available. A source-routed result includes both a flat
 - `TRANSACTION_SUBMISSION_UNKNOWN`: a Base-only cashout or another mutation
   returned no hash. Treat it as potentially broadcast. Inspect recent Base
   wallet activity and the supplied recovery action before any retry.
+- `ACCESS_POLICY_CONFIGURATION_FAILED`: the deposit exists, but its required
+  Venmo, Cash App, or PayPal policy was not confirmed. Do not cash out again;
+  retry `prepareAccessPolicy(error.recovery.depositId)` with the depositor.
 
 Wallet clients pinned to the wrong chain fail with `SIGNER_CHAIN_MISMATCH`
 before a quote or transaction is submitted. Chainless wallets are checked

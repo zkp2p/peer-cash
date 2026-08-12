@@ -330,6 +330,17 @@ describe('prepared tx + result codecs', () => {
     );
   });
 
+  it('preserves an optional-policy prepared plan', () => {
+    const result = {
+      txs: [preparedTxToJson(tx)],
+      steps: [{ kind: 'createDeposit' as const, description: 'Create the order.' }],
+      register: { hashedOnchainIds: ['0x1'] },
+      accessPolicyRequired: false,
+    };
+
+    expect(prepareResultFromJson(result).accessPolicyRequired).toBe(false);
+  });
+
   it('cashoutResult round-trips including the nested order', () => {
     const result = {
       depositId: '0xescrow_1',
@@ -397,17 +408,20 @@ describe('capabilities codec', () => {
     expect(restored).toEqual(caps);
   });
 
-  it('derives atomic-policy requirements when decoding a pre-0.4.5 snapshot', () => {
+  it('normalizes legacy atomic-policy capabilities to false', () => {
     const json = capabilitiesToJson(buildCapabilities('staging'));
     const legacy = {
       ...json,
-      platforms: json.platforms.map(({ requiresAtomicAccessPolicy: _, ...platform }) => platform),
+      platforms: json.platforms.map(({ requiresAtomicAccessPolicy: _, ...platform }) => ({
+        ...platform,
+        ...(platform.platform === 'venmo' ? { requiresAtomicAccessPolicy: true } : {}),
+      })),
     };
 
     const restored = capabilitiesFromJson(legacy);
 
     expect(restored.platforms.find((platform) => platform.platform === 'venmo')).toMatchObject({
-      requiresAtomicAccessPolicy: true,
+      requiresAtomicAccessPolicy: false,
     });
     expect(restored.platforms.find((platform) => platform.platform === 'chime')).toMatchObject({
       requiresAtomicAccessPolicy: false,
@@ -451,26 +465,34 @@ describe('CashError codec', () => {
     expect(restored.toJSON()).toEqual(error.toJSON());
   });
 
-  it('round-trips required access-policy recovery without losing the deposit', () => {
+  it('continues to decode the deprecated atomic-policy error code', () => {
+    const error = errors.atomicAccessPolicyRequired(['venmo']);
+
+    expect(cashErrorFromJson(cashErrorToJson(error)).toJSON()).toEqual(error.toJSON());
+  });
+
+  it('round-trips access-policy recovery without losing the deposit or Relay source', () => {
     const error = errors.accessPolicyConfigurationFailed(
       '0xescrow_7',
       ['0xplus', '0xpro', '0xmakers', '0xpeerpay'],
-      new Error('receipt unavailable'),
-      '0xpolicy',
+      {
+        cause: new Error('receipt unavailable'),
+        transactionHash: '0xpolicy',
+        source: {
+          amount: 975_000n,
+          requestId: 'relay-request',
+          txHashes: ['0xorigin'],
+          transactions: {
+            origin: [{ hash: '0xorigin', chainId: 10 }],
+            destination: [],
+          },
+        },
+      },
     );
 
     const restored = cashErrorFromJson(cashErrorToJson(error));
 
     expect(restored.toJSON()).toEqual(error.toJSON());
-  });
-
-  it('round-trips the preflight atomic-policy requirement without recovery data', () => {
-    const error = errors.atomicAccessPolicyRequired(['venmo']);
-
-    const restored = cashErrorFromJson(cashErrorToJson(error));
-
-    expect(restored.toJSON()).toEqual(error.toJSON());
-    expect(restored.recovery).toBeUndefined();
   });
 
   it('round-trips an indeterminate Base transaction recovery without losing its hash', () => {

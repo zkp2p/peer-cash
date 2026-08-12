@@ -436,6 +436,7 @@ export const cashErrorRecoveryJsonSchema = z.discriminatedUnion('kind', [
       depositId: z.string(),
       groupIds: z.array(z.string()),
       transactionHash: z.string().optional(),
+      source: z.object(cashSourceRecoveryJsonShape).strict().optional(),
     })
     .strict(),
 ]);

@@ -5,7 +5,6 @@
  */
 import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
-import { CASH_RESTRICTED_PLATFORMS } from '../engine/constants';
 import { withExplain, type CashOrderData } from '../engine/orderState';
 import type { CashEstimate } from '../client/estimate';
 import type { CashFillStats } from '../client/fillEta';
@@ -461,6 +460,10 @@ export function topUpResultFromJson(json: unknown): TopUpResult {
 export function capabilitiesToJson(caps: CashCapabilities): CashCapabilitiesJson {
   return {
     ...caps,
+    platforms: caps.platforms.map((platform) => ({
+      ...platform,
+      requiresAtomicAccessPolicy: false,
+    })),
     amount: {
       min: caps.amount.min.toString(),
       recommendedMin: caps.amount.recommendedMin.toString(),
@@ -480,8 +483,7 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
     platforms: parsed.platforms.map((p) => ({
       ...p,
       currencies: p.currencies as CurrencyType[],
-      requiresAtomicAccessPolicy:
-        p.requiresAtomicAccessPolicy ?? CASH_RESTRICTED_PLATFORMS.has(p.platform),
+      requiresAtomicAccessPolicy: false,
     })),
     currencies: parsed.currencies as CurrencyType[],
     amount: {
@@ -521,6 +523,20 @@ export function cashErrorFromJson(json: unknown): CashError {
         groupIds: parsed.recovery.groupIds,
         ...(parsed.recovery.transactionHash !== undefined
           ? { transactionHash: parsed.recovery.transactionHash }
+          : {}),
+        ...(parsed.recovery.source !== undefined
+          ? {
+              source: {
+                amount: parsed.recovery.source.amount,
+                txHashes: parsed.recovery.source.txHashes,
+                ...(parsed.recovery.source.requestId !== undefined
+                  ? { requestId: parsed.recovery.source.requestId }
+                  : {}),
+                ...(parsed.recovery.source.transactions !== undefined
+                  ? { transactions: parsed.recovery.source.transactions }
+                  : {}),
+              },
+            }
           : {}),
       };
     } else if (parsed.recovery.kind === 'inspect-base-operation-submission') {

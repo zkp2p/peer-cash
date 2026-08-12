@@ -21,7 +21,7 @@ describe('buildCapabilities', () => {
       for (const platform of caps.platforms) {
         expect(platform.currencies.length).toBeGreaterThan(0);
         expect(platform.payeeHint.length).toBeGreaterThan(0);
-        expect(typeof platform.requiresAtomicAccessPolicy).toBe('boolean');
+        expect(platform.requiresAtomicAccessPolicy).toBe(false);
         for (const currency of platform.currencies) {
           expect(isMarketRateSupported(currency)).toBe(true);
         }
@@ -59,14 +59,6 @@ describe('buildCapabilities', () => {
     // both must be present so the flag is observable
     expect(caps.platforms.some((p) => p.platform === 'wise')).toBe(true);
     expect(caps.platforms.some((p) => p.platform === 'paypal')).toBe(true);
-  });
-
-  it('flags restricted rails as requiring an atomic host flow', () => {
-    const caps = buildCapabilities('production');
-    for (const platform of caps.platforms) {
-      const expected = ['venmo', 'cashapp', 'paypal'].includes(platform.platform);
-      expect(platform.requiresAtomicAccessPolicy).toBe(expected);
-    }
   });
 
   it('is synchronous and deterministic', () => {

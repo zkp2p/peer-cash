@@ -199,7 +199,7 @@ export interface CashoutInput {
 }
 
 export interface SignerOptions {
-  /** A viem WalletClient with an account, on Base. */
+  /** Any viem WalletClient with a Base account, including a local or external EOA. */
   signer: WalletClient;
 }
 
@@ -249,7 +249,7 @@ export interface CashoutResult {
   onchainDepositId: bigint;
   /** Optimistic snapshot (`awaiting-buyer`); poll `order(depositId)` for live state. */
   order: CashOrder;
-  /** @deprecated Only present in recovery data produced by the unsafe 0.4.4 sequential flow. */
+  /** Confirmed access-policy transaction for Venmo, Cash App, or PayPal cash-outs. */
   accessPolicyTxHash?: Hash;
   /** Present when `cashout()` first routed a source asset through Relay. */
   source?: {
@@ -273,7 +273,7 @@ export interface PrepareResult {
   steps: CashPreparedStep[];
   /** Curator payee registration output - the payee hashes now live on the deposit params. */
   register: { hashedOnchainIds: string[] };
-  /** @deprecated Always false for new plans; restricted rails require an atomic host flow. */
+  /** Whether the host must submit `prepareAccessPolicy(depositId)` after `createDeposit`. */
   accessPolicyRequired: boolean;
 }
 
@@ -343,7 +343,7 @@ export interface CashClient {
   prepare(input: CashoutInput): Promise<PrepareResult>;
   /** Resolve an externally executed createDeposit receipt into resumable cash-out state. */
   finalizePreparedCashout(receipt: PreparedCashoutReceipt): CashoutResult;
-  /** Recover an existing 0.4.4 restricted-rail deposit by preparing its four-group policy. */
+  /** Prepare the required four-group follow-up for a restricted cash-out. */
   prepareAccessPolicy(depositId: string): PreparedTransaction;
   /** 3 - Observe: resumable from `depositId` alone; no session state anywhere. */
   order(depositId: string): Promise<CashOrder>;
@@ -441,6 +441,12 @@ function isKnownPreBroadcastFailure(mapped: CashError): boolean {
     mapped.code === 'INSUFFICIENT_TOKEN_BALANCE' ||
     mapped.code === 'ALLOWANCE_NOT_VISIBLE' ||
     mapped.code === 'ESCROW_PAUSED'
+  );
+}
+
+function requiresCashoutAccessPolicy(depositInput: CashDepositInput): boolean {
+  return depositInput.payouts.some((payout) =>
+    CASH_RESTRICTED_PLATFORMS.has(payout.processorName.toLowerCase()),
   );
 }
 
@@ -623,15 +629,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
       ...payoutInput,
       ...(range ? { intentAmountRange: range } : {}),
     };
-  }
-
-  function assertGenericCashoutSupported(payoutInput: Omit<CashDepositInput, 'amount'>): void {
-    const restrictedPlatforms = payoutInput.payouts
-      .map((payout) => payout.processorName.toLowerCase())
-      .filter((platform) => CASH_RESTRICTED_PLATFORMS.has(platform));
-    if (restrictedPlatforms.length > 0) {
-      throw errors.atomicAccessPolicyRequired(restrictedPlatforms);
-    }
   }
 
   function isCashPayoutSet(payouts: readonly CashPayoutInfo[]): boolean {
@@ -971,6 +968,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
   function prepareCashoutAccess(
     depositId: string,
     client: Zkp2pClient = readClient,
+    source?: CashoutResult['source'],
   ): PreparedTransaction {
     const { compositeId, escrowAddress, onchainDepositId } = parseDepositId(depositId);
     const groupIds = CASH_ACCESS_GROUP_IDS[environment];
@@ -990,8 +988,59 @@ export function createCashClient(options: CashClientOptions): CashClient {
         chainId: prepared.chainId,
       };
     } catch (err) {
-      throw errors.accessPolicyConfigurationFailed(compositeId, groupIds, err);
+      throw errors.accessPolicyConfigurationFailed(compositeId, groupIds, {
+        cause: err,
+        ...(source ? { source } : {}),
+      });
     }
+  }
+
+  async function configureCashoutAccess(
+    client: Zkp2pClient,
+    signer: WalletClient,
+    depositInput: CashDepositInput,
+    depositId: string,
+    source?: CashoutResult['source'],
+  ): Promise<Hash | undefined> {
+    if (!requiresCashoutAccessPolicy(depositInput)) return undefined;
+
+    const groupIds = CASH_ACCESS_GROUP_IDS[environment];
+    const prepared = prepareCashoutAccess(depositId, client, source);
+
+    let hash: Hash;
+    try {
+      hash = await signer.sendTransaction({
+        account: signer.account!,
+        chain: signer.chain,
+        to: prepared.to,
+        data: prepared.data,
+        value: prepared.value,
+      });
+    } catch (err) {
+      throw errors.accessPolicyConfigurationFailed(depositId, groupIds, {
+        cause: err,
+        ...(source ? { source } : {}),
+      });
+    }
+
+    let receipt;
+    try {
+      receipt = await client.publicClient.waitForTransactionReceipt({ hash });
+    } catch (err) {
+      throw errors.accessPolicyConfigurationFailed(depositId, groupIds, {
+        cause: err,
+        transactionHash: hash,
+        ...(source ? { source } : {}),
+      });
+    }
+    if (receipt.status === 'reverted') {
+      throw errors.accessPolicyConfigurationFailed(depositId, groupIds, {
+        cause: errors.transactionFailed(hash),
+        transactionHash: hash,
+        ...(source ? { source } : {}),
+      });
+    }
+    return hash;
   }
 
   return {
@@ -1050,7 +1099,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     async cashout(input: CashoutInput, opts: CashoutOptions): Promise<CashoutResult> {
       const payoutInput = validatePayout(input);
-      assertGenericCashoutSupported(payoutInput);
       const client = await signingClient('cashout', opts);
       const owner = opts.signer.account!.address;
 
@@ -1165,6 +1213,13 @@ export function createCashClient(options: CashClientOptions): CashClient {
         const abi = client.escrowV2Abi ?? client.escrowAbi;
         const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
         if (!resolved) throw errors.depositResolutionFailed(hash);
+        const accessPolicyTxHash = await configureCashoutAccess(
+          client,
+          opts.signer,
+          depositInput,
+          resolved.compositeId,
+          routedSource,
+        );
         const order = deriveCashOrder(resolved.compositeId, [], {
           remainingAmount: depositInput.amount,
           status: 'ACTIVE',
@@ -1176,6 +1231,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           escrowAddress: resolved.escrowAddress,
           onchainDepositId: resolved.onchainDepositId,
           order,
+          ...(accessPolicyTxHash ? { accessPolicyTxHash } : {}),
           source: routedSource,
         };
       }
@@ -1230,6 +1286,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const abi = client.escrowV2Abi ?? client.escrowAbi;
       const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
       if (!resolved) throw errors.depositResolutionFailed(hash);
+      const accessPolicyTxHash = await configureCashoutAccess(
+        client,
+        opts.signer,
+        depositInput,
+        resolved.compositeId,
+      );
       const order = deriveCashOrder(resolved.compositeId, [], {
         remainingAmount: depositInput.amount,
         status: 'ACTIVE',
@@ -1241,6 +1303,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         escrowAddress: resolved.escrowAddress,
         onchainDepositId: resolved.onchainDepositId,
         order,
+        ...(accessPolicyTxHash ? { accessPolicyTxHash } : {}),
         ...(sourceResult ? { source: sourceResult } : {}),
       };
     },
@@ -1248,7 +1311,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
     async prepare(input: CashoutInput): Promise<PrepareResult> {
       if (input.source) throw errors.sourceRouteUnsupportedInPrepare();
       const depositInput = validateDepositInput(input.amount, input);
-      assertGenericCashoutSupported(depositInput);
       const params = await buildDepositParams(readClient, depositInput);
 
       const { prepared } = await readClient.prepareCreateDeposit({
@@ -1285,7 +1347,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           },
         ],
         register: { hashedOnchainIds },
-        accessPolicyRequired: false,
+        accessPolicyRequired: requiresCashoutAccessPolicy(depositInput),
       };
     },
 

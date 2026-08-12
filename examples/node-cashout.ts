@@ -11,9 +11,9 @@
  * The curator validates supported handles against the live platform, so the
  * payee must be a real account. A new Wise/PayPal registration also needs the
  * identity attestation created by Peer; an existing registered handle can be
- * reused. Venmo, Cash App, and PayPal require Peer web or another host that
- * creates the deposit and access policy atomically, so this generic demo uses
- * Chime by default. Override the demo corridor with:
+ * reused. This private-key EOA works directly with every supported platform;
+ * no Privy wallet is required. Venmo, Cash App, and PayPal attach their access
+ * policy in a confirmed follow-up transaction. Override the demo corridor with:
  *   CASH_PLATFORM=revolut CASH_CURRENCY=EUR CASH_PAYEE=your-revtag
  */
 import { createWalletClient, http } from 'viem';
@@ -28,9 +28,9 @@ const signer = createWalletClient({ account, chain: base, transport: http() });
 // One leg here; `receive` also accepts an array of legs to offer several
 // platforms on one order (each platform at most once, all at the oracle rate).
 const receive = {
-  platform: process.env.CASH_PLATFORM ?? 'chime',
+  platform: process.env.CASH_PLATFORM ?? 'venmo',
   currency: (process.env.CASH_CURRENCY ?? 'USD') as CurrencyType,
-  payee: { offchainId: process.env.CASH_PAYEE ?? '$your-chime-sign' },
+  payee: { offchainId: process.env.CASH_PAYEE ?? '@your-venmo' },
 };
 
 const cash = createCashClient({ environment: 'staging' });
@@ -51,6 +51,7 @@ console.log(
 // 2 - Cash out.
 const result = await cash.cashout({ amount: usdc(1), receive }, { signer });
 console.log(`deposit created: ${result.depositId} (tx ${result.txHash})`);
+if (result.accessPolicyTxHash) console.log(`access policy attached: ${result.accessPolicyTxHash}`);
 // Persist this in YOUR system: userId → result.depositId
 
 // 3/5 - Track it. A real service would watch until terminal; the demo bails

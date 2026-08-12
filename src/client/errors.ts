@@ -98,6 +98,8 @@ export type CashErrorRecovery =
       depositId: string;
       groupIds: string[];
       transactionHash?: string;
+      /** Present when Relay funded the already-created deposit. */
+      source?: CashSourceRecoveryBase;
     };
 
 export class CashError extends Error implements CashErrorShape {
@@ -294,12 +296,13 @@ export const errors = {
       },
       { cause },
     ),
+  /** @deprecated Cash-outs no longer require an atomic access-policy flow. */
   atomicAccessPolicyRequired: (platforms: readonly string[]) =>
     new CashError({
       code: 'ATOMIC_ACCESS_POLICY_REQUIRED',
-      message: `${platforms.join(', ')} cash-outs require atomic deposit creation and access-policy configuration.`,
+      message: `Atomic access-policy enforcement for ${platforms.join(', ')} is deprecated.`,
       retryable: false,
-      remediation: `Use Peer web or a host that atomically batches guard-before, createDeposit, guard-after, and configureDeposit. Nothing was submitted by this call.`,
+      remediation: `Upgrade @zkp2p/cash; current cash-out flows do not require atomic access-policy configuration.`,
     }),
   sourceRouteUnsupportedInPrepare: () =>
     new CashError({
@@ -564,23 +567,43 @@ export const errors = {
   accessPolicyConfigurationFailed: (
     depositId: string,
     groupIds: readonly string[],
-    cause?: unknown,
-    transactionHash?: string,
+    context: {
+      cause?: unknown;
+      transactionHash?: string;
+      source?: {
+        amount: bigint;
+        requestId?: string;
+        txHashes: string[];
+        transactions?: CashSourceRecoveryBase['transactions'];
+      };
+    } = {},
   ) =>
     new CashError(
       {
         code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-        message: `Cash-out deposit ${depositId} was created, but its required access policy was not confirmed.`,
+        message: `Cash-out deposit ${depositId} was created, but its access policy could not be confirmed.`,
         retryable: false,
-        remediation: `Do not call cashout() again. Inspect the existing deposit and any access-policy transaction, then configure that deposit with recovery.groupIds through @zkp2p/sdk accessPolicy.`,
+        remediation: `Do not create another cash-out. Submit prepareAccessPolicy(recovery.depositId) with the same depositor wallet, then confirm that transaction.`,
         recovery: {
           kind: 'configure-cashout-access-policy',
           depositId,
           groupIds: [...groupIds],
-          ...(transactionHash ? { transactionHash } : {}),
+          ...(context.transactionHash ? { transactionHash: context.transactionHash } : {}),
+          ...(context.source
+            ? {
+                source: {
+                  amount: context.source.amount.toString(),
+                  ...(context.source.requestId ? { requestId: context.source.requestId } : {}),
+                  txHashes: context.source.txHashes,
+                  ...(context.source.transactions
+                    ? { transactions: context.source.transactions }
+                    : {}),
+                },
+              }
+            : {}),
         },
       },
-      { cause },
+      { cause: context.cause },
     ),
   escrowPaused: () =>
     new CashError({

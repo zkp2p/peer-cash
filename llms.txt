@@ -69,6 +69,10 @@ Key facts:
   `sourceSigner`.
 - Wise and PayPal require attestation for a new payee registration; a
   previously registered bare handle can be reused.
+- Venmo, Cash App, and PayPal attach Plus, Pro, Peer Makers, and Peer Pay
+  groups after the deposit confirms. The follow-up is intentionally non-atomic;
+  `cashout()` submits it with the same viem wallet, while prepared hosts must
+  act when `accessPolicyRequired` is true. Any EOA works; Privy is not required.
 - Preproduction uses https://api-preprod.zkp2p.xyz by default; staging uses
   https://api-staging.zkp2p.xyz. curatorUrl can override either.
 
