@@ -193,7 +193,7 @@ const builtInCashTools = [
   {
     name: 'cash_cashout',
     description:
-      'Start a Base-USDC cash-out using the custody-separated prepare path. Returns UNSIGNED transactions plus same-index steps [approve, createDeposit]; signing and ordered submission stay host-side. No platform requires an access policy. For another source asset, complete cash_source_quote and cash_source_status first, then pass the guaranteed Base USDC output amount here.',
+      'Start a Base-USDC cash-out using the custody-separated prepare path. Returns UNSIGNED transactions plus same-index steps [approve, createDeposit]; signing and ordered submission stay host-side. For Venmo, Cash App, or PayPal, accessPolicyRequired is true: confirm createDeposit, finalize its receipt, then prepare and submit the access policy with the depositor. For another source asset, complete cash_source_quote and cash_source_status first, then pass the guaranteed Base USDC output amount here.',
     inputSchema: {
       type: 'object',
       properties: {

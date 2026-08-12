@@ -141,9 +141,9 @@ console.log(source?.transactions?.origin, source?.transactions?.destination);
 | `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
-| `cashout(input, { signer })`                                   | Registers the payee and creates the order with any viem `WalletClient`, including an EOA                                        |
-| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, then resolve the confirmed createDeposit receipt into resumable state                                 |
-| `prepareAccessPolicy(depositId)`                               | Optionally prepare a separate Plus, Pro, Peer Makers, and Peer Pay policy transaction                                           |
+| `cashout(input, { signer })`                                   | Creates the order with any viem wallet; Venmo, Cash App, and PayPal then attach the canonical access groups                     |
+| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then check `accessPolicyRequired` for the follow-up                              |
+| `prepareAccessPolicy(depositId)`                               | Prepare the post-deposit Plus, Pro, Peer Makers, and Peer Pay policy transaction                                                |
 | `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
@@ -171,10 +171,16 @@ EOA; no Privy wallet or signer API is required. The deprecated
 `requiresAtomicAccessPolicy` capability remains for wire compatibility and is
 always `false`.
 
-Access-policy attachment is an explicit opt-in. After a deposit is confirmed,
-a host may call `prepareAccessPolicy(depositId)` and submit the returned Plus,
-Pro, Peer Makers, and Peer Pay transaction with the same depositor wallet. This
-follow-up is separate and non-atomic; the cash-out remains valid without it.
+Venmo, Cash App, and PayPal cash-outs attach Plus, Pro, Peer Makers, and Peer
+Pay groups by default. Signed `cashout()` creates the deposit first, then uses
+the same wallet to submit and confirm the policy transaction; this intentionally
+leaves a brief non-atomic interval. Prepared integrations receive
+`accessPolicyRequired: true` for those platforms and, after confirming
+`createDeposit`, must call `finalizePreparedCashout(receipt)` followed by
+`prepareAccessPolicy(depositId)`. Other platforms do not need the follow-up.
+If policy attachment fails, `ACCESS_POLICY_CONFIGURATION_FAILED.recovery`
+identifies the existing deposit and any submitted policy transaction. Do not
+create another cash-out; resume the policy step with the same depositor wallet.
 
 `capabilities()` presents Zelle as one platform. A cashout with
 `receive.platform: 'zelle'` attaches only the generic Zelle payment method to
@@ -234,6 +240,9 @@ they are available. A source-routed result includes both a flat
 - `TRANSACTION_SUBMISSION_UNKNOWN`: a Base-only cashout or another mutation
   returned no hash. Treat it as potentially broadcast. Inspect recent Base
   wallet activity and the supplied recovery action before any retry.
+- `ACCESS_POLICY_CONFIGURATION_FAILED`: the deposit exists, but its required
+  Venmo, Cash App, or PayPal policy was not confirmed. Do not cash out again;
+  retry `prepareAccessPolicy(error.recovery.depositId)` with the depositor.
 
 Wallet clients pinned to the wrong chain fail with `SIGNER_CHAIN_MISMATCH`
 before a quote or transaction is submitted. Chainless wallets are checked

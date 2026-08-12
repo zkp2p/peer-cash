@@ -323,22 +323,22 @@ describe('prepared tx + result codecs', () => {
         { kind: 'createDeposit' as const, description: 'Create the order.' },
       ],
       register: { hashedOnchainIds: ['0x1'] },
-      accessPolicyRequired: false,
+      accessPolicyRequired: true,
     };
     expect(prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(result))))).toEqual(
       result,
     );
   });
 
-  it('normalizes legacy required-policy plans to optional', () => {
-    const legacy = {
+  it('preserves an optional-policy prepared plan', () => {
+    const result = {
       txs: [preparedTxToJson(tx)],
       steps: [{ kind: 'createDeposit' as const, description: 'Create the order.' }],
       register: { hashedOnchainIds: ['0x1'] },
-      accessPolicyRequired: true,
+      accessPolicyRequired: false,
     };
 
-    expect(prepareResultFromJson(legacy).accessPolicyRequired).toBe(false);
+    expect(prepareResultFromJson(result).accessPolicyRequired).toBe(false);
   });
 
   it('cashoutResult round-trips including the nested order', () => {
@@ -471,12 +471,23 @@ describe('CashError codec', () => {
     expect(cashErrorFromJson(cashErrorToJson(error)).toJSON()).toEqual(error.toJSON());
   });
 
-  it('round-trips optional access-policy recovery without losing the deposit', () => {
+  it('round-trips access-policy recovery without losing the deposit or Relay source', () => {
     const error = errors.accessPolicyConfigurationFailed(
       '0xescrow_7',
       ['0xplus', '0xpro', '0xmakers', '0xpeerpay'],
-      new Error('receipt unavailable'),
-      '0xpolicy',
+      {
+        cause: new Error('receipt unavailable'),
+        transactionHash: '0xpolicy',
+        source: {
+          amount: 975_000n,
+          requestId: 'relay-request',
+          txHashes: ['0xorigin'],
+          transactions: {
+            origin: [{ hash: '0xorigin', chainId: 10 }],
+            destination: [],
+          },
+        },
+      },
     );
 
     const restored = cashErrorFromJson(cashErrorToJson(error));

@@ -98,6 +98,8 @@ export type CashErrorRecovery =
       depositId: string;
       groupIds: string[];
       transactionHash?: string;
+      /** Present when Relay funded the already-created deposit. */
+      source?: CashSourceRecoveryBase;
     };
 
 export class CashError extends Error implements CashErrorShape {
@@ -565,23 +567,43 @@ export const errors = {
   accessPolicyConfigurationFailed: (
     depositId: string,
     groupIds: readonly string[],
-    cause?: unknown,
-    transactionHash?: string,
+    context: {
+      cause?: unknown;
+      transactionHash?: string;
+      source?: {
+        amount: bigint;
+        requestId?: string;
+        txHashes: string[];
+        transactions?: CashSourceRecoveryBase['transactions'];
+      };
+    } = {},
   ) =>
     new CashError(
       {
         code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-        message: `The optional access policy for cash-out deposit ${depositId} could not be configured.`,
+        message: `Cash-out deposit ${depositId} was created, but its access policy could not be confirmed.`,
         retryable: false,
-        remediation: `The cash-out remains valid without this optional policy. To retry the opt-in, submit prepareAccessPolicy(recovery.depositId) with the same depositor wallet.`,
+        remediation: `Do not create another cash-out. Submit prepareAccessPolicy(recovery.depositId) with the same depositor wallet, then confirm that transaction.`,
         recovery: {
           kind: 'configure-cashout-access-policy',
           depositId,
           groupIds: [...groupIds],
-          ...(transactionHash ? { transactionHash } : {}),
+          ...(context.transactionHash ? { transactionHash: context.transactionHash } : {}),
+          ...(context.source
+            ? {
+                source: {
+                  amount: context.source.amount.toString(),
+                  ...(context.source.requestId ? { requestId: context.source.requestId } : {}),
+                  txHashes: context.source.txHashes,
+                  ...(context.source.transactions
+                    ? { transactions: context.source.transactions }
+                    : {}),
+                },
+              }
+            : {}),
         },
       },
-      { cause },
+      { cause: context.cause },
     ),
   escrowPaused: () =>
     new CashError({

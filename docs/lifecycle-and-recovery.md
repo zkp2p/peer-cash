@@ -65,12 +65,16 @@ but the host or a signer-backed client must execute the route before
 transaction confirms, call `finalizePreparedCashout(receipt)` to decode it with
 the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
 
-Access policies are optional. `cashout()` and `prepare()` support every listed
-platform without one, and the deprecated `requiresAtomicAccessPolicy`
-capability is always `false`. After creation, a host may explicitly call
-`prepareAccessPolicy(depositId)` to prepare a separate, non-atomic transaction
-that attaches Plus, Pro, Peer Makers, and Peer Pay. Any viem `WalletClient`,
-including an EOA, can submit it; Privy is not required.
+The deprecated `requiresAtomicAccessPolicy` capability is always `false`:
+policy attachment is sequential, not atomic. Venmo, Cash App, and PayPal
+cash-outs nevertheless attach Plus, Pro, Peer Makers, and Peer Pay groups by
+default. Signed `cashout()` confirms the deposit before submitting and
+confirming the policy with the same viem wallet, so a brief unprotected interval
+exists. For `prepare()`, `accessPolicyRequired` marks whether the host must call
+`prepareAccessPolicy(depositId)` after finalizing the confirmed deposit receipt.
+Any viem `WalletClient`, including an EOA, can submit it; Privy is not required.
+If the follow-up fails, the deposit already exists. Recover from
+`ACCESS_POLICY_CONFIGURATION_FAILED` and never repeat the cash-out.
 
 There is no static chain/token allowlist in Peer Cash. Relay decides source
 support through its metadata and quote execution, filtered to the viem/EVM

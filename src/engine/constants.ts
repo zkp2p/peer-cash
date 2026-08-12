@@ -17,7 +17,7 @@ export const BASE_CHAIN_ID = 8453;
 /** Canonical USDC on Base (6 decimals). The deposit asset for every cash-out. */
 export const BASE_USDC_ADDRESS = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' as const;
 
-/** @deprecated Access-policy attachment is optional for every payout rail. */
+/** Platforms whose cash-outs attach the canonical access groups after deposit creation. */
 export const CASH_RESTRICTED_PLATFORMS = new Set(['venmo', 'cashapp', 'paypal']);
 
 /**

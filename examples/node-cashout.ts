@@ -12,7 +12,8 @@
  * payee must be a real account. A new Wise/PayPal registration also needs the
  * identity attestation created by Peer; an existing registered handle can be
  * reused. This private-key EOA works directly with every supported platform;
- * no Privy wallet or access policy is required. Override the demo corridor with:
+ * no Privy wallet is required. Venmo, Cash App, and PayPal attach their access
+ * policy in a confirmed follow-up transaction. Override the demo corridor with:
  *   CASH_PLATFORM=revolut CASH_CURRENCY=EUR CASH_PAYEE=your-revtag
  */
 import { createWalletClient, http } from 'viem';
@@ -50,6 +51,7 @@ console.log(
 // 2 - Cash out.
 const result = await cash.cashout({ amount: usdc(1), receive }, { signer });
 console.log(`deposit created: ${result.depositId} (tx ${result.txHash})`);
+if (result.accessPolicyTxHash) console.log(`access policy attached: ${result.accessPolicyTxHash}`);
 // Persist this in YOUR system: userId → result.depositId
 
 // 3/5 - Track it. A real service would watch until terminal; the demo bails

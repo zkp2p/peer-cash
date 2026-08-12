@@ -401,7 +401,7 @@ export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
     txs: result.txs.map(preparedTxToJson),
     steps: result.steps.map(preparedStepToJson),
     register: result.register,
-    accessPolicyRequired: false,
+    accessPolicyRequired: result.accessPolicyRequired,
   };
 }
 
@@ -411,7 +411,7 @@ export function prepareResultFromJson(json: unknown): PrepareResult {
     txs: parsed.txs.map(preparedTxFromJson),
     steps: parsed.steps.map(preparedStepFromJson),
     register: parsed.register,
-    accessPolicyRequired: false,
+    accessPolicyRequired: parsed.accessPolicyRequired,
   };
 }
 
@@ -523,6 +523,20 @@ export function cashErrorFromJson(json: unknown): CashError {
         groupIds: parsed.recovery.groupIds,
         ...(parsed.recovery.transactionHash !== undefined
           ? { transactionHash: parsed.recovery.transactionHash }
+          : {}),
+        ...(parsed.recovery.source !== undefined
+          ? {
+              source: {
+                amount: parsed.recovery.source.amount,
+                txHashes: parsed.recovery.source.txHashes,
+                ...(parsed.recovery.source.requestId !== undefined
+                  ? { requestId: parsed.recovery.source.requestId }
+                  : {}),
+                ...(parsed.recovery.source.transactions !== undefined
+                  ? { transactions: parsed.recovery.source.transactions }
+                  : {}),
+              },
+            }
           : {}),
       };
     } else if (parsed.recovery.kind === 'inspect-base-operation-submission') {

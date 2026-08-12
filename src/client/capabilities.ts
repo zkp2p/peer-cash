@@ -58,7 +58,7 @@ export interface CashPlatformCapability {
    * `PAYEE_VERIFICATION_REQUIRED`.
    */
   requiresIdentityAttestation: boolean;
-  /** @deprecated Always false. Access-policy attachment is optional. */
+  /** @deprecated Always false. Restricted-platform policies are attached sequentially. */
   requiresAtomicAccessPolicy: boolean;
 }
 

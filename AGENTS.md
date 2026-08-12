@@ -34,10 +34,13 @@ deposit-level integration share instead of applying maker L1/L2.
 
 **Platform caveats, all surfaced in `capabilities()`:**
 
-- **Access policies are optional.** `cashout()` and `prepare()` support every
-  listed platform without one. A host may explicitly call
-  `prepareAccessPolicy(depositId)` after creation to attach Plus, Pro, Peer
-  Makers, and Peer Pay. This is a separate, non-atomic transaction.
+- **Venmo, Cash App, and PayPal attach access groups by default.** Signed
+  `cashout()` confirms `createDeposit`, then submits and confirms the Plus, Pro,
+  Peer Makers, and Peer Pay policy using the same viem wallet. This is a
+  deliberate non-atomic follow-up with a brief unprotected interval. For
+  `prepare()`, check `accessPolicyRequired`; after `createDeposit` confirms,
+  finalize its receipt and submit `prepareAccessPolicy(depositId)` with the
+  depositor. Any viem EOA works; Privy is not required.
 
 - **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
@@ -214,7 +217,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | Register a new Wise/PayPal payee through Peer; an existing registered handle can be reused |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
 | `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code; current SDK flows never emit it                             |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Optional policy preparation failed; the cash-out remains valid                             |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Deposit exists; retry its policy with `recovery.depositId`, never create another cash-out  |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                                   |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                                  |
