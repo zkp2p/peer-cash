@@ -108,11 +108,12 @@ const caps = (await executeTool('cash_capabilities', {})) as {
     platform: string;
     currencies: string[];
     payeeHint: string;
+    requiresAtomicAccessPolicy: boolean;
   }[];
 };
 const venmo = caps.platforms.find((p) => p.platform === 'venmo');
 console.log(`agent sees ${caps.platforms.length} platforms; venmo capability:`);
-console.log(`  hint="${venmo?.payeeHint}" currencies=${venmo?.currencies.join(',')}\n`);
+console.log(`  hint="${venmo?.payeeHint}" atomic=${venmo?.requiresAtomicAccessPolicy}\n`);
 
 const est = await executeTool('cash_estimate', {
   amount: usdc(250).toString(),

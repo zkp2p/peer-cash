@@ -65,11 +65,12 @@ but the host or a signer-backed client must execute the route before
 transaction confirms, call `finalizePreparedCashout(receipt)` to decode it with
 the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
 
-When `prepare()` returns `accessPolicyRequired: true`, submit and confirm
-`prepareAccessPolicy(depositId)` after `createDeposit`. It attaches Plus, Pro,
-Peer Makers, and Peer Pay using the selected environment's canonical registry
-IDs. The same sequence is built into signed `cashout()` calls and works with
-any viem `WalletClient`, including an EOA; it does not require Privy.
+Access policies are optional. `cashout()` and `prepare()` support every listed
+platform without one, and the deprecated `requiresAtomicAccessPolicy`
+capability is always `false`. After creation, a host may explicitly call
+`prepareAccessPolicy(depositId)` to prepare a separate, non-atomic transaction
+that attaches Plus, Pro, Peer Makers, and Peer Pay. Any viem `WalletClient`,
+including an EOA, can submit it; Privy is not required.
 
 There is no static chain/token allowlist in Peer Cash. Relay decides source
 support through its metadata and quote execution, filtered to the viem/EVM
@@ -297,6 +298,7 @@ explicit override.
 | `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation. Register it through Peer first; an existing registration can be reused.                        |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
+| `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code. Current SDK flows never emit it.                                                                              |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                        |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Relay source discovery failed. Retry or use Base USDC.                                                                                       |
@@ -314,7 +316,7 @@ explicit override.
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.             |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                              |
 | `DEPOSIT_RESOLUTION_FAILED`             | no        | Base tx succeeded but no `DepositReceived` was decoded. Inspect its logs and recover the composite id.                                       |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | The cash-out exists, but its required four-group policy was not confirmed. Use `recovery.depositId` and `groupIds`; never create it again.   |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Optional policy preparation failed. The cash-out remains valid; retry the opt-in with the same depositor if desired.                         |
 | `INVALID_DEPOSIT_ID`                    | no        | The id is not `escrowAddress_onchainId`. A bare number cannot cold-hydrate; use the value returned by `cashout()`.                           |
 | `ORDER_NOT_FOUND`                       | yes       | Unknown id or immediate indexer lag. Verify the id and retry shortly after creation.                                                         |
 | `INDEXER_LAG`                           | yes       | Indexer trails the chain. Retry the read shortly.                                                                                            |

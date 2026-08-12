@@ -774,7 +774,7 @@ describe('cashout()', () => {
   });
 
   it.each(['venmo', 'cashapp', 'paypal'])(
-    'supports %s with a generic EOA signer and attaches the required access groups',
+    'supports %s with a generic EOA signer without requiring an access policy',
     async (platform) => {
       mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
       mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
@@ -794,57 +794,20 @@ describe('cashout()', () => {
         { signer: eoaSigner },
       );
 
-      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
-        escrow: ESCROW,
-        depositId: 5n,
-        enabled: true,
-        groupIds: CASH_ACCESS_GROUP_IDS.staging,
-        takers: [],
-        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
-      });
       expect(Zkp2pClient).toHaveBeenCalledWith(
         expect.objectContaining({ walletClient: eoaSigner }),
       );
-      expect(eoaSigner.sendTransaction).toHaveBeenCalledWith({
-        account: eoaSigner.account,
-        chain: eoaSigner.chain,
-        to: '0x3333333333333333333333333333333333333333',
-        data: '0xaccess',
-        value: 0n,
+      expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
+      expect(mockInstance.accessPolicy.prepareConfigureDeposit).not.toHaveBeenCalled();
+      expect(eoaSigner.sendTransaction).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        depositId: `${ESCROW}_5`,
+        txHash: '0xhash',
+        onchainDepositId: 5n,
       });
-      expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenLastCalledWith({
-        hash: '0xaccess',
-      });
-      expect(result.accessPolicyTxHash).toBe('0xaccess');
+      expect(result.accessPolicyTxHash).toBeUndefined();
     },
   );
-
-  it('reports the existing deposit when required access configuration fails', async () => {
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-      status: 'success',
-      logs: [depositReceivedLog(5n)],
-    });
-    vi.mocked(signer.sendTransaction).mockRejectedValueOnce(new Error('User rejected request'));
-
-    await expect(
-      client().cashout(
-        {
-          amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@seller' } },
-        },
-        { signer },
-      ),
-    ).rejects.toMatchObject({
-      code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-      retryable: false,
-      recovery: {
-        kind: 'configure-cashout-access-policy',
-        depositId: `${ESCROW}_5`,
-        groupIds: CASH_ACCESS_GROUP_IDS.staging,
-      },
-    });
-  });
 
   it('creates a signed Zelle cashout with only the generic method', async () => {
     const payeeHashes = ['0xzelle'];
@@ -1952,7 +1915,7 @@ describe('prepare()', () => {
     expect(result.register.hashedOnchainIds).toEqual(['0xpayeehash']);
   });
 
-  it('prepares an EOA-compatible restricted cash-out and marks the access follow-up', async () => {
+  it('prepares an EOA-compatible cash-out without requiring an access follow-up', async () => {
     mockInstance.prepareCreateDeposit.mockResolvedValue({
       depositDetails: [{}],
       prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
@@ -1969,7 +1932,7 @@ describe('prepare()', () => {
     expect(txs[0]?.data.startsWith('0x095ea7b3')).toBe(true); // approve selector
     expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xdeposit' });
     expect(register.hashedOnchainIds).toEqual(['0xpayeehash']);
-    expect(accessPolicyRequired).toBe(true);
+    expect(accessPolicyRequired).toBe(false);
     // No signing surface touched.
     expect(mockInstance.createDeposit).not.toHaveBeenCalled();
     expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();

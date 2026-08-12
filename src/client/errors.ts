@@ -24,6 +24,7 @@ export type CashErrorCode =
   | 'ORDER_NOT_FOUND'
   | 'PAYEE_REGISTRATION_FAILED'
   | 'PAYEE_VERIFICATION_REQUIRED'
+  | 'ATOMIC_ACCESS_POLICY_REQUIRED'
   | 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE'
   | 'SOURCE_RECIPIENT_MISMATCH'
   | 'SOURCE_CAPABILITIES_FAILED'
@@ -293,6 +294,14 @@ export const errors = {
       },
       { cause },
     ),
+  /** @deprecated Cash-outs no longer require an atomic access-policy flow. */
+  atomicAccessPolicyRequired: (platforms: readonly string[]) =>
+    new CashError({
+      code: 'ATOMIC_ACCESS_POLICY_REQUIRED',
+      message: `Atomic access-policy enforcement for ${platforms.join(', ')} is deprecated.`,
+      retryable: false,
+      remediation: `Upgrade @zkp2p/cash; current cash-out flows do not require atomic access-policy configuration.`,
+    }),
   sourceRouteUnsupportedInPrepare: () =>
     new CashError({
       code: 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE',
@@ -562,9 +571,9 @@ export const errors = {
     new CashError(
       {
         code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-        message: `Cash-out deposit ${depositId} was created, but its required access policy was not confirmed.`,
+        message: `The optional access policy for cash-out deposit ${depositId} could not be configured.`,
         retryable: false,
-        remediation: `Do not call cashout() again. Inspect the existing deposit and any access-policy transaction, then submit prepareAccessPolicy(recovery.depositId) with the same depositor wallet.`,
+        remediation: `The cash-out remains valid without this optional policy. To retry the opt-in, submit prepareAccessPolicy(recovery.depositId) with the same depositor wallet.`,
         recovery: {
           kind: 'configure-cashout-access-policy',
           depositId,

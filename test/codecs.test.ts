@@ -323,11 +323,22 @@ describe('prepared tx + result codecs', () => {
         { kind: 'createDeposit' as const, description: 'Create the order.' },
       ],
       register: { hashedOnchainIds: ['0x1'] },
-      accessPolicyRequired: true,
+      accessPolicyRequired: false,
     };
     expect(prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(result))))).toEqual(
       result,
     );
+  });
+
+  it('normalizes legacy required-policy plans to optional', () => {
+    const legacy = {
+      txs: [preparedTxToJson(tx)],
+      steps: [{ kind: 'createDeposit' as const, description: 'Create the order.' }],
+      register: { hashedOnchainIds: ['0x1'] },
+      accessPolicyRequired: true,
+    };
+
+    expect(prepareResultFromJson(legacy).accessPolicyRequired).toBe(false);
   });
 
   it('cashoutResult round-trips including the nested order', () => {
@@ -396,6 +407,26 @@ describe('capabilities codec', () => {
     const restored = capabilitiesFromJson(JSON.parse(JSON.stringify(capabilitiesToJson(caps))));
     expect(restored).toEqual(caps);
   });
+
+  it('normalizes legacy atomic-policy capabilities to false', () => {
+    const json = capabilitiesToJson(buildCapabilities('staging'));
+    const legacy = {
+      ...json,
+      platforms: json.platforms.map(({ requiresAtomicAccessPolicy: _, ...platform }) => ({
+        ...platform,
+        ...(platform.platform === 'venmo' ? { requiresAtomicAccessPolicy: true } : {}),
+      })),
+    };
+
+    const restored = capabilitiesFromJson(legacy);
+
+    expect(restored.platforms.find((platform) => platform.platform === 'venmo')).toMatchObject({
+      requiresAtomicAccessPolicy: false,
+    });
+    expect(restored.platforms.find((platform) => platform.platform === 'chime')).toMatchObject({
+      requiresAtomicAccessPolicy: false,
+    });
+  });
 });
 
 describe('CashError codec', () => {
@@ -434,7 +465,13 @@ describe('CashError codec', () => {
     expect(restored.toJSON()).toEqual(error.toJSON());
   });
 
-  it('round-trips required access-policy recovery without losing the deposit', () => {
+  it('continues to decode the deprecated atomic-policy error code', () => {
+    const error = errors.atomicAccessPolicyRequired(['venmo']);
+
+    expect(cashErrorFromJson(cashErrorToJson(error)).toJSON()).toEqual(error.toJSON());
+  });
+
+  it('round-trips optional access-policy recovery without losing the deposit', () => {
     const error = errors.accessPolicyConfigurationFailed(
       '0xescrow_7',
       ['0xplus', '0xpro', '0xmakers', '0xpeerpay'],

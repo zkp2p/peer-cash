@@ -141,9 +141,9 @@ console.log(source?.transactions?.origin, source?.transactions?.destination);
 | `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
-| `cashout(input, { signer })`                                   | Registers the payee and creates the order; Venmo, Cash App, and PayPal also confirm the required four-group access policy       |
+| `cashout(input, { signer })`                                   | Registers the payee and creates the order with any viem `WalletClient`, including an EOA                                        |
 | `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, then resolve the confirmed createDeposit receipt into resumable state                                 |
-| `prepareAccessPolicy(depositId)`                               | Prepare the Plus, Pro, Peer Makers, and Peer Pay follow-up for an externally signed restricted-rail cash-out                    |
+| `prepareAccessPolicy(depositId)`                               | Optionally prepare a separate Plus, Pro, Peer Makers, and Peer Pay policy transaction                                           |
 | `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
@@ -165,43 +165,16 @@ Peer Cash transaction, including approves, carries ERC-8021 attribution:
 `peer-cash` first, optional `peer-ref-XXXXXX` from `referralCode` next, and your
 analytics-only `referrer` code(s) after it.
 
-Venmo, Cash App, and PayPal attach Plus, Pro, Peer Makers, and Peer Pay after
-deposit creation. The signed path works with any viem `WalletClient`, including
-a local or externally connected EOA; it sends the policy transaction with the
-same signer and returns only after confirmation. The policy hash is available
-as `accessPolicyTxHash`. No Privy wallet or signer API is required.
+No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
+work with any viem `WalletClient`, including a local or externally connected
+EOA; no Privy wallet or signer API is required. The deprecated
+`requiresAtomicAccessPolicy` capability remains for wire compatibility and is
+always `false`.
 
-The unsigned path exposes the same flow without assuming a wallet provider:
-
-```ts
-const prepared = await cash.prepare({
-  amount: 5_000_000n,
-  receive: {
-    platform: 'venmo',
-    currency: 'USD',
-    payee: { offchainId: '@maker' },
-  },
-});
-
-let createDepositReceipt;
-for (const [index, transaction] of prepared.txs.entries()) {
-  const receipt = await externalRuntime.sendAndWait(transaction);
-  if (prepared.steps[index]?.kind === 'createDeposit') {
-    createDepositReceipt = receipt;
-  }
-}
-if (!createDepositReceipt) throw new Error('createDeposit receipt missing');
-
-const result = cash.finalizePreparedCashout(createDepositReceipt);
-if (prepared.accessPolicyRequired) {
-  await externalRuntime.sendAndWait(cash.prepareAccessPolicy(result.depositId));
-}
-await persistDepositId(result.depositId);
-```
-
-If policy confirmation fails after creation, `cashout()` throws
-`ACCESS_POLICY_CONFIGURATION_FAILED` with the existing `depositId` and exact
-`groupIds`. Recover that deposit; never repeat the cash-out.
+Access-policy attachment is an explicit opt-in. After a deposit is confirmed,
+a host may call `prepareAccessPolicy(depositId)` and submit the returned Plus,
+Pro, Peer Makers, and Peer Pay transaction with the same depositor wallet. This
+follow-up is separate and non-atomic; the cash-out remains valid without it.
 
 `capabilities()` presents Zelle as one platform. A cashout with
 `receive.platform: 'zelle'` attaches only the generic Zelle payment method to

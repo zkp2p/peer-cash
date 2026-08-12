@@ -401,7 +401,7 @@ export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
     txs: result.txs.map(preparedTxToJson),
     steps: result.steps.map(preparedStepToJson),
     register: result.register,
-    accessPolicyRequired: result.accessPolicyRequired,
+    accessPolicyRequired: false,
   };
 }
 
@@ -411,7 +411,7 @@ export function prepareResultFromJson(json: unknown): PrepareResult {
     txs: parsed.txs.map(preparedTxFromJson),
     steps: parsed.steps.map(preparedStepFromJson),
     register: parsed.register,
-    accessPolicyRequired: parsed.accessPolicyRequired,
+    accessPolicyRequired: false,
   };
 }
 
@@ -460,6 +460,10 @@ export function topUpResultFromJson(json: unknown): TopUpResult {
 export function capabilitiesToJson(caps: CashCapabilities): CashCapabilitiesJson {
   return {
     ...caps,
+    platforms: caps.platforms.map((platform) => ({
+      ...platform,
+      requiresAtomicAccessPolicy: false,
+    })),
     amount: {
       min: caps.amount.min.toString(),
       recommendedMin: caps.amount.recommendedMin.toString(),
@@ -479,6 +483,7 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
     platforms: parsed.platforms.map((p) => ({
       ...p,
       currencies: p.currencies as CurrencyType[],
+      requiresAtomicAccessPolicy: false,
     })),
     currencies: parsed.currencies as CurrencyType[],
     amount: {
