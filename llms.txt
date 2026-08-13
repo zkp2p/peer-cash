@@ -40,7 +40,8 @@ Key facts:
   prepareWithdraw, prepareTopUp) for host-side signing; source-routed cashout
   needs signer-backed Relay execution first. prepare() and the cash_cashout tool
   are Base-USDC-only; cash_source_quote/status do not execute the route.
-  @zkp2p/cash/tools ships a JSON-schema tool manifest.
+  @zkp2p/cash/tools ships a JSON-schema tool manifest. Receipt finalization
+  and policy preparation remain CashClient methods for the host adapter.
 - Errors are typed: { code, retryable, remediation, recovery? }. Completed
   Relay routes retain requestId, flat hashes, and origin/destination
   transactions. Retry Base-only after SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED;
@@ -67,12 +68,17 @@ Key facts:
 - Default path is same-chain Base USDC. Optional `source` on `cashout()` runs
   Relay source-to-Base-USDC first; non-Base source chains require
   `sourceSigner`.
-- Wise and PayPal require attestation for a new payee registration; a
-  previously registered bare handle can be reused.
+- Wise and PayPal require attestation for a new payee registration. The SDK
+  accepts but does not mint it; first-party Peer web obtains it through the
+  Peer TEE browser extension. A previously registered bare handle can be reused.
 - Venmo, Cash App, and PayPal attach Plus, Pro, Peer Makers, and Peer Pay
-  groups after the deposit confirms. The follow-up is intentionally non-atomic;
-  `cashout()` submits it with the same viem wallet, while prepared hosts must
-  act when `accessPolicyRequired` is true. Any EOA works; Privy is not required.
+  groups after the deposit confirms, restricting which takers can signal an
+  intent. If any payout leg uses one of these platforms, the follow-up is
+  intentionally non-atomic; `cashout()` submits it with the same viem wallet,
+  while prepared hosts must act when `accessPolicyRequired` is true. Any EOA
+  works; Privy is not required. On ACCESS_POLICY_CONFIGURATION_FAILED, never
+  repeat the cashout; inspect recovery.transactionHash before resubmitting a
+  policy.
 - Preproduction uses https://api-preprod.zkp2p.xyz by default; staging uses
   https://api-staging.zkp2p.xyz. curatorUrl can override either.
 

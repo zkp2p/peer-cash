@@ -54,7 +54,9 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       case 'cash_cashout': {
         // Tool/prepare path: Base USDC only. cash_source_quote is read-only;
         // the host must execute and confirm Relay with its own signer/runtime,
-        // then call this tool with the guaranteed Base USDC amount.
+        // then call this tool with the guaranteed Base USDC amount. Persist
+        // accessPolicyRequired: after createDeposit confirms, the host adapter
+        // calls finalizePreparedCashout(receipt), then prepareAccessPolicy().
         const input = {
           amount: BigInt(args.amount as string),
           receive: args.receive as never,
@@ -108,12 +110,16 @@ const caps = (await executeTool('cash_capabilities', {})) as {
     platform: string;
     currencies: string[];
     payeeHint: string;
+    requiresIdentityAttestation: boolean;
     requiresAtomicAccessPolicy: boolean;
   }[];
 };
 const venmo = caps.platforms.find((p) => p.platform === 'venmo');
 console.log(`agent sees ${caps.platforms.length} platforms; venmo capability:`);
-console.log(`  hint="${venmo?.payeeHint}" atomic=${venmo?.requiresAtomicAccessPolicy}\n`);
+console.log(
+  `  hint="${venmo?.payeeHint}" identityAttestation=${venmo?.requiresIdentityAttestation}`,
+);
+console.log('  sequential access policy is reported by cash_cashout.accessPolicyRequired\n');
 
 const est = await executeTool('cash_estimate', {
   amount: usdc(250).toString(),

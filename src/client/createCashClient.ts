@@ -249,7 +249,7 @@ export interface CashoutResult {
   onchainDepositId: bigint;
   /** Optimistic snapshot (`awaiting-buyer`); poll `order(depositId)` for live state. */
   order: CashOrder;
-  /** Confirmed access-policy transaction for Venmo, Cash App, or PayPal cash-outs. */
+  /** Confirmed access-policy transaction when any payout leg is Venmo, Cash App, or PayPal. */
   accessPolicyTxHash?: Hash;
   /** Present when `cashout()` first routed a source asset through Relay. */
   source?: {
@@ -273,7 +273,7 @@ export interface PrepareResult {
   steps: CashPreparedStep[];
   /** Curator payee registration output - the payee hashes now live on the deposit params. */
   register: { hashedOnchainIds: string[] };
-  /** Whether the host must submit `prepareAccessPolicy(depositId)` after `createDeposit`. */
+  /** Whether the host must submit and confirm the policy after `createDeposit` confirms. */
   accessPolicyRequired: boolean;
 }
 

@@ -18,7 +18,9 @@ can withdraw an unmatched deposit.
    (`{ to, data, value, chainId }`) plus same-index `steps[]` labels; inspect
    the plan, submit the transactions in order, and wait for each receipt. After
    `createDeposit` confirms, pass its receipt to `finalizePreparedCashout()` and
-   persist the returned `depositId`.
+   persist the returned `depositId`. If the original plan set
+   `accessPolicyRequired: true`, submit and confirm
+   `prepareAccessPolicy(depositId)` with the depositor next.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
    `@zkp2p/cash/tools` and map the tool names to the verbs above. Base-USDC
    mutating tools return unsigned transactions. `cash_source_quote` is a quote,
@@ -32,9 +34,10 @@ Every transaction (including approves) carries ERC-8021 attribution:
 code. The namespaced referral marker gives its Peer Privy wallet the direct
 deposit-level integration share instead of applying maker L1/L2.
 
-**Platform caveats, all surfaced in `capabilities()`:**
+**Platform caveats:**
 
-- **Venmo, Cash App, and PayPal attach access groups by default.** Signed
+- **Venmo, Cash App, and PayPal restrict who can signal intents by default.**
+  If any payout leg uses one of these platforms, signed
   `cashout()` confirms `createDeposit`, then submits and confirms the Plus, Pro,
   Peer Makers, and Peer Pay policy using the same viem wallet. This is a
   deliberate non-atomic follow-up with a brief unprotected interval. For
@@ -44,9 +47,10 @@ deposit-level integration share instead of applying maker L1/L2.
 
 - **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
-  (it comes from the Peer app/extension). An already-registered handle can be
-  reused with bare payee data. A new handle without its attestation fails with
-  `PAYEE_VERIFICATION_REQUIRED` before funds move on-chain.
+  (first-party Peer web obtains it through the Peer TEE browser extension).
+  An already-registered handle can be reused with bare payee data. A new handle
+  without its attestation fails with `PAYEE_VERIFICATION_REQUIRED` before funds
+  move on-chain.
 - **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
   platform at registration - the account must exist. The rest (Zelle, Chime,
   etc.) are format-checked only. Match handles to the `payeeHint`.
@@ -180,6 +184,10 @@ console.log(routed.source?.transactions?.origin, routed.source?.transactions?.de
   broadcast; follow its recovery action and inspect wallet/protocol state.
   `TRANSACTION_STATUS_UNKNOWN` means the returned hash may already have
   succeeded. Inspect `err.recovery.transactionHash` first.
+- **Never repeat a cash-out after an access-policy failure.** The deposit
+  already exists. If `recovery.transactionHash` is present, inspect that policy
+  transaction first; prepare another policy transaction only when the previous
+  one is absent or confirmed reverted.
 - **`ORDER_NOT_FOUND` seconds after `cashout()` is indexer lag**, not a lost
   deposit. The tx receipt you hold is the truth. Retry; `watch()` absorbs
   this automatically.
@@ -214,10 +222,10 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount                       |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | Pass one or more unique currencies listed for the platform                                 |
 | `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                         |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | Register a new Wise/PayPal payee through Peer; an existing registered handle can be reused |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | Use Peer web + TEE extension for new Wise/PayPal; reuse registered handles                 |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
 | `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code; current SDK flows never emit it                             |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Deposit exists; retry its policy with `recovery.depositId`, never create another cash-out  |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Deposit exists; inspect policy tx first, attach only if needed; never repeat the cash-out. |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                                   |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                                  |
@@ -257,7 +265,8 @@ and tool results.
 Prove your integration against `environment: 'staging'` with a funded test
 wallet. Never wait on a buyer - buyer-side is out of your scope:
 
-1. `cashout()` a small amount (1–2 USDC) → capture `depositId`.
+1. `cashout()` a small amount (1–2 USDC) → capture `depositId` and, for a
+   restricted payout, `accessPolicyTxHash`.
 2. `order(depositId)` shows `awaiting-buyer` (retry through indexer lag).
 3. `orders(owner)` includes the deposit.
 4. `withdraw(depositId)` → transaction succeeds.

@@ -33,9 +33,9 @@ const PAYEE_HINTS: Record<string, string> = {
 
 /**
  * Platforms whose curator payee registration requires a signed maker identity
- * attestation - a bare handle is rejected. The attestation is produced by the
- * ZKP2P app / extension, not this SDK, so a cash-out to these platforms needs
- * the payee registered there first (see `PAYEE_VERIFICATION_REQUIRED`).
+ * attestation for a new handle. The SDK accepts but does not mint the
+ * attestation; first-party Peer web obtains it through the Peer TEE browser
+ * extension. An existing registered handle can be reused with bare payee data.
  */
 const IDENTITY_ATTESTATION_PLATFORMS = new Set(['wise', 'paypal']);
 
@@ -53,12 +53,16 @@ export interface CashPlatformCapability {
   payeeHint: string;
   /**
    * When true, registering a payee for this platform requires a signed maker
-   * identity attestation the SDK cannot produce - register the payee via the
-   * ZKP2P app/extension first. A bare-handle `cashout()` throws
+   * identity attestation the SDK cannot produce. First-party Peer web obtains
+   * it through the Peer TEE browser extension. Existing registrations can be
+   * reused with bare payee data; a new bare handle throws
    * `PAYEE_VERIFICATION_REQUIRED`.
    */
   requiresIdentityAttestation: boolean;
-  /** @deprecated Always false. Restricted-platform policies are attached sequentially. */
+  /**
+   * @deprecated Always false. This does not report the sequential restricted-
+   * platform policy; prepared hosts must inspect `PrepareResult.accessPolicyRequired`.
+   */
   requiresAtomicAccessPolicy: boolean;
 }
 

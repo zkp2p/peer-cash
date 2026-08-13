@@ -866,15 +866,17 @@ describe('cashout()', () => {
       .mockResolvedValueOnce({ status: 'success', logs: [depositReceivedLog(5n)] })
       .mockRejectedValueOnce(new Error('RPC unavailable'));
 
-    await expect(
-      client().cashout(
+    const error = await client()
+      .cashout(
         {
           amount: 5_000_000n,
           receive: { platform: 'cashapp', currency: 'USD', payee: { offchainId: '$seller' } },
         },
         { signer },
-      ),
-    ).rejects.toMatchObject({
+      )
+      .catch((err: unknown) => err);
+
+    expect(error).toMatchObject({
       code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
       recovery: {
         kind: 'configure-cashout-access-policy',
@@ -882,6 +884,9 @@ describe('cashout()', () => {
         transactionHash: '0xaccess',
       },
     });
+    expect(isCashError(error) && error.remediation).toBe(
+      'Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId) with the same depositor wallet.',
+    );
   });
 
   it('does not report success when the access-policy transaction reverts', async () => {

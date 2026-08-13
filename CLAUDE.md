@@ -34,8 +34,14 @@ dependency tree.
   retries Base-only; a submission without a hash or an unknown Base receipt
   must be inspected before any resubmission.
 - **Payee attestation is registration-scoped.** Wise and PayPal require an
-  identity attestation for a new registration, but a previously registered
-  bare handle can be reused.
+  identity attestation for a new registration. The SDK accepts but does not
+  mint it; first-party Peer web obtains it through the Peer TEE browser
+  extension. A previously registered bare handle can be reused.
+- **Restricted cash-outs finish sequentially.** If any payout leg uses Venmo,
+  Cash App, or PayPal, attach the canonical four-group policy after the deposit
+  confirms. Preserve `accessPolicyRequired`, `depositId`, and any policy hash.
+  Never repeat the cash-out after a policy failure; inspect an existing policy
+  transaction before resubmitting.
 - **Environment owns curator routing.** Preproduction defaults to
   `https://api-preprod.zkp2p.xyz`, staging to
   `https://api-staging.zkp2p.xyz`; retain explicit `curatorUrl` overrides.

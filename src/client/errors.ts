@@ -292,7 +292,7 @@ export const errors = {
         code: 'PAYEE_VERIFICATION_REQUIRED',
         message: `${platform} requires a verified maker identity attestation to register a payee; a bare handle is not accepted.`,
         retryable: false,
-        remediation: `Register this ${platform} payee through the ZKP2P app / extension (which produces the signed identity attestation) before cashing out. capabilities() flags such platforms with requiresIdentityAttestation: true.`,
+        remediation: `Register this ${platform} payee through Peer web and its TEE browser extension, which produces the signed identity attestation, before cashing out. capabilities() flags such platforms with requiresIdentityAttestation: true.`,
       },
       { cause },
     ),
@@ -583,7 +583,7 @@ export const errors = {
         code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
         message: `Cash-out deposit ${depositId} was created, but its access policy could not be confirmed.`,
         retryable: false,
-        remediation: `Do not create another cash-out. Submit prepareAccessPolicy(recovery.depositId) with the same depositor wallet, then confirm that transaction.`,
+        remediation: `Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId) with the same depositor wallet.`,
         recovery: {
           kind: 'configure-cashout-access-policy',
           depositId,

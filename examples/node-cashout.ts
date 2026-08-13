@@ -10,8 +10,9 @@
  *
  * The curator validates supported handles against the live platform, so the
  * payee must be a real account. A new Wise/PayPal registration also needs the
- * identity attestation created by Peer; an existing registered handle can be
- * reused. This private-key EOA works directly with every supported platform;
+ * identity attestation obtained by Peer web through the Peer TEE browser
+ * extension; an existing registered handle can be reused. This private-key EOA
+ * works directly with every supported platform;
  * no Privy wallet is required. Venmo, Cash App, and PayPal attach their access
  * policy in a confirmed follow-up transaction. Override the demo corridor with:
  *   CASH_PLATFORM=revolut CASH_CURRENCY=EUR CASH_PAYEE=your-revtag
