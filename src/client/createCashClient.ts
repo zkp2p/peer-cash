@@ -1102,8 +1102,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const client = await signingClient('cashout', opts);
       const owner = opts.signer.account!.address;
 
-      let sourceResult: CashoutResult['source'];
-      let cashoutAmount = input.amount;
       if (input.source) {
         const sourceSigner =
           opts.sourceSigner ?? (input.source.chainId === BASE_CHAIN_ID ? opts.signer : undefined);
@@ -1128,7 +1126,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         if (relayQuote.outputAmount < MIN_CASHOUT_AMOUNT) {
           throw errors.amountBelowMinimum(relayQuote.outputAmount, MIN_CASHOUT_AMOUNT);
         }
-        cashoutAmount = relayQuote.outputAmount;
+        const cashoutAmount = relayQuote.outputAmount;
         const depositInput = validateDepositInput(cashoutAmount, input, payoutInput);
         const params = await buildDepositParams(client, depositInput);
 
@@ -1151,8 +1149,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           txHashes: executed.txHashes,
           ...(executed.transactions ? { transactions: executed.transactions } : {}),
         };
-        sourceResult = routedSource;
-
         try {
           await waitForBaseSignerAfterRelay(
             client,
@@ -1304,7 +1300,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
         onchainDepositId: resolved.onchainDepositId,
         order,
         ...(accessPolicyTxHash ? { accessPolicyTxHash } : {}),
-        ...(sourceResult ? { source: sourceResult } : {}),
       };
     },
 

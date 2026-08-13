@@ -91,14 +91,15 @@ regression lives in `scripts/verify-staging.ts` and runs maker-side only.
 ## Dependency policy
 
 - `@zkp2p/sdk` is pinned exact and adopted deliberately via its own PR
-  (`chore(deps): bump @zkp2p/sdk to X.Y.Z`). Everything else uses caret
-  ranges; refresh them with `bun update` and a green `bun run ci`.
+  (`chore(deps): bump @zkp2p/sdk to X.Y.Z`). Run `bun outdated --latest` so
+  compatible majors are not hidden by existing ranges, explain every hold,
+  then update and run `bun run ci`.
 - viem is a peer dependency (`>=2.37.3 <3`); never move it into
   `dependencies`. React stays an optional peer, and nothing outside
   `src/react/` may import it.
-- Hold a toolchain major (TypeScript, ESLint) until typescript-eslint and
-  tsup verify against it; a version bump the gate cannot typecheck is not an
-  upgrade.
+- Keep `@types/node` aligned with CI's Node major and `@eslint/js` aligned with
+  ESLint. Hold a toolchain major until the surrounding toolchain supports it;
+  a version bump the gate cannot verify is not an upgrade.
 
 ## Releasing and publishing
 
