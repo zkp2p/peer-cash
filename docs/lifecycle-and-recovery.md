@@ -66,15 +66,18 @@ transaction confirms, call `finalizePreparedCashout(receipt)` to decode it with
 the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
 
 The deprecated `requiresAtomicAccessPolicy` capability is always `false`:
-policy attachment is sequential, not atomic. Venmo, Cash App, and PayPal
-cash-outs nevertheless attach Plus, Pro, Peer Makers, and Peer Pay groups by
-default. Signed `cashout()` confirms the deposit before submitting and
-confirming the policy with the same viem wallet, so a brief unprotected interval
-exists. For `prepare()`, `accessPolicyRequired` marks whether the host must call
+policy attachment is sequential, not atomic. If any payout leg uses Venmo,
+Cash App, or PayPal, the cash-out nevertheless restricts intent signaling to
+the Plus, Pro, Peer Makers, and Peer Pay groups by default. Signed `cashout()`
+confirms the deposit before submitting and confirming the policy with the same
+viem wallet, so a brief unprotected interval exists. For `prepare()`,
+`accessPolicyRequired` marks whether the host must call
 `prepareAccessPolicy(depositId)` after finalizing the confirmed deposit receipt.
 Any viem `WalletClient`, including an EOA, can submit it; Privy is not required.
-If the follow-up fails, the deposit already exists. Recover from
-`ACCESS_POLICY_CONFIGURATION_FAILED` and never repeat the cash-out.
+If the follow-up fails, the deposit already exists. Never repeat the cash-out.
+When `ACCESS_POLICY_CONFIGURATION_FAILED.recovery.transactionHash` is present,
+inspect it before preparing another policy; resubmit only when that transaction
+is absent or confirmed reverted.
 
 There is no static chain/token allowlist in Peer Cash. Relay decides source
 support through its metadata and quote execution, filtered to the viem/EVM
@@ -278,8 +281,10 @@ whole life. Two things to know for long-lived orders:
   the payee is re-registered. Format-only platforms (Zelle, Chime, …) are
   never re-checked.
 - **Wise and PayPal** require a signed identity attestation for a new payee
-  registration. A previously registered handle can be reused with bare payee
-  data. If the handle is new and no attestation is supplied, the SDK surfaces
+  registration. The SDK accepts the structured attestation but does not mint
+  it; first-party Peer web obtains it through the Peer TEE browser extension.
+  A previously registered handle can be reused with bare payee data. If the
+  handle is new and no attestation is supplied, the SDK surfaces
   `PAYEE_VERIFICATION_REQUIRED`; `capabilities()` flags these platforms with
   `requiresIdentityAttestation: true`.
 
@@ -300,7 +305,7 @@ explicit override.
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Min/max is non-positive, inverted, or exceeds the deposit. Correct the range.                                                                |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | The currency set is empty or contains duplicates. Pass a non-empty unique set from `capabilities()`.                                         |
 | `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation. Register it through Peer first; an existing registration can be reused.                        |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation from Peer web and its TEE browser extension; an existing registration can be reused.            |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
 | `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code. Current SDK flows never emit it.                                                                              |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |
@@ -320,7 +325,7 @@ explicit override.
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.             |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                              |
 | `DEPOSIT_RESOLUTION_FAILED`             | no        | Base tx succeeded but no `DepositReceived` was decoded. Inspect its logs and recover the composite id.                                       |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Optional policy preparation failed. The cash-out remains valid; retry the opt-in with the same depositor if desired.                         |
+| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | The deposit exists but its required policy was not confirmed. Inspect `transactionHash` if present; attach the policy if still needed.       |
 | `INVALID_DEPOSIT_ID`                    | no        | The id is not `escrowAddress_onchainId`. A bare number cannot cold-hydrate; use the value returned by `cashout()`.                           |
 | `ORDER_NOT_FOUND`                       | yes       | Unknown id or immediate indexer lag. Verify the id and retry shortly after creation.                                                         |
 | `INDEXER_LAG`                           | yes       | Indexer trails the chain. Retry the read shortly.                                                                                            |

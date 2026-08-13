@@ -29,6 +29,10 @@ custodial off-ramp provider.
   - anything in your UI or agent output implying a locked rate is a bug.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
+- **Restricted intent signaling.** If any payout leg uses Venmo, Cash App, or
+  PayPal, the Plus, Pro, Peer Makers, and Peer Pay groups attach after the
+  deposit confirms. Signed `cashout()` handles the sequential follow-up with
+  the same viem wallet. Prepared hosts must finish it explicitly; any EOA works.
 - **Honest ETA.** Use `estimate().eta`: `{ seconds, label }` backed by rolling
   30-day indexer data from zero-spread (`spreadBps: 0`) market-rate deposits in
   the same payout corridor, measured from deposit creation to first fill. Do
@@ -67,7 +71,13 @@ const res = await cash.cashout(
   },
   { signer },
 );
-const { txs, steps } = await cash.prepare({/* same input */}); // 2b unsigned plan
+const { txs, steps, accessPolicyRequired } = await cash.prepare({/* same input */}); // 2b unsigned plan
+// Submit txs in order. After createDeposit confirms:
+const prepared = cash.finalizePreparedCashout(createDepositReceipt);
+if (accessPolicyRequired) {
+  const policyTx = cash.prepareAccessPolicy(prepared.depositId);
+  await hostSubmitAndConfirm(policyTx);
+}
 const order = await cash.order(res.depositId); // 3 observe
 const mine = await cash.orders(ownerAddress, { inFlight: true }); // 4 list
 for await (const o of cash.watch(res.depositId)) {
@@ -107,7 +117,10 @@ counterparts. `prepare()` rejects `source`. Source-routed cashout runs Relay
 first; use signed `cashout({ source }, { signer, sourceSigner })`, or execute
 and confirm Relay in the host before preparing a Base-USDC cashout.
 `cash_source_quote` and `cash_source_status` are quote/read tools, not a
-host-side execution path.
+host-side execution path. The built-in tool manifest also does not expose
+receipt finalization or access-policy submission as separate tools; the host
+adapter calls those `CashClient` methods after its signer confirms
+`createDeposit`.
 Every protocol transaction carries ERC-8021 attribution. To receive the
 deposit-level integration share, copy the six-character code from your Peer
 mobile or web referral screen and configure it directly:
@@ -127,9 +140,11 @@ that deposit. Use one referral code per deposit. Renaming the displayed code
 later does not change the owner of an already-attributed open deposit.
 
 Wise and PayPal require an identity attestation for a new payee registration.
-Do not disable them outright: a previously registered handle can be reused
-with bare payee data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration
-is still needed.
+The SDK accepts the structured attestation but does not mint it; first-party
+Peer web obtains it through the Peer TEE browser extension. Do not disable these
+platforms outright: a previously registered handle can be reused with bare
+payee data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration is still
+needed.
 
 ## 4. Order management - indexer-native
 
@@ -167,6 +182,10 @@ those, don't re-derive. The recovery boundaries that matter most in practice:
 - `TRANSACTION_SUBMISSION_UNKNOWN` = a Base mutation returned no hash but may
   have broadcast. Follow `error.recovery`, inspect Base wallet/protocol state,
   and do not retry until absence is proven.
+- `ACCESS_POLICY_CONFIGURATION_FAILED` = the deposit exists but its required
+  policy was not confirmed. Never cash out again. Inspect
+  `error.recovery.transactionHash` when present; prepare another policy only
+  if that transaction is absent or confirmed reverted.
 - `INDEXER_UNAVAILABLE` / `ORACLE_READ_FAILED` = retry the read only. Do not
   repeat the transaction that produced the id or balance being inspected.
 - `SIGNER_CHAIN_MISMATCH` = switch to the required chain and obtain a fresh
@@ -183,7 +202,8 @@ Run against `environment: 'staging'` with a small funded wallet.
 
 Prove both routes without waiting for a buyer:
 
-1. Create a real 1–2 USDC Base-USDC deposit; retain `depositId` and Base tx.
+1. Create a real 1–2 USDC Base-USDC deposit; retain `depositId`, the Base tx,
+   and `accessPolicyTxHash` when using Venmo, Cash App, or PayPal.
 2. Retry through indexer lag until `order(depositId)` is `awaiting-buyer`, and
    assert `orders(owner)` contains it.
 3. Withdraw it; assert `returned` and the Base USDC balance is restored minus
