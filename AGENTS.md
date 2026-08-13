@@ -1,5 +1,9 @@
 # @zkp2p/cash - agent integration manual
 
+> This file is the shipped manual for agents **using** the package. To
+> contribute to the SDK itself (layout, ground rules, CI, releasing), start at
+> [CLAUDE.md](https://github.com/zkp2p/peer-cash/blob/main/CLAUDE.md).
+
 You are integrating Peer Cash: an offramp that routes any Relay-supported EVM
 source asset into Base USDC, then converts Base USDC to fiat (Venmo, Revolut,
 Wise, Zelle, ...) at the live Chainlink market rate. The user whose USDC you
