@@ -1,8 +1,8 @@
 # @zkp2p/cash
 
-Route any Relay-supported EVM source asset into Base USDC, then cash out to fiat
-on Venmo, Revolut, Wise, Zelle, and more at the live Chainlink market rate,
-with zero spread and no centralized off-ramp provider.
+Route any Relay-supported EVM source asset into Base USDC, then cash out to
+fiat on Venmo, Revolut, Wise, Zelle, and more at the live Chainlink market
+rate, with zero spread and no centralized off-ramp provider.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. The cashing-out user is the maker: their USDC becomes a deposit in
@@ -12,18 +12,13 @@ No hosted widget, no provider custody, no quote engine to maintain.
 
 **[npm](https://www.npmjs.com/package/@zkp2p/cash)** · **[Lifecycle and recovery](docs/lifecycle-and-recovery.md)** · **[Agent integration manual](AGENTS.md)**
 
-## Pick the right SDK
+## Install
 
-Peer Cash and the general ZKP2P SDK serve different integration depths:
+```sh
+npm install @zkp2p/cash viem
+```
 
-| Package       | Use it when                                       | Boundary                                                                                                                                                                                  |
-| ------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is the live Chainlink rate at fill with zero spread, and the SDK owns the resumable order lifecycle.    |
-| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
-
-Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
-cannot express custom spreads, buyer-side proof flows, vaults, disputes, or
-arbitrary protocol operations.
+## Quickstart
 
 ```ts
 import { createCashClient, usdc } from '@zkp2p/cash';
@@ -86,53 +81,18 @@ for await (const order of cash.watch(depositId)) {
 }
 ```
 
-## Earn the integration share
+## Pick the right SDK
 
-Use the same six-character referral code shown in your Peer mobile or web app.
-No API key, registration transaction, or separate receiving address is needed:
-the referral code already belongs to your Peer Privy wallet.
+Peer Cash and the general ZKP2P SDK serve different integration depths:
 
-```ts
-const cash = createCashClient({
-  environment: 'production',
-  referralCode: 'ABC123',
-});
-```
+| Package       | Use it when                                       | Boundary                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is the live Chainlink rate at fill with zero spread, and the SDK owns the resumable order lifecycle.    |
+| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
 
-The SDK normalizes the value and stamps `peer-ref-ABC123` into ERC-8021
-attribution on the deposit transaction. When that liquidity is filled, Curator
-pays the code owner 50 bps, capped by the configured Peer service fee. This is
-the deposit-level integration path: it replaces the maker L1/L2 referral split
-for that deposit instead of enrolling the cashing-out user as your referee.
-
-The mapping is permanent. If you later customize your displayed Peer referral
-code, open deposits carrying the old code still pay the same wallet. Include at
-most one `peer-ref-XXXXXX` marker; an unknown or conflicting marker receives no
-integration share. The existing `referrer` option remains available for
-analytics-only ERC-8021 codes such as `acme-app`.
-
-Source asset path:
-
-```ts
-const { depositId, accessPolicyTxHash, source } = await cash.cashout(
-  {
-    amount: 10_000_000n, // exact input: 10 USDC in source-token base units
-    source: {
-      chainId: 1,
-      currency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-      tradeType: 'EXACT_INPUT',
-    },
-    receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@you' } },
-  },
-  { signer, sourceSigner },
-);
-
-// source.amount is Relay's guaranteed minimum Base USDC output and the exact
-// amount deposited into the cash-out order. It is not the route's actual output.
-console.log(source?.amount, source?.requestId);
-console.log(source?.transactions?.origin, source?.transactions?.destination);
-console.log(accessPolicyTxHash); // present because this example uses Venmo
-```
+Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
+cannot express custom spreads, buyer-side proof flows, vaults, disputes, or
+arbitrary protocol operations.
 
 ## The core verbs
 
@@ -168,6 +128,20 @@ Peer Cash transaction, including approves, carries ERC-8021 attribution:
 `peer-cash` first, optional `peer-ref-XXXXXX` from `referralCode` next, and your
 analytics-only `referrer` code(s) after it.
 
+Order reads fail closed against the same active catalog. If any method on an
+indexed deposit is unsupported, `orders()` excludes the whole deposit and
+`order()` returns `ORDER_NOT_FOUND`; Peer Cash never partially reclassifies a
+mixed historical deposit.
+
+## Payout rails and access policies
+
+| Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
+| --------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Venmo / Cash App      | Four groups attach after deposit confirmation                              | Curator validates the live handle                                                      |
+| PayPal                | Same four-group follow-up                                                  | Requires a Peer TEE browser-extension identity attestation                             |
+| Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
+| Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
+
 No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
 work with any viem `WalletClient`, including a local or externally connected
 EOA; no Privy wallet or signer API is required. The deprecated
@@ -189,22 +163,20 @@ create another cash-out. When `recovery.transactionHash` is present, inspect
 that transaction before resubmitting; otherwise prepare the policy again with
 the same depositor wallet.
 
-| Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
-| --------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Venmo / Cash App      | Four groups attach after deposit confirmation                              | Curator validates the live handle                                                      |
-| PayPal                | Same four-group follow-up                                                  | Requires a Peer TEE browser-extension identity attestation                             |
-| Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
-| Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
-
 `capabilities()` presents Zelle as one platform. A cashout with
 `receive.platform: 'zelle'` attaches only the generic Zelle payment method to
 the deposit. Bank-specific capture routing is outside this maker-side SDK and
 never changes the on-chain payment method.
 
-Order reads fail closed against the same active catalog. If any method on an
-indexed deposit is unsupported, `orders()` excludes the whole deposit and
-`order()` returns `ORDER_NOT_FOUND`; Peer Cash never partially reclassifies a
-mixed historical deposit.
+`capabilities()` tells you which platforms need a verified identity for a new
+payee registration (`requiresIdentityAttestation` - Wise and PayPal today).
+The SDK accepts an `identityAttestation` in structured payee data but does not
+mint one. First-party Peer web obtains it through the Peer TEE browser
+extension. An already-registered Wise or PayPal handle can be reused with bare
+payee data. A new handle without its signed attestation fails during curator
+registration with `PAYEE_VERIFICATION_REQUIRED`, before funds move on-chain.
+
+## Source routing (any EVM asset in)
 
 The default/minimal flow is unchanged: pass Base USDC base units to
 `estimate()` and `cashout()`. For any other source asset, pass `source` to
@@ -216,20 +188,33 @@ The destination is always canonical Base USDC
 discovered and quoted by `@relayprotocol/relay-sdk`, not a static token
 allowlist.
 
+```ts
+const { depositId, accessPolicyTxHash, source } = await cash.cashout(
+  {
+    amount: 10_000_000n, // exact input: 10 USDC in source-token base units
+    source: {
+      chainId: 1,
+      currency: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+      tradeType: 'EXACT_INPUT',
+    },
+    receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@you' } },
+  },
+  { signer, sourceSigner },
+);
+
+// source.amount is Relay's guaranteed minimum Base USDC output and the exact
+// amount deposited into the cash-out order. It is not the route's actual output.
+console.log(source?.amount, source?.requestId);
+console.log(source?.transactions?.origin, source?.transactions?.destination);
+console.log(accessPolicyTxHash); // present because this example uses Venmo
+```
+
 Routes that submit more than one source-chain transaction (approve, then
 route) require a nonce-managed source signer -
 `privateKeyToAccount(pk, { nonceManager })` from viem. Without one the SDK
 refuses the route preflight with `SOURCE_NONCE_MANAGER_REQUIRED` instead of
 letting the route transaction reuse the approval's nonce and revert
 mid-route. Browser wallets are unaffected.
-
-`capabilities()` tells you which platforms need a verified identity for a new
-payee registration (`requiresIdentityAttestation` - Wise and PayPal today).
-The SDK accepts an `identityAttestation` in structured payee data but does not
-mint one. First-party Peer web obtains it through the Peer TEE browser
-extension. An already-registered Wise or PayPal handle can be reused with bare
-payee data. A new handle without its signed attestation fails during curator
-registration with `PAYEE_VERIFICATION_REQUIRED`, before funds move on-chain.
 
 ## Source-route recovery
 
@@ -307,6 +292,31 @@ awaiting-buyer ──────────► matched ───────�
 
 Deep dive: [docs/lifecycle-and-recovery.md](docs/lifecycle-and-recovery.md).
 
+## Earn the integration share
+
+Use the same six-character referral code shown in your Peer mobile or web app.
+No API key, registration transaction, or separate receiving address is needed:
+the referral code already belongs to your Peer Privy wallet.
+
+```ts
+const cash = createCashClient({
+  environment: 'production',
+  referralCode: 'ABC123',
+});
+```
+
+The SDK normalizes the value and stamps `peer-ref-ABC123` into ERC-8021
+attribution on the deposit transaction. When that liquidity is filled, Curator
+pays the code owner 50 bps, capped by the configured Peer service fee. This is
+the deposit-level integration path: it replaces the maker L1/L2 referral split
+for that deposit instead of enrolling the cashing-out user as your referee.
+
+The mapping is permanent. If you later customize your displayed Peer referral
+code, open deposits carrying the old code still pay the same wallet. Include at
+most one `peer-ref-XXXXXX` marker; an unknown or conflicting marker receives no
+integration share. The existing `referrer` option remains available for
+analytics-only ERC-8021 codes such as `acme-app`.
+
 ## For agents
 
 - `cashout`/`withdraw`/`topUp` have unsigned counterparts (`prepare`,
@@ -347,12 +357,6 @@ defaults to `https://api-staging.zkp2p.xyz`. Indexer, curator, and Relay
 options remain overridable via `createCashClient` options. Base USDC on Base
 is the default source and the only destination asset for cashout orders.
 
-## Install
-
-```sh
-npm install @zkp2p/cash viem
-```
-
 ## Examples
 
 Runnable first-party examples in [`examples/`](examples):
@@ -366,6 +370,13 @@ The published package depends on `@zkp2p/sdk` for protocol internals; that
 dependency currently ships from private source. Onchain custody is enforced by
 the protocol: only the contract holds funds, and only the maker can withdraw
 an unmatched deposit.
+
+## Contributing
+
+[CLAUDE.md](https://github.com/zkp2p/peer-cash/blob/main/CLAUDE.md) is the
+contributor guide: ground rules, repo layout, the `bun run ci` gate, and the
+release/publish process. `AGENTS.md` is the shipped manual for agents using
+the package, not the contributor entry point.
 
 ## License
 

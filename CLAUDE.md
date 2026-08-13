@@ -66,6 +66,8 @@ dependency tree.
 bun is the package manager. `bun run ci` is the full gate:
 typecheck → lint → format:check → test → production audit → build → packed
 artifact compatibility check. Run it before every commit that touches `src/`.
+GitHub Actions runs the identical gate (`bun install --frozen-lockfile && bun
+run ci`) on Node 22; a PR is mergeable only when it is green.
 
 ## Testing
 
@@ -73,3 +75,45 @@ artifact compatibility check. Run it before every commit that touches `src/`.
 transition, partial fills, dust. Client verbs are tested against mocked
 `Zkp2pClient` surfaces. Never call live networks from unit tests; the staging
 regression lives in `scripts/verify-staging.ts` and runs maker-side only.
+
+## Pull requests
+
+- Branch as `type/short-description`; commit and PR titles use conventional
+  prefixes (`feat:`, `fix:`, `docs:`, `chore:`, `chore(deps):`).
+- When the public surface changes, update every consumer-facing artifact in
+  the same PR: the README verb table, `AGENTS.md`, `llms.txt`,
+  `skills/peer-cash-integration/SKILL.md`, `examples/`, and the codecs
+  (`src/codecs/` schema + JSON codec + tests). Doc drift is a defect, not a
+  follow-up.
+- `AGENTS.md` is the _shipped integrator manual_ for agents using the package;
+  this file (`CLAUDE.md`) is the contributor entry point. Keep that split.
+
+## Dependency policy
+
+- `@zkp2p/sdk` is pinned exact and adopted deliberately via its own PR
+  (`chore(deps): bump @zkp2p/sdk to X.Y.Z`). Everything else uses caret
+  ranges; refresh them with `bun update` and a green `bun run ci`.
+- viem is a peer dependency (`>=2.37.3 <3`); never move it into
+  `dependencies`. React stays an optional peer, and nothing outside
+  `src/react/` may import it.
+- Hold a toolchain major (TypeScript, ESLint) until typescript-eslint and
+  tsup verify against it; a version bump the gate cannot typecheck is not an
+  upgrade.
+
+## Releasing and publishing
+
+1. Release PRs are titled `chore: release @zkp2p/cash X.Y.Z` and change only
+   the `version` field in `package.json`. Pre-1.0 semver: minor for breaking
+   surface changes, patch otherwise; release candidates use `-rc.N`. There are
+   no git tags and no changelog file - history lives in the PR titles.
+2. Merge the release PR, then publish from a clean checkout of that commit:
+   `bun install --frozen-lockfile && bun run ci && npm publish`. `prepack`
+   rebuilds `dist/`; publishing is manual and maintainer-only (no CI publish
+   job). `npm view @zkp2p/cash maintainers` lists who can.
+3. The packed artifact ships exactly the package.json `files` allowlist:
+   `dist/`, `docs/`, `examples/`, `skills/`, `AGENTS.md`, `README.md`,
+   `LICENSE`, `llms.txt`. `scripts/check-packed-package.ts` (part of
+   `bun run ci`) fails if a required file is missing or a forbidden one
+   (`test/`, `scripts/`, lockfiles, `.env*`) leaks in.
+4. An agent without publish rights stops at the merged release PR and hands
+   off to a maintainer.
