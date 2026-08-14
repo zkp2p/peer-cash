@@ -135,8 +135,8 @@ contract PeerCashRevenueHook is BaseHook, IUnlockCallback {
         }
 
         uint256 grossAmount = unspecifiedAmount < 0
-            ? uint256(-int256(unspecifiedAmount))
-            : uint256(int256(unspecifiedAmount));
+            ? (-int256(unspecifiedAmount)).toUint256()
+            : int256(unspecifiedAmount).toUint256();
         uint256 feeAmount = quoteFee(grossAmount);
         if (feeAmount == 0) return (this.afterSwap.selector, 0);
 

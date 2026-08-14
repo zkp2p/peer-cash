@@ -106,7 +106,7 @@
     "verify:production-crosschain-relay": "bun scripts/verify-production-crosschain-relay.ts",
     "verify:production-maker": "bun scripts/verify-production-maker.ts",
     "prepack": "bun run build",
-    "ci": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run hook:test && bun run audit && bun run build && bun run pack:check"
+    "ci": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run hook:build && bun run hook:test && bun run audit && bun run build && bun run pack:check"
   },
   "dependencies": {
     "@relayprotocol/relay-sdk": "^7.0.1",

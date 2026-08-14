@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {PeerCashRevenueHook} from "../src/PeerCashRevenueHook.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -9,6 +10,8 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import {Script} from "forge-std/Script.sol";
 
 contract DeployPeerCashRevenueHook is Script {
+    using SafeCast for uint256;
+
     uint256 internal constant MAX_FEE_BPS = 100;
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
     IPoolManager internal constant BASE_POOL_MANAGER =
@@ -28,7 +31,7 @@ contract DeployPeerCashRevenueHook is Script {
         if (rawFeeBps == 0 || rawFeeBps > MAX_FEE_BPS) {
             revert InvalidFeeBps(rawFeeBps);
         }
-        uint16 feeBps = uint16(rawFeeBps);
+        uint16 feeBps = rawFeeBps.toUint16();
         uint160 flags = uint160(Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG);
         bytes memory constructorArgs = abi.encode(BASE_POOL_MANAGER, BASE_USDC, beneficiary, feeBps);
 

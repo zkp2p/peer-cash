@@ -43,6 +43,22 @@ async function main() {
 
   const publicClient = createPublicClient({ chain: base, transport: http() });
   const signer = createWalletClient({ account, chain: base, transport: http() });
+  const cash = createCashClient({ environment: 'production' });
+  const receive = {
+    platform: process.env.CASH_PLATFORM ?? 'revolut',
+    currency: (process.env.CASH_CURRENCY ?? 'USD') as CurrencyType,
+    payee: { offchainId: requiredEnvironmentVariable('CASH_PAYEE') },
+  };
+
+  const platform = cash
+    .capabilities()
+    .platforms.find((candidate) => candidate.platform === receive.platform);
+  if (!platform) {
+    throw new Error(`Unsupported cash-out platform: ${receive.platform}`);
+  }
+  if (!platform.currencies.includes(receive.currency)) {
+    throw new Error(`${receive.platform} does not support cash-out currency ${receive.currency}`);
+  }
 
   const [beneficiary, cashAsset, revenueAvailable] = await Promise.all([
     publicClient.readContract({ address: hookAddress, abi: hookAbi, functionName: 'beneficiary' }),
@@ -100,13 +116,6 @@ async function main() {
 
   const amount = flushed.args.amount;
   console.log(`Flushed ${amount} Base USDC base units in ${flushHash}.`);
-
-  const cash = createCashClient({ environment: 'production' });
-  const receive = {
-    platform: process.env.CASH_PLATFORM ?? 'revolut',
-    currency: (process.env.CASH_CURRENCY ?? 'USD') as CurrencyType,
-    payee: { offchainId: requiredEnvironmentVariable('CASH_PAYEE') },
-  };
 
   try {
     const result = await cash.cashout({ amount, receive }, { signer });
