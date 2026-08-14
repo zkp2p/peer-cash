@@ -92,9 +92,11 @@ creating a pool.
 
 The included operator example verifies the connected wallet is the beneficiary
 and the hook asset is canonical Base USDC. It waits for the flush receipt, reads
-the exact amount from `RevenueFlushed`, then creates one Base-only Peer Cash
-order. If cash-out fails after the flush, the USDC remains in the beneficiary
-wallet; follow the returned `CashError` and do not flush the same revenue twice.
+the exact amount from `RevenueFlushed`, records the flush hash and amount, then
+creates one Base-only Peer Cash order. If cash-out throws after the flush, do not
+infer where the USDC is: the wallet may still hold it, the deposit may exist, or
+a Base transaction may have unknown status. Follow `CashError` recovery before
+retrying any transaction.
 
 ```sh
 PRIVATE_KEY=0x... \

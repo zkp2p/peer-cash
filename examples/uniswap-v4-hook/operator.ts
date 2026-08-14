@@ -84,6 +84,8 @@ async function main() {
   if (!flushed) throw new Error(`RevenueFlushed event missing from ${flushHash}`);
 
   const amount = flushed.args.amount;
+  console.log(`Flushed ${amount} Base USDC base units in ${flushHash}.`);
+
   const cash = createCashClient({ environment: 'production' });
   const receive = {
     platform: process.env.CASH_PLATFORM ?? 'revolut',
@@ -93,14 +95,13 @@ async function main() {
 
   try {
     const result = await cash.cashout({ amount, receive }, { signer });
-    console.log(`Flushed ${amount} Base USDC base units in ${flushHash}.`);
     console.log(`Peer Cash deposit ${result.depositId} created in ${result.txHash}.`);
     if (result.accessPolicyTxHash) {
       console.log(`Access policy attached in ${result.accessPolicyTxHash}.`);
     }
   } catch (error) {
-    // The flush is already confirmed. Its USDC remains in the beneficiary
-    // wallet if cash-out fails; follow CashError recovery and never flush twice.
+    // The flush is already confirmed, but a cash-out error does not prove where
+    // the USDC is. Follow CashError recovery before retrying any transaction.
     if (isCashError(error)) {
       console.error(JSON.stringify(error.toJSON()));
     }
