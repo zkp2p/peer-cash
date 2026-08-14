@@ -54,6 +54,8 @@ try {
       path.startsWith('test/') ||
       path.startsWith('scripts/') ||
       path.startsWith('.github/') ||
+      path.startsWith('examples/uniswap-v4-hook/cache/') ||
+      path.startsWith('examples/uniswap-v4-hook/out/') ||
       /(^|\/)\.env($|\.)/.test(path) ||
       /(^|\/)(bun\.lock|package-lock\.json|yarn\.lock)$/.test(path),
   );
@@ -68,6 +70,8 @@ try {
     'dist/tools.cjs',
     'README.md',
     'docs/lifecycle-and-recovery.md',
+    'examples/uniswap-v4-hook/README.md',
+    'examples/uniswap-v4-hook/src/PeerCashRevenueHook.sol',
     'skills/peer-cash-integration/SKILL.md',
   ]) {
     if (!packedPaths.includes(requiredPath)) {

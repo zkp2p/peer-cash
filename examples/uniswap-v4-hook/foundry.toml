@@ -1,0 +1,24 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+cache_path = "cache"
+libs = ["../../node_modules"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+remappings = [
+  "@openzeppelin/contracts/=../../node_modules/@openzeppelin/contracts/",
+  "@openzeppelin/uniswap-hooks/=../../node_modules/@openzeppelin/uniswap-hooks/",
+  "@uniswap/v4-core/=../../node_modules/@uniswap/v4-core/",
+  "@uniswap/v4-periphery/=../../node_modules/@uniswap/v4-periphery/",
+  "forge-std/=../../node_modules/@uniswap/v4-core/lib/forge-std/src/",
+  "solmate/=../../node_modules/@uniswap/v4-core/lib/solmate/"
+]
+
+[fmt]
+line_length = 100
+multiline_func_header = "params_first"
+sort_imports = true
