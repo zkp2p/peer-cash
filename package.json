@@ -134,6 +134,8 @@
     "@uniswap/v4-periphery": "1.0.3",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
+    "hono": "4.12.34",
+    "mppx": "0.8.17",
     "prettier": "^3.9.6",
     "react": "^19.2.8",
     "react-test-renderer": "19.2.8",

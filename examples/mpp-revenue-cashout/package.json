@@ -1,0 +1,23 @@
+{
+  "name": "@zkp2p/example-mpp-revenue-cashout",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "bun src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@zkp2p/cash": "0.4.9",
+    "hono": "4.12.34",
+    "mppx": "0.8.17"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

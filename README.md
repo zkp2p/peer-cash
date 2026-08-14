@@ -364,6 +364,7 @@ Runnable first-party examples in [`examples/`](examples):
 - [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
 - [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.
 - [`uniswap-v4-hook/`](examples/uniswap-v4-hook) - an immutable return-delta hook that accrues bounded Base USDC revenue as PoolManager claims, then flushes it to a beneficiary for a separate Peer Cash cash-out.
+- [`mpp-revenue-cashout/`](examples/mpp-revenue-cashout) - accepting Base USDC over MPP, then preparing a separate unsigned seller cash-out plan.
 
 ## Trust model, honestly
 
