@@ -139,19 +139,23 @@ function formatSnapshot(revenue: RevenueTracker) {
 }
 
 async function readCashoutBody(request: Request): Promise<{ amountUsdc?: string | undefined }> {
-  let body: { amountUsdc?: unknown };
+  let body: unknown;
   try {
-    body = (await request.json()) as { amountUsdc?: unknown };
+    body = await request.json();
   } catch {
     throw new CashoutRequestError('Request body must be JSON.');
   }
-  if (body.amountUsdc === undefined) return {};
-  if (typeof body.amountUsdc !== 'string' || !/^\d+(\.\d{1,6})?$/.test(body.amountUsdc)) {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new CashoutRequestError('Request body must be a JSON object.');
+  }
+  const amountUsdc = 'amountUsdc' in body ? body.amountUsdc : undefined;
+  if (amountUsdc === undefined) return {};
+  if (typeof amountUsdc !== 'string' || !/^\d+(\.\d{1,6})?$/.test(amountUsdc)) {
     throw new CashoutRequestError(
       'amountUsdc must be a positive decimal string with at most six decimals.',
     );
   }
-  return { amountUsdc: body.amountUsdc };
+  return { amountUsdc };
 }
 
 class CashoutRequestError extends Error {}

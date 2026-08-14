@@ -72,4 +72,34 @@ describe('MPP revenue cash-out planner', () => {
     expect(response.status).toBe(400);
     expect(revenue.snapshot().available).toBe(usdc('10'));
   });
+
+  it.each([null, [], 'all'])('rejects a non-object cash-out body: %j', async (body) => {
+    let prepareCalls = 0;
+    const { adminApp, revenue } = createApp({
+      cash: {
+        async prepare() {
+          prepareCalls += 1;
+          throw new Error('prepare should not be called');
+        },
+      },
+      cashout: { currency: 'USD', payee: 'merchant', platform: 'revolut' },
+      facilitator: 'https://facilitator.example',
+      recipient: '0x0000000000000000000000000000000000000001',
+      secretKey: 'test-secret-key-test-secret-key-32',
+    });
+    revenue.record('0xsettlement', usdc('10'));
+
+    const response = await adminApp.request('http://localhost/cashout', {
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Request body must be a JSON object.',
+    });
+    expect(prepareCalls).toBe(0);
+    expect(revenue.snapshot().available).toBe(usdc('10'));
+  });
 });
