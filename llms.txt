@@ -81,6 +81,11 @@ Key facts:
   policy.
 - Preproduction uses https://api-preprod.zkp2p.xyz by default; staging uses
   https://api-staging.zkp2p.xyz. curatorUrl can override either.
+- The Uniswap v4 reference hook under examples/uniswap-v4-hook never calls
+  Peer Cash during a swap. It accrues bounded Base USDC PoolManager claims,
+  flushes them to an immutable beneficiary, and only then uses an ordinary
+  signed cashout. It is unaudited reference code; mainnet deployment and
+  registry submission require an audit and a verified deployed address.
 
 ## Links
 
@@ -94,6 +99,8 @@ Key facts:
   prepare-path patterns, error → remediation table
 - [Lifecycle and recovery](docs/lifecycle-and-recovery.md): source routing,
   states, partial fills, ETA principle, unwind, resumability, failure table
+- [Uniswap v4 revenue hook](examples/uniswap-v4-hook/README.md): return-delta
+  accounting, immutable claim flush, deployment, and beneficiary operation
 - [Integration skill](skills/peer-cash-integration/SKILL.md): step-by-step
   onboarding for coding agents, with the staging verification checklist
 
