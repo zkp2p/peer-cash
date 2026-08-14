@@ -1,0 +1,111 @@
+/**
+ * Flush a PeerCashRevenueHook's Base USDC claims to its beneficiary, then
+ * create a normal Peer Cash order from that beneficiary wallet.
+ *
+ * The hook never performs this step during a swap. This operator process owns
+ * signing, transaction confirmation, and Peer Cash recovery semantics.
+ */
+import {
+  createPublicClient,
+  createWalletClient,
+  getAddress,
+  http,
+  parseAbi,
+  parseEventLogs,
+  parseUnits,
+} from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base } from 'viem/chains';
+import { createCashClient, isCashError } from '@zkp2p/cash';
+import type { CurrencyType } from '@zkp2p/cash';
+
+const BASE_USDC = getAddress('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
+const hookAbi = parseAbi([
+  'function beneficiary() view returns (address)',
+  'function cashAsset() view returns (address)',
+  'function revenueAvailable() view returns (uint256)',
+  'function flushRevenue() returns (uint256 amount)',
+  'event RevenueFlushed(address indexed caller, address indexed beneficiary, uint256 amount)',
+]);
+
+function requiredEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+async function main() {
+  const account = privateKeyToAccount(requiredEnvironmentVariable('PRIVATE_KEY') as `0x${string}`);
+  const hookAddress = getAddress(requiredEnvironmentVariable('HOOK_ADDRESS'));
+  const minimumCashout = parseUnits(process.env.MIN_CASHOUT_USDC ?? '1', 6);
+
+  const publicClient = createPublicClient({ chain: base, transport: http() });
+  const signer = createWalletClient({ account, chain: base, transport: http() });
+
+  const [beneficiary, cashAsset, revenueAvailable] = await Promise.all([
+    publicClient.readContract({ address: hookAddress, abi: hookAbi, functionName: 'beneficiary' }),
+    publicClient.readContract({ address: hookAddress, abi: hookAbi, functionName: 'cashAsset' }),
+    publicClient.readContract({
+      address: hookAddress,
+      abi: hookAbi,
+      functionName: 'revenueAvailable',
+    }),
+  ]);
+
+  if (getAddress(beneficiary) !== account.address) {
+    throw new Error(`Connected wallet is not the immutable beneficiary (${beneficiary})`);
+  }
+  if (getAddress(cashAsset) !== BASE_USDC) {
+    throw new Error(`Hook cash asset is not canonical Base USDC (${cashAsset})`);
+  }
+  if (revenueAvailable < minimumCashout) {
+    console.log(
+      `Revenue remains in PoolManager claims: ${revenueAvailable} base units is below the ${minimumCashout} threshold.`,
+    );
+    return;
+  }
+
+  const flushHash = await signer.writeContract({
+    address: hookAddress,
+    abi: hookAbi,
+    functionName: 'flushRevenue',
+  });
+  const flushReceipt = await publicClient.waitForTransactionReceipt({ hash: flushHash });
+  if (flushReceipt.status !== 'success') {
+    throw new Error(`Revenue flush reverted: ${flushHash}`);
+  }
+
+  const [flushed] = parseEventLogs({
+    abi: hookAbi,
+    eventName: 'RevenueFlushed',
+    logs: flushReceipt.logs,
+    strict: true,
+  });
+  if (!flushed) throw new Error(`RevenueFlushed event missing from ${flushHash}`);
+
+  const amount = flushed.args.amount;
+  const cash = createCashClient({ environment: 'production' });
+  const receive = {
+    platform: process.env.CASH_PLATFORM ?? 'revolut',
+    currency: (process.env.CASH_CURRENCY ?? 'USD') as CurrencyType,
+    payee: { offchainId: requiredEnvironmentVariable('CASH_PAYEE') },
+  };
+
+  try {
+    const result = await cash.cashout({ amount, receive }, { signer });
+    console.log(`Flushed ${amount} Base USDC base units in ${flushHash}.`);
+    console.log(`Peer Cash deposit ${result.depositId} created in ${result.txHash}.`);
+    if (result.accessPolicyTxHash) {
+      console.log(`Access policy attached in ${result.accessPolicyTxHash}.`);
+    }
+  } catch (error) {
+    // The flush is already confirmed. Its USDC remains in the beneficiary
+    // wallet if cash-out fails; follow CashError recovery and never flush twice.
+    if (isCashError(error)) {
+      console.error(JSON.stringify(error.toJSON()));
+    }
+    throw error;
+  }
+}
+
+await main();
