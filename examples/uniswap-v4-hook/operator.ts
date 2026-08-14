@@ -8,8 +8,10 @@
 import {
   createPublicClient,
   createWalletClient,
+  encodeFunctionData,
   getAddress,
   http,
+  keccak256,
   parseAbi,
   parseEventLogs,
   parseUnits,
@@ -65,11 +67,24 @@ async function main() {
     return;
   }
 
-  const flushHash = await signer.writeContract({
-    address: hookAddress,
-    abi: hookAbi,
-    functionName: 'flushRevenue',
+  const flushRequest = await signer.prepareTransactionRequest({
+    account,
+    to: hookAddress,
+    data: encodeFunctionData({ abi: hookAbi, functionName: 'flushRevenue' }),
   });
+  const serializedFlush = await signer.signTransaction(flushRequest);
+  const flushHash = keccak256(serializedFlush);
+  console.log(`Prepared revenue flush ${flushHash}; inspect this hash before any retry.`);
+
+  try {
+    await publicClient.sendRawTransaction({ serializedTransaction: serializedFlush });
+  } catch (error) {
+    throw new Error(
+      `Revenue flush submission status is unknown. Inspect ${flushHash} before retrying.`,
+      { cause: error },
+    );
+  }
+
   const flushReceipt = await publicClient.waitForTransactionReceipt({ hash: flushHash });
   if (flushReceipt.status !== 'success') {
     throw new Error(`Revenue flush reverted: ${flushHash}`);
