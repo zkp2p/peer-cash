@@ -1,6 +1,8 @@
 node_modules/
 dist/
 coverage/
+examples/uniswap-v4-hook/cache/
+examples/uniswap-v4-hook/out/
 *.log
 .env
 .env.*

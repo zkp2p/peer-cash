@@ -32,7 +32,9 @@
     "viem",
     "agent",
     "payments",
-    "sdk"
+    "sdk",
+    "uniswap-v4",
+    "hook"
   ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -97,12 +99,14 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "hook:build": "forge build --root examples/uniswap-v4-hook",
+    "hook:test": "forge test --root examples/uniswap-v4-hook",
     "audit": "bun audit --production",
     "pack:check": "bun scripts/check-packed-package.ts",
     "verify:production-crosschain-relay": "bun scripts/verify-production-crosschain-relay.ts",
     "verify:production-maker": "bun scripts/verify-production-maker.ts",
     "prepack": "bun run build",
-    "ci": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run audit && bun run build && bun run pack:check"
+    "ci": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run hook:build && bun run hook:test && bun run audit && bun run build && bun run pack:check"
   },
   "dependencies": {
     "@relayprotocol/relay-sdk": "^7.0.1",
@@ -120,9 +124,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@foundry-rs/forge": "1.7.1",
+    "@openzeppelin/contracts": "5.5.0",
+    "@openzeppelin/uniswap-hooks": "1.1.1",
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.18",
     "@types/react-test-renderer": "19.1.0",
+    "@uniswap/v4-core": "1.0.2",
+    "@uniswap/v4-periphery": "1.0.3",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.6",

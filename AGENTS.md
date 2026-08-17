@@ -32,6 +32,13 @@ can withdraw an unmatched deposit.
    signer/runtime, use `cash_source_status` to monitor it, then call the
    Base-USDC `cash_cashout` tool. Never pass `source` into `prepare()`.
 
+4. **You collect Uniswap v4 protocol or creator revenue** → use the reference
+   [`PeerCashRevenueHook`](examples/uniswap-v4-hook/README.md). The hook only
+   accrues Base USDC PoolManager claims and flushes them to its immutable
+   beneficiary. Never call Peer Cash, Relay, a curator, or another external
+   protocol inside a swap callback. After the flush confirms, the beneficiary
+   uses a normal signed `cashout()` and follows its ordinary recovery rules.
+
 Every transaction (including approves) carries ERC-8021 attribution:
 `peer-cash`, then optional `peer-ref-XXXXXX` from the six-character
 `referralCode`, then any analytics-only `referrer` codes, then the Base builder
