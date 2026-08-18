@@ -8,6 +8,12 @@ contract runtime bytecode and served back by an immutable ERC-5219 / ERC-4804
 wrapper. No server, no IPFS, no build pipeline between the user and the chain.
 After [zSwap by z0r0z](https://github.com/z-fi/zFi).
 
+Live on Base at
+[`0x6d6c7aF86bfc6f49F32761E1718cF982224cf343`](https://basescan.org/address/0x6d6c7af86bfc6f49f32761e1718cf982224cf343):
+open it through the
+[w3link gateway](https://0x6d6c7af86bfc6f49f32761e1718cf982224cf343.8453.w3link.io/)
+or any `web3://` client at `web3://0x6d6c7aF86bfc6f49F32761E1718cF982224cf343:8453/`.
+
 This example is a self-contained npm project. It pins the published
 `@zkp2p/cash` from npm (the exact bytes that ship onchain) plus esbuild, solc,
 and a local EVM for verification, so it installs and runs from this directory
@@ -65,8 +71,10 @@ byte-exact `html()` readback. It writes `out/deployment.json` and
 `out/PeerCash.deployed.html` (the canonical bytes onchain).
 
 A ~2.2 MB page is ~90 chunks and ~485M gas total, roughly $4-15 on Base
-depending on gas price. Rerunning after a partial failure deploys a fresh
-set; orphaned data contracts are harmless dead bytes.
+depending on gas price. After a partial failure, rerun with
+`START_NONCE=<nonce the run started from>` to verify the chunks that landed
+and deploy only the rest; a plain rerun deploys a fresh set, and orphaned
+data contracts are harmless dead bytes.
 
 `script/check-deployer.mjs` prints the deploy account's address, balance, and
 nonce without sending anything. `script/gen-key.mjs` generates a throwaway
@@ -75,8 +83,8 @@ nonce without sending anything. `script/gen-key.mjs` generates a throwaway
 ## Read it back
 
 ```sh
-cast call <PAGE> 'html()(string)' -r https://mainnet.base.org
-cast code <CHUNK> -r https://mainnet.base.org     # one slice of the HTML
+cast call 0x6d6c7aF86bfc6f49F32761E1718cF982224cf343 'html()(string)' -r https://mainnet.base.org
+cast code 0xF5020BD9afa2bc656492f0E85342f24a50956614 -r https://mainnet.base.org   # chunk 0, one slice of the HTML
 ```
 
-or `https://<page-address-lowercase>.8453.w3link.io/` · `web3://<PAGE>:8453/`
+or open <https://0x6d6c7af86bfc6f49f32761e1718cf982224cf343.8453.w3link.io/> in a browser.
