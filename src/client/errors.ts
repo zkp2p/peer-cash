@@ -31,6 +31,7 @@ export type CashErrorCode =
   | 'SOURCE_QUOTE_FAILED'
   | 'SOURCE_NONCE_MANAGER_REQUIRED'
   | 'SOURCE_EXECUTION_FAILED'
+  | 'SOURCE_DEPOSIT_SUBMISSION_FAILED'
   | 'SOURCE_STATUS_FAILED'
   | 'SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED'
   | 'SOURCE_CASHOUT_SUBMISSION_UNKNOWN'
@@ -318,23 +319,27 @@ export const errors = {
       retryable: false,
       remediation: `For one-call source cashout, deliver Relay output to the depositor address. For a different recipient, bridge first and then cash out from that recipient's signer.`,
     }),
-  sourceCapabilitiesFailed: (cause?: unknown) =>
+  sourceCapabilitiesFailed: (
+    cause?: unknown,
+    provider = 'Relay',
+    capabilityMethod = 'sourceCapabilities',
+  ) =>
     new CashError(
       {
         code: 'SOURCE_CAPABILITIES_FAILED',
-        message: `Relay source-chain discovery failed.`,
+        message: `${provider} source discovery failed.`,
         retryable: true,
-        remediation: `Retry sourceCapabilities() shortly, or use the default Base USDC path.`,
+        remediation: `Retry ${capabilityMethod}() shortly, or use the default Base USDC path.`,
       },
       { cause },
     ),
-  sourceQuoteFailed: (cause?: unknown) =>
+  sourceQuoteFailed: (cause?: unknown, provider = 'Relay', quoteMethod = 'quoteSource') =>
     new CashError(
       {
         code: 'SOURCE_QUOTE_FAILED',
-        message: `Relay did not return a valid route to canonical Base USDC.`,
+        message: `${provider} did not return a valid route to canonical Base USDC.`,
         retryable: true,
-        remediation: `Refresh source capabilities and request a new quote. Do not submit transactions from this response.`,
+        remediation: `Refresh source capabilities and call ${quoteMethod}() again. Do not submit transactions from this response.`,
       },
       { cause },
     ),
@@ -372,13 +377,28 @@ export const errors = {
       },
       { cause },
     ),
-  sourceStatusFailed: (requestId: string, cause?: unknown) =>
+  sourceDepositSubmissionFailed: (depositAddress: string, cause?: unknown) =>
+    new CashError(
+      {
+        code: 'SOURCE_DEPOSIT_SUBMISSION_FAILED',
+        message: `NEAR Intents could not register the origin transaction for deposit ${depositAddress}.`,
+        retryable: true,
+        remediation: `Retry only submitNearIntentsDeposit() with the same deposit address and origin transaction hash. Never resend the source funds; 1Click can also detect the deposit on-chain.`,
+      },
+      { cause },
+    ),
+  sourceStatusFailed: (
+    requestId: string,
+    cause?: unknown,
+    provider = 'Relay',
+    statusMethod = 'relayStatus',
+  ) =>
     new CashError(
       {
         code: 'SOURCE_STATUS_FAILED',
-        message: `Relay status is unavailable for request ${requestId}.`,
+        message: `${provider} status is unavailable for route ${requestId}.`,
         retryable: true,
-        remediation: `Retry relayStatus(requestId) shortly; keep the request id and transaction hashes for recovery.`,
+        remediation: `Retry ${statusMethod}() shortly; keep the route identifier and transaction hashes for recovery.`,
       },
       { cause },
     ),

@@ -25,6 +25,18 @@ import {
   relayExecutionResultToJson,
   relayStatusFromJson,
   relayStatusToJson,
+  nearIntentsCapabilitiesFromJson,
+  nearIntentsCapabilitiesToJson,
+  nearIntentsQuoteFromJson,
+  nearIntentsQuoteToJson,
+  nearIntentsQuoteInputFromJson,
+  nearIntentsQuoteInputToJson,
+  nearIntentsDepositInputFromJson,
+  nearIntentsDepositInputToJson,
+  nearIntentsStatusInputFromJson,
+  nearIntentsStatusInputToJson,
+  nearIntentsStatusFromJson,
+  nearIntentsStatusToJson,
   sourceCapabilitiesFromJson,
   sourceCapabilitiesToJson,
   withdrawResultFromJson,
@@ -40,6 +52,11 @@ import type {
   RelayQuote,
   RelayStatus,
 } from '../src/client/relay';
+import type {
+  NearIntentsQuote,
+  NearIntentsSourceCapabilities,
+  NearIntentsStatus,
+} from '../src/client/nearIntents';
 import type { IntentEntity } from '../src/sdk-types';
 
 const NOW = 1_800_000_000;
@@ -305,6 +322,143 @@ describe('Relay codecs', () => {
     expect(
       (restored.quote.steps[0]?.items[0]?.receipt as { gasUsed?: bigint } | undefined)?.gasUsed,
     ).toBe(21_000n);
+  });
+});
+
+describe('NEAR Intents codecs', () => {
+  const destinationAsset =
+    'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near' as const;
+
+  it('round-trips capabilities, quote bigints, and status evidence', () => {
+    const capabilities: NearIntentsSourceCapabilities = {
+      destination: {
+        assetId: destinationAsset,
+        chainId: 8453,
+        address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+        symbol: 'USDC',
+        decimals: 6,
+      },
+      assets: [
+        {
+          assetId: 'nep141:zec.omft.near',
+          symbol: 'ZEC',
+          decimals: 8,
+          blockchain: 'zcash',
+          price: '550',
+        },
+      ],
+      source: 'near-intents',
+      asOf: NOW,
+    };
+    expect(
+      nearIntentsCapabilitiesFromJson(
+        JSON.parse(JSON.stringify(nearIntentsCapabilitiesToJson(capabilities))),
+      ),
+    ).toEqual(capabilities);
+
+    const quote: NearIntentsQuote = {
+      provider: 'near-intents',
+      correlationId: 'route-1',
+      sourceAsset: 'nep141:zec.omft.near',
+      destinationAsset,
+      inputAmount: 200_000n,
+      minInputAmount: 200_000n,
+      outputAmount: 1_000_000n,
+      minOutputAmount: 1_000_000n,
+      depositAddress: 't1deposit',
+      depositMemo: 'memo-1',
+      deadline: '2026-08-18T12:30:00.000Z',
+      signature: 'signed',
+      request: {
+        dry: false,
+        swapType: 'EXACT_OUTPUT',
+        slippageTolerance: 100,
+        originAsset: 'nep141:zec.omft.near',
+        depositType: 'ORIGIN_CHAIN',
+        destinationAsset,
+        amount: '1000000',
+        refundTo: 't1refund',
+        refundType: 'ORIGIN_CHAIN',
+        recipient: '0x1111111111111111111111111111111111111111',
+        recipientType: 'DESTINATION_CHAIN',
+        deadline: '2026-08-18T12:30:00.000Z',
+        depositMode: 'SIMPLE',
+      },
+      raw: { quote: { amountOut: '1000000' } },
+    };
+    expect(
+      nearIntentsQuoteFromJson(JSON.parse(JSON.stringify(nearIntentsQuoteToJson(quote)))),
+    ).toEqual(quote);
+    expect(
+      nearIntentsQuoteInputFromJson(
+        JSON.parse(
+          JSON.stringify(
+            nearIntentsQuoteInputToJson({
+              sourceAsset: quote.sourceAsset,
+              amount: 1_000_000n,
+              recipient: quote.request.recipient,
+              refundTo: quote.request.refundTo,
+              tradeType: 'EXACT_OUTPUT',
+              deadline: quote.request.deadline,
+            }),
+          ),
+        ),
+      ),
+    ).toEqual({
+      sourceAsset: quote.sourceAsset,
+      amount: 1_000_000n,
+      recipient: quote.request.recipient,
+      refundTo: quote.request.refundTo,
+      tradeType: 'EXACT_OUTPUT',
+      deadline: quote.request.deadline,
+    });
+    expect(
+      nearIntentsDepositInputFromJson(
+        nearIntentsDepositInputToJson({
+          depositAddress: 't1deposit',
+          depositMemo: 'memo-1',
+          txHash: 'origin-1',
+        }),
+      ),
+    ).toEqual({ depositAddress: 't1deposit', depositMemo: 'memo-1', txHash: 'origin-1' });
+    expect(
+      nearIntentsStatusInputFromJson(
+        JSON.parse(
+          JSON.stringify(
+            nearIntentsStatusInputToJson({
+              depositAddress: 't1deposit',
+              depositMemo: 'memo-1',
+              expectedQuote: quote,
+            }),
+          ),
+        ),
+      ),
+    ).toEqual({
+      depositAddress: 't1deposit',
+      depositMemo: 'memo-1',
+      expectedQuote: quote,
+    });
+
+    const status: NearIntentsStatus = {
+      provider: 'near-intents',
+      correlationId: 'route-1',
+      depositAddress: 't1deposit',
+      depositMemo: 'memo-1',
+      status: 'SUCCESS',
+      updatedAt: '2026-08-18T12:32:00.000Z',
+      inputAmount: 200_000n,
+      outputAmount: 1_000_000n,
+      intentHashes: ['intent-1'],
+      nearTransactionHashes: ['near-1'],
+      originTransactions: [{ hash: 'origin-1' }],
+      destinationTransactions: [
+        { hash: '0xdestination', explorerUrl: 'https://basescan.org/tx/0xdestination' },
+      ],
+      raw: { status: 'SUCCESS' },
+    };
+    expect(
+      nearIntentsStatusFromJson(JSON.parse(JSON.stringify(nearIntentsStatusToJson(status)))),
+    ).toEqual(status);
   });
 });
 

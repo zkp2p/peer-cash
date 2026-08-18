@@ -57,6 +57,24 @@ When a source route succeeds, `CashoutResult.source` also retains the Relay
 `transactions.origin` / `transactions.destination` entries. Persist them with
 the `depositId` so route and deposit recovery do not depend on browser state.
 
+NEAR Intents 1Click covers external-deposit sources, including non-EVM origins
+such as Zcash. `capabilities({ includeNearIntentsSources: true })` discovers
+live asset ids. `quoteNearIntentsSource()` returns a signed quote whose
+`depositAddress`, optional `depositMemo`, raw response, and deadline must be
+persisted before the origin wallet sends. The SDK never signs that origin
+transfer. After the one send, `submitNearIntentsDeposit()` may register the
+existing hash for faster detection and `nearIntentsStatus()` tracks provider
+execution. Only `SUCCESS` plus reconciled Base destination evidence advances
+the caller to a Base-USDC cashout. `EXACT_OUTPUT` fixes the future Peer order
+amount; the quote then reports the required source input.
+
+Browser code must configure the same-origin proxy transport so its 1Click JWT
+remains server-side. A server may use direct transport with `token`. Never
+reuse an expired deposit address, resend after an uncertain origin-wallet
+submission, or infer route success from a wallet-wide balance. A failed
+`submitNearIntentsDeposit()` notification does not mean the transfer failed;
+retry that notification only with the same address and hash.
+
 The unsigned `prepare()` path is Base-USDC-only and rejects `source` with
 `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`. The tool manifest follows the same
 boundary: `cash_source_quote` and `cash_source_status` quote and observe Relay,
@@ -79,10 +97,10 @@ When `ACCESS_POLICY_CONFIGURATION_FAILED.recovery.transactionHash` is present,
 inspect it before preparing another policy; resubmit only when that transaction
 is absent or confirmed reverted.
 
-There is no static chain/token allowlist in Peer Cash. Relay decides source
-support through its metadata and quote execution, filtered to the viem/EVM
-execution surface this SDK can sign. Peer Cash hardcodes only the Base USDC
-destination constant.
+There is no static source allowlist in Peer Cash. Relay decides its source
+support through metadata and quote execution, filtered to the viem/EVM surface
+this SDK can sign; NEAR Intents supplies its own live asset list. Peer Cash
+hardcodes only the Base USDC destination constant.
 
 ### Source-route failure boundaries
 
@@ -98,6 +116,9 @@ Do not retry a source route merely because the Base cashout did not finish:
   can sit in `relayStatus` `waiting` indefinitely - it never becomes terminal,
   so decide from the persisted recovery payload and the origin transactions,
   not from Relay reaching a final status.
+- `SOURCE_DEPOSIT_SUBMISSION_FAILED` means the optional NEAR Intents
+  notification failed after an origin transaction may already exist. Retry
+  only the notification with the same address/hash; never resend funds.
 - `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` means Relay completed, but the Base
   cashout was not created. Its recovery payload has
   `kind: 'retry-base-usdc-cashout'`, the guaranteed Base USDC `amount`, Relay
@@ -314,7 +335,8 @@ explicit override.
 | `SOURCE_QUOTE_FAILED`                   | yes       | Relay returned no valid canonical Base-USDC route. Refresh capabilities and quote again.                                                     |
 | `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; nothing was submitted. Recreate the source signer with viem's `nonceManager` and execute a fresh quote.                           |
 | `SOURCE_EXECUTION_FAILED`               | no        | Route execution did not report success. Inspect source transactions and Relay status before retrying.                                        |
-| `SOURCE_STATUS_FAILED`                  | yes       | Relay status is temporarily unavailable. Retry the status read without resubmitting.                                                         |
+| `SOURCE_DEPOSIT_SUBMISSION_FAILED`      | yes       | Retry only the NEAR Intents notification with the same address/hash; never resend source funds.                                              |
+| `SOURCE_STATUS_FAILED`                  | yes       | Provider status is temporarily unavailable. Retry the status read without resubmitting.                                                      |
 | `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Relay completed but no Base cashout was created. Use the recovery amount for a Base-USDC-only retry; never repeat Relay.                     |
 | `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`     | no        | Relay completed but Base submission returned no hash. Inspect wallet activity and orders before any retry.                                   |
 | `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Relay completed and the Base tx was submitted, but its receipt is unknown. Inspect `depositTxHash`; do not resubmit while status is unknown. |

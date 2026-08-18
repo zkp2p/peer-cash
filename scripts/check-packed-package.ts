@@ -142,26 +142,28 @@ void [rootExport, rootType, reactExport, reactType, customName, builtInName, mut
   writeFileSync(join(classicRoot, 'consumer-classic.ts'), consumerSource);
   writeFileSync(
     join(temporaryRoot, 'smoke.mjs'),
-    `import { createCashClient, usdc } from '@zkp2p/cash';
+    `import { createCashClient, createNearIntentsClient, usdc } from '@zkp2p/cash';
 import { useCashout } from '@zkp2p/cash/react';
 import { cashToolManifest, cashTools } from '@zkp2p/cash/tools';
 
 const client = createCashClient({ environment: 'staging' });
-if (typeof client.cashout !== 'function' || typeof client.fillStats !== 'function' || usdc('1') !== 1_000_000n) throw new Error('root ESM failed');
+const nearIntents = createNearIntentsClient({ fetch: async () => new Response('[]') });
+if (typeof client.cashout !== 'function' || typeof client.fillStats !== 'function' || typeof client.quoteNearIntentsSource !== 'function' || typeof nearIntents.quoteToBaseUsdc !== 'function' || usdc('1') !== 1_000_000n) throw new Error('root ESM failed');
 if (typeof useCashout !== 'function') throw new Error('react ESM failed');
-if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 11) throw new Error('tools ESM failed');
+if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 14) throw new Error('tools ESM failed');
 `,
   );
   writeFileSync(
     join(temporaryRoot, 'smoke.cjs'),
-    `const { createCashClient, usdc } = require('@zkp2p/cash');
+    `const { createCashClient, createNearIntentsClient, usdc } = require('@zkp2p/cash');
 const { useCashout } = require('@zkp2p/cash/react');
 const { cashToolManifest, cashTools } = require('@zkp2p/cash/tools');
 
 const client = createCashClient({ environment: 'staging' });
-if (typeof client.cashout !== 'function' || typeof client.fillStats !== 'function' || usdc('1') !== 1000000n) throw new Error('root CJS failed');
+const nearIntents = createNearIntentsClient({ fetch: async () => new Response('[]') });
+if (typeof client.cashout !== 'function' || typeof client.fillStats !== 'function' || typeof client.quoteNearIntentsSource !== 'function' || typeof nearIntents.quoteToBaseUsdc !== 'function' || usdc('1') !== 1000000n) throw new Error('root CJS failed');
 if (typeof useCashout !== 'function') throw new Error('react CJS failed');
-if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 11) throw new Error('tools CJS failed');
+if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 14) throw new Error('tools CJS failed');
 `,
   );
   run('node', ['smoke.mjs'], temporaryRoot);

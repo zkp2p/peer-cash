@@ -56,6 +56,32 @@ export type {
   RelayStatus,
   RelayTransaction,
 } from './client/relay';
+export {
+  createNearIntentsClient,
+  readNearIntentsSourceCapabilities,
+  quoteNearIntentsToBaseUsdc,
+  submitNearIntentsDeposit,
+  readNearIntentsStatus,
+  NEAR_INTENTS_API_URL,
+  NEAR_INTENTS_BASE_USDC_ASSET_ID,
+  NEAR_INTENTS_DEFAULT_SLIPPAGE_BPS,
+  NEAR_INTENTS_STATUSES,
+} from './client/nearIntents';
+export type {
+  NearIntentsClient,
+  NearIntentsDepositInput,
+  NearIntentsOptions,
+  NearIntentsQuote,
+  NearIntentsQuoteInput,
+  NearIntentsQuoteRequest,
+  NearIntentsSourceCapabilities,
+  NearIntentsStatus,
+  NearIntentsStatusCode,
+  NearIntentsStatusInput,
+  NearIntentsToken,
+  NearIntentsTradeType,
+  NearIntentsTransaction,
+} from './client/nearIntents';
 export type { CashFillEta, CashFillStats, CashPairFillStats } from './client/fillEta';
 
 // Payee input normalization

@@ -7,6 +7,7 @@ import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
 import type { CashSourceCapabilities } from './relay';
+import type { NearIntentsSourceCapabilities } from './nearIntents';
 
 /** Hard floor: below one cent a deposit is dust and can never fill. */
 export const MIN_CASHOUT_AMOUNT = 10_000n; // $0.01
@@ -74,11 +75,13 @@ export interface CashCapabilities {
   destination: { chainId: number; token: { address: string; symbol: 'USDC'; decimals: number } };
   /**
    * Source discovery. The sync default is Base USDC only; pass
-   * `{ includeRelaySources: true }` to `capabilities()` for live Relay EVM sources.
+   * `{ includeRelaySources: true }` or `{ includeNearIntentsSources: true }`
+   * to `capabilities()` for live bridge source assets.
    */
   source: {
     default: { chainId: number; token: { address: string; symbol: 'USDC'; decimals: number } };
     relay?: CashSourceCapabilities;
+    nearIntents?: NearIntentsSourceCapabilities;
   };
   /** Every payout corridor: platform × oracle-priced currencies. */
   platforms: CashPlatformCapability[];

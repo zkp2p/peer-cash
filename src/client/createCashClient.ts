@@ -84,6 +84,17 @@ import {
   type RelayTransaction,
 } from './relay';
 import type { Execute, ProgressData } from '@relayprotocol/relay-sdk';
+import {
+  createNearIntentsClient,
+  readNearIntentsSourceCapabilities,
+  type NearIntentsDepositInput,
+  type NearIntentsOptions,
+  type NearIntentsQuote,
+  type NearIntentsQuoteInput,
+  type NearIntentsSourceCapabilities,
+  type NearIntentsStatus,
+  type NearIntentsStatusInput,
+} from './nearIntents';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
 const FILL_STATS_CACHE_MS = 15 * 60 * 1000;
@@ -137,6 +148,8 @@ export interface CashClientOptions {
   apiKey?: string;
   /** Relay API configuration for source assets outside Base USDC. */
   relay?: RelayOptions;
+  /** NEAR Intents 1Click configuration for externally funded source routes. */
+  nearIntents?: NearIntentsOptions;
   /**
    * Your six-character referral code from the Peer mobile or web app. The SDK
    * emits `peer-ref-XXXXXX`; when this deposit fills, Curator routes the
@@ -308,9 +321,17 @@ export interface CashClient {
   /** 0 - Discovery: sync, static. */
   capabilities(): CashCapabilities;
   /** 0b - Discovery with live Relay-supported EVM source chains/tokens. */
-  capabilities(options: { includeRelaySources: true }): Promise<CashCapabilities>;
+  capabilities(options: {
+    includeRelaySources: true;
+    includeNearIntentsSources?: true;
+  }): Promise<CashCapabilities>;
+  /** 0c - Discovery with live NEAR Intents 1Click source assets. */
+  capabilities(options: {
+    includeRelaySources?: true;
+    includeNearIntentsSources: true;
+  }): Promise<CashCapabilities>;
   /**
-   * 0c - Raw 30-day demand and first-fill speed evidence keyed by an exact
+   * 0d - Raw 30-day demand and first-fill speed evidence keyed by an exact
    * `platform:currency` pair or sorted multi-currency set. A recommended
    * consumer gate is `fills >= 10 && medianFillSeconds <= 48h`; fail open to
    * the full capability catalog when stats are unavailable or the gate would
@@ -335,6 +356,14 @@ export interface CashClient {
   ): Promise<RelayExecutionResult>;
   /** Track Relay execution status by quote/request id. */
   relayStatus(requestId: string): Promise<RelayStatus>;
+  /** Discover live NEAR Intents assets that can route into canonical Base USDC. */
+  nearIntentsCapabilities(): Promise<NearIntentsSourceCapabilities>;
+  /** Quote a NEAR Intents external-deposit route into canonical Base USDC. */
+  quoteNearIntentsSource(input: NearIntentsQuoteInput): Promise<NearIntentsQuote>;
+  /** Optionally register an already-broadcast origin transaction with 1Click. */
+  submitNearIntentsDeposit(input: NearIntentsDepositInput): Promise<NearIntentsStatus>;
+  /** Track a NEAR Intents route by its provider-issued deposit address and memo. */
+  nearIntentsStatus(input: NearIntentsStatusInput): Promise<NearIntentsStatus>;
   /** 1 - Estimate: currency + amount only. No payee, no side effects, no expiry. */
   estimate(input: EstimateInput, options?: EstimateOptions): Promise<CashEstimate>;
   /** 2 - Cash out: payee registration + deposit params + submission happen here. */
@@ -787,15 +816,34 @@ export function createCashClient(options: CashClientOptions): CashClient {
   function capabilities(): CashCapabilities;
   function capabilities(capabilityOptions: {
     includeRelaySources: true;
+    includeNearIntentsSources?: true;
+  }): Promise<CashCapabilities>;
+  function capabilities(capabilityOptions: {
+    includeRelaySources?: true;
+    includeNearIntentsSources: true;
   }): Promise<CashCapabilities>;
   function capabilities(capabilityOptions?: {
     includeRelaySources?: true;
+    includeNearIntentsSources?: true;
   }): CashCapabilities | Promise<CashCapabilities> {
     const baseCapabilities = buildCapabilities(environment);
-    if (!capabilityOptions?.includeRelaySources) return baseCapabilities;
-    return readRelaySourceCapabilities(options.relay).then((relay) => ({
+    if (!capabilityOptions?.includeRelaySources && !capabilityOptions?.includeNearIntentsSources) {
+      return baseCapabilities;
+    }
+    return Promise.all([
+      capabilityOptions.includeRelaySources
+        ? readRelaySourceCapabilities(options.relay)
+        : Promise.resolve(undefined),
+      capabilityOptions.includeNearIntentsSources
+        ? readNearIntentsSourceCapabilities(options.nearIntents)
+        : Promise.resolve(undefined),
+    ]).then(([relay, nearIntents]) => ({
       ...baseCapabilities,
-      source: { ...baseCapabilities.source, relay },
+      source: {
+        ...baseCapabilities.source,
+        ...(relay ? { relay } : {}),
+        ...(nearIntents ? { nearIntents } : {}),
+      },
     }));
   }
 
@@ -1076,6 +1124,22 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     async relayStatus(requestId: string): Promise<RelayStatus> {
       return readRelayStatus(requestId, options.relay);
+    },
+
+    async nearIntentsCapabilities(): Promise<NearIntentsSourceCapabilities> {
+      return readNearIntentsSourceCapabilities(options.nearIntents);
+    },
+
+    async quoteNearIntentsSource(input: NearIntentsQuoteInput): Promise<NearIntentsQuote> {
+      return createNearIntentsClient(options.nearIntents).quoteToBaseUsdc(input);
+    },
+
+    async submitNearIntentsDeposit(input: NearIntentsDepositInput): Promise<NearIntentsStatus> {
+      return createNearIntentsClient(options.nearIntents).submitDeposit(input);
+    },
+
+    async nearIntentsStatus(input: NearIntentsStatusInput): Promise<NearIntentsStatus> {
+      return createNearIntentsClient(options.nearIntents).status(input);
     },
 
     async estimate(input: EstimateInput, estimateOptions?: EstimateOptions): Promise<CashEstimate> {
