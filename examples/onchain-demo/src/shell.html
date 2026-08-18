@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Peer Cash Demo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Crect width='400' height='400' fill='%23000'/%3E%3Ctext x='200' y='285' font-family='system-ui' font-size='260' font-weight='700' fill='%23fff' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E" type="image/svg+xml">
+<meta name="theme-color" id="tc" content="#fafafa">
+<meta name="description" content="Peer Cash Demo: cash out Base USDC to fiat on Venmo, Revolut, Zelle and more through the Peer protocol. The most decentralized way to offramp crypto to fiat. The entire app is stored on Base as contract bytecode.">
+<style>
+:root{color-scheme:light;--b:#fafafa;--c:#fff;--p:#f6f6f6;--f:#000;--m:#6b6b6b;--e:#ddd;--k:#000;--kf:#fff;--kh:#333;--w:#c33;--s:0 1px 3px #0000000a,0 8px 24px #0000000f}
+.d{color-scheme:dark;--b:#101010;--c:#181818;--p:#242424;--f:#eee;--m:#999;--e:#3d3d3d;--k:#fff;--kf:#000;--kh:#ddd;--w:#e57373;--s:0 1px 2px #0000004d,0 12px 32px #00000052}
+:focus-visible{outline:2px solid var(--f);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+body{background:var(--b);color:var(--f);font-family:system-ui,sans-serif;min-height:100dvh;margin:0;padding:1em .85em;display:flex;flex-direction:column;box-sizing:border-box;transition:background .15s,color .15s}
+.card{border:1px solid var(--e);border-radius:.5em;padding:.9em;background:var(--c);max-width:22em;width:100%;margin:0 auto;box-shadow:var(--s);box-sizing:border-box}
+.card+.card{margin-top:.6em}
+.meta{display:flex;align-items:center;gap:.4em;font-size:.85em;color:var(--m);margin-bottom:.75em}
+.meta b{color:var(--f);font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:.82em;flex:1;min-width:0}
+#th{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:.35em;background:transparent;cursor:pointer;color:var(--m);opacity:.8;width:1.8em;height:1.8em;line-height:1;font-size:1em;padding:0;transition:color .15s,opacity .15s,background .15s}
+#th:hover{opacity:1;background:var(--p);color:var(--f)}
+#connect{padding:.3em .7em;max-width:9em;overflow:hidden;text-overflow:ellipsis}
+.panel{background:var(--p);padding:.82em .85em;margin:.32em 0}
+.panel,.rcpt{border:1px solid transparent;border-radius:.5em;transition:border-color .15s}
+.panel:hover,.rcpt:hover{border-color:var(--e)}
+.panel:focus-within,.rcpt:focus{border-color:var(--f)}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:.5em}
+.hdr small{text-transform:uppercase;letter-spacing:.08em;font-size:.7em;color:var(--m)}
+.hdr .r{display:inline-flex;align-items:center;gap:.5em;text-transform:none;letter-spacing:0}
+#max{border:0;background:transparent;color:var(--f);font-size:1em;font-weight:600;cursor:pointer;padding:0;text-transform:uppercase;letter-spacing:.04em}
+#max:hover{text-decoration:underline}
+.row{display:flex;gap:.4em;align-items:center;margin-top:.35em}
+#receive,.panel .row input{font-size:1.65em;font-weight:500;letter-spacing:-.02em;flex:1;min-width:0;font-variant-numeric:tabular-nums}
+.panel .row input{border:0;background:transparent;color:var(--f);outline:none;padding:0;width:100%}
+.panel .row input::placeholder{color:var(--m);opacity:.32}
+.pill{font-size:.9em;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+#receive{overflow:hidden;text-overflow:ellipsis}
+select{appearance:none;-webkit-appearance:none;border:0;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0h8L4 5z' fill='%23999'/%3E%3C/svg%3E") no-repeat right 0 center;padding:0 .85em 0 0;font-size:.9em;font-weight:600;color:var(--f);letter-spacing:.02em;cursor:pointer;text-overflow:ellipsis;font-family:inherit}
+select:focus{outline:0}
+select option{background:var(--c);color:var(--f)}
+#platform{font-size:1.1em;flex:1;min-width:0;padding:.1em .85em .1em 0}
+.rcpt{width:100%;box-sizing:border-box;margin-top:.5em;padding:.66em .85em;background:var(--c);color:var(--f);font-size:.78em;outline:0;font-family:inherit}
+.rcpt::placeholder{color:var(--m);opacity:.6}
+.warn,.note{font-size:.75em;margin:.4em .15em 0;line-height:1.45;overflow-wrap:anywhere}
+.warn{color:var(--w)}
+.note{color:var(--m)}
+#details{margin:.55em .15em 0;display:flex;flex-direction:column;gap:.3em}
+.drow{display:flex;justify-content:space-between;align-items:baseline;gap:.5em;font-size:.78em;color:var(--m)}
+.drow b{color:var(--f);font-weight:600;font-variant-numeric:tabular-nums}
+.drow span[title]{cursor:help;border-bottom:1px dotted var(--e)}
+.primary{width:100%;box-sizing:border-box;border:1px solid transparent;min-height:3.1em;padding:.9em;overflow-wrap:anywhere;line-height:1.3;font-size:1em;border-radius:.5em;background:var(--k);color:var(--kf);cursor:pointer;margin-top:.75em;font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-family:inherit;transition:background .15s,border-color .15s}
+.primary:hover:not(:disabled){background:var(--kh)}
+.primary:active:not(:disabled){transform:translateY(1px)}
+.primary:disabled{background:var(--p);border-color:transparent;color:var(--m);cursor:not-allowed}
+.lqbtn{font-size:.85em;padding:.5em .8em;border-radius:.5em;cursor:pointer;border:1px solid var(--e);background:transparent;color:var(--f);font-family:inherit;font-weight:600;white-space:nowrap;text-align:center;transition:background .15s,color .15s,border-color .15s}
+.lqbtn:hover:not(:disabled){background:var(--k);color:var(--kf);border-color:var(--k)}
+.lqbtn:disabled{opacity:.4;cursor:not-allowed}
+.hide{display:none!important}
+#success{text-align:center;padding:.4em 0 .1em}
+#success h6{font-size:.8em;text-transform:uppercase;letter-spacing:.08em;margin:.2em 0 .4em;font-weight:600}
+#success .sub{font-size:.78em;color:var(--m);margin:0 0 .6em;line-height:1.5}
+#orderAmount{font-size:1.2em;font-weight:600;font-variant-numeric:tabular-nums}
+#orderState{font-size:.8em;font-weight:600;margin-top:.15em}
+#orderExplain{font-size:.75em;color:var(--m);margin:.35em 0 .55em;line-height:1.5}
+.oid{text-align:left;background:var(--p);border-radius:.5em;padding:.55em .7em;margin:.4em 0}
+.oid small{display:block;text-transform:uppercase;letter-spacing:.08em;font-size:.62em;color:var(--m);margin-bottom:.2em}
+#orderId{font-family:ui-monospace,monospace;font-size:.68em;word-break:break-all}
+#orderTx{display:inline-block;font-size:.75em;color:var(--f);text-decoration:underline;margin:.25em 0}
+.acts{display:flex;flex-direction:column;gap:.35em;margin-top:.55em}
+.sect h6{font-size:.7em;text-transform:uppercase;letter-spacing:.08em;color:var(--m);margin:0 0 .45em;font-weight:600}
+.sect p{font-size:.78em;line-height:1.6;margin:0 0 .5em;color:var(--f)}
+.sect p:last-child{margin-bottom:0}
+.sect .q{color:var(--m)}
+#foot{display:flex;justify-content:center;align-items:baseline;gap:.45em;flex-wrap:wrap;margin:1.1em auto 0;font-size:.65em;color:var(--m);letter-spacing:.02em;max-width:22em;text-align:center}
+#foot a{color:var(--m);text-decoration:none;border-bottom:1px solid var(--e);cursor:pointer}
+#foot a:hover{color:var(--f)}
+#pageAddress{font-family:ui-monospace,monospace;word-break:break-all}
+</style>
+</head>
+<body>
+
+<main class="card">
+  <div class="meta"><b>Peer Cash Demo</b><button id="th" aria-label="Toggle theme">◐</button><button id="connect" class="lqbtn">Connect</button></div>
+
+  <div id="form">
+    <div class="panel">
+      <div class="hdr"><small>Cash out</small><small class="r"><span id="balance"></span><button id="max" class="hide">Max</button></small></div>
+      <div class="row"><input id="amount" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="Amount of USDC to cash out"><span class="pill">USDC</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="hdr"><small>Receive ≈</small></div>
+      <div class="row"><span id="receive">0.00</span><select id="currency" aria-label="Fiat currency"></select></div>
+    </div>
+
+    <div class="panel">
+      <div class="hdr"><small>On</small></div>
+      <div class="row"><select id="platform" aria-label="Payment platform"></select></div>
+      <input id="payee" class="rcpt" type="text" autocomplete="off" spellcheck="false" placeholder="Enter account">
+    </div>
+
+    <div id="minHint" class="note hide"></div>
+    <div id="error" class="warn hide"></div>
+
+    <div id="details" class="hide">
+      <div class="drow"><span title="The final payout uses the live Chainlink market rate when a buyer fills your cash-out. This estimate is not a locked quote.">Market rate</span><b id="rate">…</b></div>
+      <div class="drow"><span title="Median time recent cash-outs on this platform and currency waited for their first fill, from the last 30 days of onchain history. Historical, not a guarantee.">Time to fill</span><b id="eta">Varies</b></div>
+    </div>
+
+    <button id="cta" class="primary" disabled>Enter an amount</button>
+  </div>
+
+  <div id="success" class="hide">
+    <h6>Cash-out started</h6>
+    <p class="sub">Your USDC is deposited onchain, waiting for a buyer. The buyer pays you fiat and proves the payment, and the protocol releases the USDC to them at the live oracle rate.</p>
+    <div id="orderAmount"></div>
+    <div id="orderState"></div>
+    <p id="orderExplain"></p>
+    <div class="oid"><small>Deposit ID · resumes this order anywhere</small><span id="orderId"></span></div>
+    <a id="orderTx" class="hide" target="_blank" rel="noopener">View deposit transaction ↗</a>
+    <div id="orderNote" class="note hide"></div>
+    <div class="acts">
+      <button id="withdraw" class="lqbtn hide">Withdraw USDC</button>
+      <button id="refreshOrder" class="lqbtn">Refresh status</button>
+      <button id="again" class="lqbtn">Cash out again</button>
+    </div>
+  </div>
+</main>
+
+<div class="card sect">
+  <h6>The most decentralized way to offramp crypto to fiat</h6>
+  <p><b>This app is a contract.</b> The markup, the styles, and the bundled @zkp2p/cash SDK are stored on Base as contract runtime bytecode, served back by an immutable ERC-5219 / ERC-4804 wrapper. No server, no IPFS, no build pipeline between you and the chain. Every other offramp is a website someone hosts. This frontend lives on the blockchain, and nothing can edit it or take it down. After <a href="https://github.com/z-fi/zFi" target="_blank" rel="noopener" style="color:inherit">zSwap by z0r0z</a>.</p>
+  <p class="q"><b>The protocol is peers, not a provider.</b> Your USDC sits in open contracts on Base until a buyer pays you fiat and proves the payment cryptographically; the contract then releases it at the live Chainlink rate with zero spread. There is no exchange or offramp company in the middle, and only you can withdraw an unmatched deposit.</p>
+</div>
+
+<div id="foot">
+  <span id="pageAddress">…</span>
+  <a id="gateway" target="_blank" rel="noopener">w3link</a>
+  <a href="https://github.com/zkp2p/peer-cash" target="_blank" rel="noopener">@zkp2p/cash</a>
+  <a href="https://www.npmjs.com/package/@zkp2p/cash" target="_blank" rel="noopener">npm</a>
+  <a href="https://peer.xyz/cash-sdk" target="_blank" rel="noopener">peer.xyz</a>
+  <a id="resume">resume order</a>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement,tc=document.getElementById('tc'),key='pcd-theme';
+  var saved=null;try{saved=localStorage.getItem(key)}catch(e){}
+  var dark=saved?saved==='d':matchMedia('(prefers-color-scheme: dark)').matches;
+  function apply(){root.classList.toggle('d',dark);tc.setAttribute('content',dark?'#101010':'#fafafa')}
+  apply();
+  document.getElementById('th').addEventListener('click',function(){dark=!dark;apply();try{localStorage.setItem(key,dark?'d':'l')}catch(e){}});
+})();
+</script>
+<script>
+<!--APP_JS-->
+</script>
+</body>
+</html>
