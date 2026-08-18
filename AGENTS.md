@@ -4,9 +4,10 @@
 > contribute to the SDK itself (layout, ground rules, CI, releasing), start at
 > [CLAUDE.md](https://github.com/zkp2p/peer-cash/blob/main/CLAUDE.md).
 
-You are integrating Peer Cash: an offramp that routes any Relay-supported EVM
-source asset into Base USDC, then converts Base USDC to fiat (Venmo, Revolut,
-Wise, Zelle, ...) at the live Chainlink market rate. The user whose USDC you
+You are integrating Peer Cash: an offramp that routes Relay-supported EVM
+assets or NEAR Intents 1Click external deposits into Base USDC, then converts
+Base USDC to fiat (Venmo, Revolut, Wise, Zelle, ...) at the live Chainlink
+market rate. The user whose USDC you
 manage is the **maker**; a buyer pays them fiat and proves it with TEE-TLS; the
 protocol releases the USDC. Funds are held by the protocol, and only the maker
 can withdraw an unmatched deposit.
@@ -30,7 +31,10 @@ can withdraw an unmatched deposit.
    mutating tools return unsigned transactions. `cash_source_quote` is a quote,
    not an execution tool; the host must execute and confirm Relay through its
    signer/runtime, use `cash_source_status` to monitor it, then call the
-   Base-USDC `cash_cashout` tool. Never pass `source` into `prepare()`.
+   Base-USDC `cash_cashout` tool. For NEAR Intents, persist
+   `cash_near_intents_quote`, fund its deposit address externally exactly once,
+   and poll `cash_near_intents_status` to `SUCCESS` before the Base cash-out.
+   Never pass `source` into `prepare()`.
 
 Every transaction (including approves) carries ERC-8021 attribution:
 `peer-cash`, then optional `peer-ref-XXXXXX` from the six-character
@@ -70,6 +74,8 @@ const cash = createCashClient({ environment: 'production' });
 const caps = cash.capabilities();
 // Optional: live Relay EVM source chains/tokens.
 const relayCaps = await cash.capabilities({ includeRelaySources: true });
+// Optional: live NEAR Intents 1Click external-deposit assets.
+const nearCaps = await cash.capabilities({ includeNearIntentsSources: true });
 
 // 2. Estimate - idempotent, cacheable, no side effects. Includes rolling ETA.
 const est = await cash.estimate({ amount: usdc(500), currency: 'EUR' });
@@ -148,6 +154,32 @@ console.log(routed.source?.amount);
 console.log(routed.source?.transactions?.origin, routed.source?.transactions?.destination);
 ```
 
+External-deposit source route (NEAR Intents / Zcash example):
+
+```ts
+const quote = await cash.quoteNearIntentsSource({
+  sourceAsset: 'nep141:zec.omft.near',
+  amount: usdc(1), // EXACT_OUTPUT is denominated in Base USDC units
+  recipient: signer.account.address,
+  refundTo: transparentZcashAddress,
+  tradeType: 'EXACT_OUTPUT',
+  deadline: new Date(Date.now() + 3 * 60_000).toISOString(),
+});
+persist(quote); // do this before the origin send
+const txHash = await zcashWallet.send(quote.depositAddress!, quote.inputAmount);
+await cash.submitNearIntentsDeposit({
+  depositAddress: quote.depositAddress!,
+  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
+  txHash,
+});
+const route = await cash.nearIntentsStatus({
+  depositAddress: quote.depositAddress!,
+  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
+  expectedQuote: quote,
+});
+// Reconcile the Base receipt/output when route.status === 'SUCCESS', then cash out Base-only.
+```
+
 ## Rules that prevent wrong behavior
 
 - **Never promise a rate.** `estimate()` is `kind: 'oracle-estimate'`; the
@@ -165,6 +197,15 @@ console.log(routed.source?.transactions?.origin, routed.source?.transactions?.de
   `sourceSigner`. Use `EXACT_INPUT` in high-level cash-out flows so `amount`
   remains source-token base units. `source.amount` is Relay's guaranteed
   minimum output and the exact Base USDC deposit amount.
+- **Treat NEAR Intents as an external-deposit route.** Discover asset ids with
+  `capabilities({ includeNearIntentsSources: true })`. Persist the signed quote,
+  deposit address, optional memo, and deadline before sending. Browser code
+  uses a same-origin proxy so the 1Click JWT remains server-side. Never reuse
+  an expired route or resend after an uncertain wallet submission.
+- **A failed NEAR deposit notification is not a failed send.** Retry only
+  `submitNearIntentsDeposit()` with the same address and hash; 1Click also
+  detects source deposits on-chain. Wait for `nearIntentsStatus()` `SUCCESS`
+  and reconcile its destination evidence before a Base-only cash-out.
 - **Use a nonce-managed source signer for routed cashouts.** Relay routes
   with more than one source-chain transaction (approve, then route) are
   refused preflight with `SOURCE_NONCE_MANAGER_REQUIRED` on plain local
@@ -236,6 +277,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `SOURCE_QUOTE_FAILED`                   | yes       | Refresh capabilities and request a new canonical Base-USDC quote                           |
 | `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; recreate the source signer with viem's `nonceManager`, then quote again         |
 | `SOURCE_EXECUTION_FAILED`               | no        | Inspect source transactions and Relay status before any retry                              |
+| `SOURCE_DEPOSIT_SUBMISSION_FAILED`      | yes       | Retry only the 1Click notification; never resend source funds                              |
 | `SOURCE_STATUS_FAILED`                  | yes       | Retry only the status read                                                                 |
 | `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Do not route again; retry Base-only with `recovery.amount`                                 |
 | `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`     | no        | Inspect Base activity and orders; prove no deposit exists before retrying                  |

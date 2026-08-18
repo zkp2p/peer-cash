@@ -5,10 +5,10 @@ description: Integrate Peer Cash (@zkp2p/cash) into any codebase - React app, No
 
 # Peer Cash integration
 
-Onboard this codebase to `@zkp2p/cash`: an offramp-only SDK that routes any
-Relay-supported EVM source asset into Base USDC, then cashes out Base USDC to fiat
-at the live Chainlink market rate (0% spread), with protocol-held funds and no
-custodial off-ramp provider.
+Onboard this codebase to `@zkp2p/cash`: an offramp-only SDK that routes Relay
+EVM assets or NEAR Intents 1Click external deposits into Base USDC, then cashes
+out Base USDC to fiat at the live Chainlink market rate (0% spread), with
+protocol-held funds and no custodial off-ramp provider.
 
 ## 1. Mental model (read before writing code)
 
@@ -23,6 +23,11 @@ custodial off-ramp provider.
   `sourceSigner`. Use `EXACT_INPUT` for high-level cash-out flows: `amount` is
   source-token base units, while `source.amount` is Relay's guaranteed minimum
   Base USDC output and the exact order deposit amount, not actual route output.
+- **NEAR Intents routing.** Non-EVM origins use an external-deposit boundary:
+  discover live 1Click assets, persist the signed quote/address/memo/deadline,
+  send once with the origin wallet, optionally register that existing hash,
+  poll status to `SUCCESS`, reconcile Base evidence, then cash out Base-only.
+  Browser integrations use a same-origin proxy so the 1Click JWT stays server-side.
 - **Oracle-at-fill pricing. There is no quote.** The deposit carries
   `oracleRateConfig { spreadBps: 0 }`; the binding rate is whatever the
   Chainlink feed says when a buyer fills. `estimate()` is deliberately named
@@ -44,7 +49,7 @@ custodial off-ramp provider.
 | ------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | React app                 | `@zkp2p/cash/react` hooks + one `createCashClient` in a provider | wagmi/viem `WalletClient` from the connected wallet                                 |
 | Node service              | `createCashClient` + `cashout()`/`withdraw()`                    | `createWalletClient({ account: privateKeyToAccount(...), chain: base, transport })` |
-| Agent host / policy layer | Base-USDC `prepare*()` -> unsigned `txs[]` + `steps[]`           | Host signs; source quote/status tools do not execute Relay                          |
+| Agent host / policy layer | Base-USDC `prepare*()` -> unsigned `txs[]` + `steps[]`           | Host signs; Relay tools do not execute, and NEAR tools never send origin funds      |
 
 ## 3. Recipes - the verbs
 
@@ -60,6 +65,7 @@ const cash = createCashClient({ environment: 'staging' });
 
 const caps = cash.capabilities(); // 0 discover (sync)
 const relayCaps = await cash.capabilities({ includeRelaySources: true }); // 0b source discovery
+const nearCaps = await cash.capabilities({ includeNearIntentsSources: true }); // 0c 1Click assets
 const est = await cash.estimate({ amount: usdc(100), currency: 'USD' }); // 1 estimate + ETA
 const res = await cash.cashout(
   {
@@ -110,6 +116,32 @@ persist({
   requestId: routed.source?.requestId,
   transactions: routed.source?.transactions,
 });
+```
+
+External-deposit NEAR Intents source path:
+
+```ts
+const quote = await cash.quoteNearIntentsSource({
+  sourceAsset: nearAssetId,
+  amount: usdc(1),
+  recipient: signer.account.address,
+  refundTo: originRefundAddress,
+  tradeType: 'EXACT_OUTPUT',
+  deadline: new Date(Date.now() + 3 * 60_000).toISOString(),
+});
+persist(quote);
+const txHash = await originWallet.send(quote.depositAddress!, quote.inputAmount);
+await cash.submitNearIntentsDeposit({
+  depositAddress: quote.depositAddress!,
+  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
+  txHash,
+});
+const route = await cash.nearIntentsStatus({
+  depositAddress: quote.depositAddress!,
+  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
+  expectedQuote: quote,
+});
+// Reconcile Base delivery after SUCCESS, then use a Base-only prepare/cashout.
 ```
 
 Base-USDC cashout, withdraw, and top-up also have unsigned `prepare*`
@@ -177,6 +209,9 @@ those, don't re-derive. The recovery boundaries that matter most in practice:
   submitted, but its receipt is unknown. Inspect
   `error.recovery.depositTxHash`; do not route or submit again until it is
   known.
+- `SOURCE_DEPOSIT_SUBMISSION_FAILED` = the NEAR Intents origin transaction may
+  already be final. Retry only the notification with the same address/hash;
+  never resend source funds.
 - `TRANSACTION_STATUS_UNKNOWN` = a Base transaction may already have
   succeeded. Inspect `error.recovery.transactionHash` before resubmitting.
 - `TRANSACTION_SUBMISSION_UNKNOWN` = a Base mutation returned no hash but may

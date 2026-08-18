@@ -20,6 +20,14 @@ import {
   type RelayStatus,
 } from '../client/relay';
 import type { CashCapabilities } from '../client/capabilities';
+import type {
+  NearIntentsDepositInput,
+  NearIntentsQuote,
+  NearIntentsQuoteInput,
+  NearIntentsSourceCapabilities,
+  NearIntentsStatus,
+  NearIntentsStatusInput,
+} from '../client/nearIntents';
 import { CashError, type CashErrorRecovery, type CashErrorShape } from '../client/errors';
 import type {
   CashPreparedStep,
@@ -38,6 +46,12 @@ import {
   relayQuoteJsonSchema,
   relayExecutionResultJsonSchema,
   relayStatusJsonSchema,
+  nearIntentsDepositInputJsonSchema,
+  nearIntentsQuoteInputJsonSchema,
+  nearIntentsQuoteJsonSchema,
+  nearIntentsSourceCapabilitiesJsonSchema,
+  nearIntentsStatusInputJsonSchema,
+  nearIntentsStatusJsonSchema,
   cashoutResultJsonSchema,
   cashPreparedStepJsonSchema,
   prepareResultJsonSchema,
@@ -58,6 +72,12 @@ import {
   type RelayQuoteJson,
   type RelayExecutionResultJson,
   type RelayStatusJson,
+  type NearIntentsDepositInputJson,
+  type NearIntentsQuoteInputJson,
+  type NearIntentsQuoteJson,
+  type NearIntentsSourceCapabilitiesJson,
+  type NearIntentsStatusInputJson,
+  type NearIntentsStatusJson,
   type CashPreparedStepJson,
   type CashoutResultJson,
   type PrepareResultJson,
@@ -333,6 +353,126 @@ export function relayExecutionResultFromJson(json: unknown): RelayExecutionResul
   };
 }
 
+// --- NEAR Intents ---
+
+export function nearIntentsQuoteInputToJson(
+  input: NearIntentsQuoteInput,
+): NearIntentsQuoteInputJson {
+  return nearIntentsQuoteInputJsonSchema.parse({
+    ...input,
+    amount: input.amount.toString(),
+  });
+}
+
+export function nearIntentsQuoteInputFromJson(json: unknown): NearIntentsQuoteInput {
+  const parsed = nearIntentsQuoteInputJsonSchema.parse(json);
+  return {
+    sourceAsset: parsed.sourceAsset,
+    amount: BigInt(parsed.amount),
+    recipient: parsed.recipient,
+    refundTo: parsed.refundTo,
+    tradeType: parsed.tradeType,
+    deadline: parsed.deadline,
+    ...(parsed.slippageTolerance !== undefined
+      ? { slippageTolerance: parsed.slippageTolerance }
+      : {}),
+    ...(parsed.dry !== undefined ? { dry: parsed.dry } : {}),
+  };
+}
+
+export function nearIntentsDepositInputToJson(
+  input: NearIntentsDepositInput,
+): NearIntentsDepositInputJson {
+  return nearIntentsDepositInputJsonSchema.parse(input);
+}
+
+export function nearIntentsDepositInputFromJson(json: unknown): NearIntentsDepositInput {
+  const parsed = nearIntentsDepositInputJsonSchema.parse(json);
+  return {
+    depositAddress: parsed.depositAddress,
+    txHash: parsed.txHash,
+    ...(parsed.depositMemo !== undefined ? { depositMemo: parsed.depositMemo } : {}),
+  };
+}
+
+export function nearIntentsStatusInputToJson(
+  input: NearIntentsStatusInput,
+): NearIntentsStatusInputJson {
+  return nearIntentsStatusInputJsonSchema.parse({
+    ...input,
+    ...(input.expectedQuote ? { expectedQuote: nearIntentsQuoteToJson(input.expectedQuote) } : {}),
+  });
+}
+
+export function nearIntentsStatusInputFromJson(json: unknown): NearIntentsStatusInput {
+  const parsed = nearIntentsStatusInputJsonSchema.parse(json);
+  return {
+    depositAddress: parsed.depositAddress,
+    ...(parsed.depositMemo !== undefined ? { depositMemo: parsed.depositMemo } : {}),
+    ...(parsed.expectedQuote !== undefined
+      ? { expectedQuote: nearIntentsQuoteFromJson(parsed.expectedQuote) }
+      : {}),
+  };
+}
+
+export function nearIntentsCapabilitiesToJson(
+  capabilities: NearIntentsSourceCapabilities,
+): NearIntentsSourceCapabilitiesJson {
+  return nearIntentsSourceCapabilitiesJsonSchema.parse(capabilities);
+}
+
+export function nearIntentsCapabilitiesFromJson(json: unknown): NearIntentsSourceCapabilities {
+  return nearIntentsSourceCapabilitiesJsonSchema.parse(json) as NearIntentsSourceCapabilities;
+}
+
+export function nearIntentsQuoteToJson(quote: NearIntentsQuote): NearIntentsQuoteJson {
+  return nearIntentsQuoteJsonSchema.parse({
+    ...quote,
+    inputAmount: quote.inputAmount.toString(),
+    minInputAmount: quote.minInputAmount.toString(),
+    outputAmount: quote.outputAmount.toString(),
+    minOutputAmount: quote.minOutputAmount.toString(),
+    raw: sanitizeRelayValue(quote.raw),
+  });
+}
+
+export function nearIntentsQuoteFromJson(json: unknown): NearIntentsQuote {
+  const parsed = nearIntentsQuoteJsonSchema.parse(json);
+  return {
+    ...parsed,
+    inputAmount: BigInt(parsed.inputAmount),
+    minInputAmount: BigInt(parsed.minInputAmount),
+    outputAmount: BigInt(parsed.outputAmount),
+    minOutputAmount: BigInt(parsed.minOutputAmount),
+    raw: restoreRelayValue(parsed.raw),
+  } as NearIntentsQuote;
+}
+
+export function nearIntentsStatusToJson(status: NearIntentsStatus): NearIntentsStatusJson {
+  return nearIntentsStatusJsonSchema.parse({
+    ...status,
+    ...(status.inputAmount !== undefined ? { inputAmount: status.inputAmount.toString() } : {}),
+    ...(status.outputAmount !== undefined ? { outputAmount: status.outputAmount.toString() } : {}),
+    ...(status.refundedAmount !== undefined
+      ? { refundedAmount: status.refundedAmount.toString() }
+      : {}),
+    raw: sanitizeRelayValue(status.raw),
+  });
+}
+
+export function nearIntentsStatusFromJson(json: unknown): NearIntentsStatus {
+  const parsed = nearIntentsStatusJsonSchema.parse(json);
+  return {
+    ...parsed,
+    ...(parsed.inputAmount !== undefined ? { inputAmount: BigInt(parsed.inputAmount) } : {}),
+    ...(parsed.outputAmount !== undefined ? { outputAmount: BigInt(parsed.outputAmount) } : {}),
+    ...(parsed.refundedAmount !== undefined
+      ? { refundedAmount: BigInt(parsed.refundedAmount) }
+      : {}),
+    raw: restoreRelayValue(parsed.raw),
+  } as NearIntentsStatus;
+}
+
 // --- PreparedTransaction ---
 
 export function preparedTxToJson(tx: PreparedTransaction): PreparedTransactionJson {
@@ -479,6 +619,7 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
     source: {
       default: parsed.source.default,
       ...(parsed.source.relay ? { relay: parsed.source.relay } : {}),
+      ...(parsed.source.nearIntents ? { nearIntents: parsed.source.nearIntents } : {}),
     },
     platforms: parsed.platforms.map((p) => ({
       ...p,

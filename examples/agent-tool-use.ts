@@ -17,6 +17,9 @@ import {
   preparedTxToJson,
   relayQuoteToJson,
   relayStatusToJson,
+  nearIntentsQuoteToJson,
+  nearIntentsQuoteFromJson,
+  nearIntentsStatusToJson,
 } from '@zkp2p/cash';
 import { cashToolManifest } from '@zkp2p/cash/tools';
 
@@ -28,9 +31,16 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
     switch (name) {
       case 'cash_capabilities':
         return capabilitiesToJson(
-          args.includeRelaySources
-            ? await cash.capabilities({ includeRelaySources: true })
-            : cash.capabilities(),
+          args.includeRelaySources && args.includeNearIntentsSources
+            ? await cash.capabilities({
+                includeRelaySources: true,
+                includeNearIntentsSources: true,
+              })
+            : args.includeRelaySources
+              ? await cash.capabilities({ includeRelaySources: true })
+              : args.includeNearIntentsSources
+                ? await cash.capabilities({ includeNearIntentsSources: true })
+                : cash.capabilities(),
         );
       case 'cash_source_quote':
         return relayQuoteToJson(
@@ -40,6 +50,37 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
             source: args.source as never,
             ...(args.recipient ? { recipient: args.recipient as string } : {}),
             ...(args.tradeType ? { tradeType: args.tradeType as never } : {}),
+          }),
+        );
+      case 'cash_near_intents_quote':
+        return nearIntentsQuoteToJson(
+          await cash.quoteNearIntentsSource({
+            sourceAsset: args.sourceAsset as string,
+            amount: BigInt(args.amount as string),
+            recipient: args.recipient as string,
+            refundTo: args.refundTo as string,
+            tradeType: args.tradeType as never,
+            deadline: args.deadline as string,
+            ...(args.slippageTolerance !== undefined
+              ? { slippageTolerance: args.slippageTolerance as number }
+              : {}),
+            ...(args.dry !== undefined ? { dry: args.dry as boolean } : {}),
+          }),
+        );
+      case 'cash_near_intents_submit':
+        return nearIntentsStatusToJson(
+          await cash.submitNearIntentsDeposit({
+            depositAddress: args.depositAddress as string,
+            txHash: args.txHash as string,
+            ...(args.depositMemo ? { depositMemo: args.depositMemo as string } : {}),
+          }),
+        );
+      case 'cash_near_intents_status':
+        return nearIntentsStatusToJson(
+          await cash.nearIntentsStatus({
+            depositAddress: args.depositAddress as string,
+            ...(args.depositMemo ? { depositMemo: args.depositMemo as string } : {}),
+            expectedQuote: nearIntentsQuoteFromJson(args.expectedQuote),
           }),
         );
       case 'cash_estimate':
@@ -52,9 +93,9 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
           }),
         );
       case 'cash_cashout': {
-        // Tool/prepare path: Base USDC only. cash_source_quote is read-only;
-        // the host must execute and confirm Relay with its own signer/runtime,
-        // then call this tool with the guaranteed Base USDC amount. Persist
+        // Tool/prepare path: Base USDC only. The host must complete Relay or
+        // NEAR Intents source routing first, then call this tool with the
+        // confirmed Base USDC amount. Persist
         // accessPolicyRequired: after createDeposit confirms, the host adapter
         // calls finalizePreparedCashout(receipt), then prepareAccessPolicy().
         const input = {

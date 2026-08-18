@@ -1,10 +1,10 @@
 # @zkp2p/cash - contributor guide
 
-Peer Cash is an offramp-only SDK: route any Relay-supported source asset into
-Base USDC, then cash out Base USDC to fiat at the live Chainlink oracle market
-rate (0% spread, always). It is a thin facade over the published `@zkp2p/sdk`
-plus `@relayprotocol/relay-sdk`. Minimal is judged at the API surface, not the
-dependency tree.
+Peer Cash is an offramp-only SDK: route Relay-supported EVM assets or NEAR
+Intents 1Click external deposits into Base USDC, then cash out Base USDC to
+fiat at the live Chainlink oracle market rate (0% spread, always). It is a thin
+facade over the published `@zkp2p/sdk` plus source-provider adapters. Minimal
+is judged at the API surface, not the dependency tree.
 
 ## Ground rules
 
@@ -33,6 +33,10 @@ dependency tree.
   transaction hashes. A completed route followed by a failed Base cashout
   retries Base-only; a submission without a hash or an unknown Base receipt
   must be inspected before any resubmission.
+- **External deposits stay external.** NEAR Intents returns a signed origin
+  deposit address/memo. The caller persists it and sends once with the origin
+  wallet; Peer Cash validates quote echoes and tracks status but never pretends
+  a viem signer can execute Zcash. Browser JWTs stay behind same-origin proxies.
 - **Payee attestation is registration-scoped.** Wise and PayPal require an
   identity attestation for a new registration. The SDK accepts but does not
   mint it; first-party Peer web obtains it through the Peer TEE browser
@@ -54,7 +58,7 @@ dependency tree.
   construction, receipt parsing). No I/O. Ported from the reviewed reference
   implementation; keep it dependency-light and fully unit-tested.
 - `src/client/` — `createCashClient` facade over a read-only `Zkp2pClient`,
-  Relay SDK source routing, the verbs, typed errors.
+  Relay and NEAR Intents source routing, the verbs, typed errors.
 - `src/codecs/` — zod schemas + JSON (de)serialization for every wire type.
 - `src/tools/` — JSON-schema tool manifest of the verbs for agent runtimes.
 - `src/react/` — optional hooks (`useEstimate`, `useCashout`, `useOrder`,

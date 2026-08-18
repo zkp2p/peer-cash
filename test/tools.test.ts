@@ -27,6 +27,9 @@ describe('tools manifest', () => {
     expect(cashTools.map((t) => t.name)).toEqual([
       'cash_capabilities',
       'cash_source_quote',
+      'cash_near_intents_quote',
+      'cash_near_intents_submit',
+      'cash_near_intents_status',
       'cash_estimate',
       'cash_fill_stats',
       'cash_cashout',
@@ -96,7 +99,7 @@ describe('tools manifest', () => {
   it('is JSON-serializable as-is', () => {
     expect(() => JSON.stringify(cashToolManifest)).not.toThrow();
     const parsed = JSON.parse(JSON.stringify(cashToolManifest));
-    expect(parsed.tools).toHaveLength(11);
+    expect(parsed.tools).toHaveLength(14);
     expect(parsed.name).toBe('@zkp2p/cash');
     expect(parsed.version).toBe(packageJson.version);
   });

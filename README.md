@@ -1,8 +1,9 @@
 # @zkp2p/cash
 
-Route any Relay-supported EVM source asset into Base USDC, then cash out to
-fiat on Venmo, Revolut, Wise, Zelle, and more at the live Chainlink market
-rate, with zero spread and no centralized off-ramp provider.
+Route Relay-supported EVM assets or NEAR Intents 1Click external deposits into
+Base USDC, then cash out to fiat on Venmo, Revolut, Wise, Zelle, and more at the
+live Chainlink market rate, with zero spread and no centralized off-ramp
+provider.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. The cashing-out user is the maker: their USDC becomes a deposit in
@@ -100,9 +101,12 @@ arbitrary protocol operations.
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
 | `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
+| `capabilities({ includeNearIntentsSources: true })`            | Async discovery: adds live NEAR Intents 1Click source assets                                                                    |
 | `fillStats()`                                                  | Cached 30-day fill counts and median first-fill time per exact `platform:currency` pair or sorted multi-currency set            |
 | `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
+| `quoteNearIntentsSource(input)`                                | Signed 1Click quote with an origin-chain deposit address and optional memo                                                      |
+| `submitNearIntentsDeposit(input)` / `nearIntentsStatus(input)` | Optionally register an origin tx, then track 1Click delivery/refund evidence                                                    |
 | `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
 | `cashout(input, { signer })`                                   | Creates the order with any viem wallet; Venmo, Cash App, and PayPal then attach the canonical access groups                     |
 | `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then check `accessPolicyRequired` for the follow-up                              |
@@ -176,7 +180,9 @@ extension. An already-registered Wise or PayPal handle can be reused with bare
 payee data. A new handle without its signed attestation fails during curator
 registration with `PAYEE_VERIFICATION_REQUIRED`, before funds move on-chain.
 
-## Source routing (any EVM asset in)
+## Source routing
+
+### Relay (signed EVM route)
 
 The default/minimal flow is unchanged: pass Base USDC base units to
 `estimate()` and `cashout()`. For any other source asset, pass `source` to
@@ -216,6 +222,58 @@ refuses the route preflight with `SOURCE_NONCE_MANAGER_REQUIRED` instead of
 letting the route transaction reuse the approval's nonce and revert
 mid-route. Browser wallets are unaffected.
 
+### NEAR Intents (external-deposit route)
+
+NEAR Intents 1Click supports non-EVM origins such as Zcash, so the SDK does
+not pretend a viem wallet can execute the source transfer. It returns a signed
+quote with an origin-chain `depositAddress` and optional `depositMemo`; your
+wallet sends exactly once, then the SDK tracks the provider route into
+canonical Base USDC. Use `EXACT_OUTPUT` when the Peer order amount must be
+known before the origin send.
+
+```ts
+const cash = createCashClient({
+  environment: 'production',
+  nearIntents: {
+    // Browser-safe same-origin proxy; it keeps the 1Click JWT server-side.
+    apiUrl: '/api/v1/near',
+    transport: 'proxy',
+  },
+});
+
+const sources = await cash.capabilities({ includeNearIntentsSources: true });
+const zec = sources.source.nearIntents?.assets.find((asset) => asset.symbol === 'ZEC');
+const quote = await cash.quoteNearIntentsSource({
+  sourceAsset: zec!.assetId,
+  amount: 1_000_000n, // exact 1 Base USDC output
+  recipient: baseSigner.account.address,
+  refundTo: transparentZcashRefundAddress,
+  tradeType: 'EXACT_OUTPUT',
+  deadline: new Date(Date.now() + 3 * 60_000).toISOString(),
+});
+
+persist(quote); // before sending: address, memo, signed response, deadline
+const originTxHash = await zcashWallet.send(quote.depositAddress!, quote.inputAmount);
+await cash.submitNearIntentsDeposit({
+  depositAddress: quote.depositAddress!,
+  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
+  txHash: originTxHash,
+});
+const route = await cash.nearIntentsStatus({
+  depositAddress: quote.depositAddress!,
+  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
+  expectedQuote: quote,
+});
+// On SUCCESS, reconcile the Base receipt/balance, then call Base-only cashout().
+```
+
+Direct server integrations may pass `nearIntents: { token }`. Browser code
+must use a same-origin proxy and must never receive the 1Click JWT. Never reuse
+an expired deposit address, resend funds after an uncertain wallet submission,
+or infer success from a wallet-wide balance alone. If optional deposit
+registration fails, retry only `submitNearIntentsDeposit()` with the same hash;
+1Click can also detect the transfer on-chain.
+
 ## Source-route recovery
 
 Persist `depositId`, transaction hashes, and the Relay `requestId` as soon as
@@ -227,6 +285,9 @@ they are available. A source-routed result includes both a flat
   can stay in `relayStatus` `waiting` indefinitely. Decide from the error's
   recovery payload and origin transactions, never by waiting for a terminal
   Relay status.
+- `SOURCE_DEPOSIT_SUBMISSION_FAILED`: the NEAR Intents origin transaction may
+  already be final. Retry only the provider notification with the same address
+  and hash; never resend source funds.
 - `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED`: Relay completed, but the Base
   cashout was not created. Do not route again. Retry a Base-USDC-only
   `cashout()` with `BigInt(error.recovery.amount)`.

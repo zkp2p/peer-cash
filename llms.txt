@@ -1,7 +1,8 @@
 # @zkp2p/cash - Peer Cash
 
-> Offramp-only SDK for the ZKP2P protocol: route any Relay-supported EVM source
-> asset to Base USDC, then cash out to fiat (Venmo, Revolut, Wise, Zelle, ...)
+> Offramp-only SDK for the ZKP2P protocol: route Relay-supported EVM assets or
+> NEAR Intents 1Click external deposits to Base USDC, then cash out to fiat
+> (Venmo, Revolut, Wise, Zelle, ...)
 > at the live Chainlink oracle market rate with zero spread and no centralized
 > off-ramp provider. The user is the maker, a buyer pays them fiat and proves
 > the payment, and the SDK exposes readable order state.
@@ -13,11 +14,15 @@ Key facts:
 
 - The cashing-out user is the MAKER: their USDC becomes a protocol-held order;
   a buyer pays fiat and proves it with TEE-TLS; the protocol releases the USDC.
-- Destination is always Base USDC. Source chains/tokens come from Relay SDK
-  metadata and quote execution, filtered to EVM chains this SDK can sign.
+- Destination is always Base USDC. Relay sources come from live SDK metadata;
+  NEAR Intents sources come from live 1Click token discovery.
 - High-level source cashout uses EXACT_INPUT: amount is source-token base units.
   source.amount is Relay's guaranteed minimum Base USDC output and the exact
   order deposit amount, not the route's actual output.
+- NEAR Intents is an external-deposit flow: persist the signed quote, deposit
+  address/memo, and deadline; send once with the origin wallet; optionally
+  submit that existing hash; poll status to SUCCESS; reconcile Base evidence;
+  then cash out Base-only. Use EXACT_OUTPUT when the order amount must be fixed.
 - There is NO locked fiat quote. estimate() reads the oracle; the binding rate
   resolves at fill time. ETA is `{ seconds, label }` from the same rolling
   30-day, intent-attributed pair sampler as fillStats(), not a guarantee.
@@ -39,7 +44,8 @@ Key facts:
 - Base-USDC mutating verbs have unsigned counterparts (prepare,
   prepareWithdraw, prepareTopUp) for host-side signing; source-routed cashout
   needs signer-backed Relay execution first. prepare() and the cash_cashout tool
-  are Base-USDC-only; cash_source_quote/status do not execute the route.
+  are Base-USDC-only; cash_source_quote/status do not execute Relay, and the
+  cash_near_intents_* tools never sign or broadcast the origin transfer.
   @zkp2p/cash/tools ships a JSON-schema tool manifest. Receipt finalization
   and policy preparation remain CashClient methods for the host adapter.
 - Errors are typed: { code, retryable, remediation, recovery? }. Completed
@@ -68,6 +74,10 @@ Key facts:
 - Default path is same-chain Base USDC. Optional `source` on `cashout()` runs
   Relay source-to-Base-USDC first; non-Base source chains require
   `sourceSigner`.
+- `capabilities({ includeNearIntentsSources: true })`,
+  `quoteNearIntentsSource()`, `submitNearIntentsDeposit()`, and
+  `nearIntentsStatus()` support 1Click routes including non-EVM origins. A
+  browser uses the same-origin proxy transport so the JWT stays server-side.
 - Wise and PayPal require attestation for a new payee registration. The SDK
   accepts but does not mint it; first-party Peer web obtains it through the
   Peer TEE browser extension. A previously registered bare handle can be reused.

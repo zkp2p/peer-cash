@@ -93,13 +93,17 @@ const builtInCashTools = [
   {
     name: 'cash_capabilities',
     description:
-      'Discover what Peer Cash can do: payout platforms, oracle-priced currencies per platform, Base USDC destination, default Base USDC source, payee handle hints, and amount bounds. Set includeRelaySources=true to fetch live Relay-supported EVM source chains/tokens through the Relay SDK.',
+      'Discover what Peer Cash can do: payout platforms, oracle-priced currencies per platform, Base USDC destination, default Base USDC source, payee handle hints, and amount bounds. Opt into live Relay EVM or NEAR Intents source discovery.',
     inputSchema: {
       type: 'object',
       properties: {
         includeRelaySources: {
           type: 'boolean',
           description: 'Fetch live Relay SDK EVM source chain/token metadata.',
+        },
+        includeNearIntentsSources: {
+          type: 'boolean',
+          description: 'Fetch live NEAR Intents 1Click source asset metadata.',
         },
       },
       additionalProperties: false,
@@ -134,6 +138,89 @@ const builtInCashTools = [
         },
       },
       required: ['user', 'amount', 'source'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'cash_near_intents_quote',
+    description:
+      'Quote a NEAR Intents 1Click external-deposit route into canonical Base USDC. Persist the returned depositAddress, optional depositMemo, signed quote, and deadline before sending source funds. The host must fund that origin-chain address itself; this tool never signs or broadcasts the source transfer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceAsset: {
+          type: 'string',
+          description: 'NEAR Intents asset id from cash_capabilities, e.g. nep141:zec.omft.near.',
+        },
+        amount: {
+          ...bigintString,
+          description:
+            'Base units: source units for EXACT_INPUT or canonical Base USDC units for EXACT_OUTPUT.',
+        },
+        recipient: {
+          ...address,
+          description: 'Base address that will receive canonical USDC.',
+        },
+        refundTo: {
+          type: 'string',
+          description: 'Refund address on the source chain.',
+        },
+        tradeType: {
+          type: 'string',
+          enum: ['EXACT_INPUT', 'EXACT_OUTPUT'],
+        },
+        deadline: {
+          type: 'string',
+          format: 'date-time',
+          description: 'Quote deadline as an ISO timestamp.',
+        },
+        slippageTolerance: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 10_000,
+          description: 'Basis points; defaults to 100 (1%).',
+        },
+        dry: {
+          type: 'boolean',
+          description: 'Simulation only. A dry quote has no deposit address.',
+        },
+      },
+      required: ['sourceAsset', 'amount', 'recipient', 'refundTo', 'tradeType', 'deadline'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'cash_near_intents_submit',
+    description:
+      'Optionally notify NEAR Intents of an already-broadcast origin transaction so deposit detection starts sooner. Retrying this notification is safe; never resend source funds because notification failed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        depositAddress: { type: 'string', description: 'Deposit address from the signed quote.' },
+        depositMemo: { type: 'string', description: 'Optional memo from the signed quote.' },
+        txHash: { type: 'string', description: 'Already-broadcast origin-chain transaction hash.' },
+      },
+      required: ['depositAddress', 'txHash'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'cash_near_intents_status',
+    description:
+      'Track a NEAR Intents route by the exact depositAddress and optional depositMemo returned by its signed quote. Persist transaction evidence and wait for SUCCESS before creating the Base-USDC cash-out; never reuse an expired route.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        depositAddress: { type: 'string', description: 'Deposit address from the signed quote.' },
+        depositMemo: { type: 'string', description: 'Optional memo from the signed quote.' },
+        expectedQuote: {
+          type: 'object',
+          description:
+            'Exact serialized result from cash_near_intents_quote; used to reject status for a different route identity.',
+          additionalProperties: true,
+        },
+      },
+      required: ['depositAddress', 'expectedQuote'],
       additionalProperties: false,
     },
   },
@@ -323,7 +410,7 @@ export const cashToolManifest = {
   name: '@zkp2p/cash',
   version: packageJson.version,
   description:
-    'Peer Cash - offramp-only: route any Relay-supported EVM source asset to Base USDC, then cash out to fiat at the live oracle market rate (0% spread). Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
+    'Peer Cash - offramp-only: route Relay EVM or NEAR Intents external-deposit source assets to Base USDC, then cash out to fiat at the live oracle market rate (0% spread). Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 
