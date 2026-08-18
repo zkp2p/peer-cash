@@ -363,6 +363,7 @@ Runnable first-party examples in [`examples/`](examples):
 
 - [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
 - [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.
+- [`mpp-merchant-cashout`](examples/mpp-merchant-cashout) - turn confirmed MPP merchant revenue into an unsigned Peer Cash plan while the merchant keeps custody and signing.
 
 ## Trust model, honestly
 
