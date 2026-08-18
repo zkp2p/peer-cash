@@ -80,6 +80,15 @@ data contracts are harmless dead bytes.
 nonce without sending anything. `script/gen-key.mjs` generates a throwaway
 `.deployer.key` (0600) and prints only its address.
 
+## Use it
+
+Open the gateway URL, connect a wallet on Base, and the flow is live against
+production Peer: pick a platform (Cash App, Chime, Monzo, Revolut, Venmo, or
+Zelle), enter the payee that platform pays out to, and start a cash-out from
+0.01 USDC. The page watches the order to delivered and offers Withdraw USDC
+whenever the order state allows it, and reopening the page with a deposit ID
+resumes a cash-out in progress.
+
 ## Read it back
 
 ```sh
@@ -88,3 +97,10 @@ cast code 0xF5020BD9afa2bc656492f0E85342f24a50956614 -r https://mainnet.base.org
 ```
 
 or open <https://0x6d6c7af86bfc6f49f32761e1718cf982224cf343.8453.w3link.io/> in a browser.
+
+The wrapper source is verified on
+[BaseScan](https://basescan.org/address/0x6d6c7af86bfc6f49f32761e1718cf982224cf343#code),
+Blockscout, and Sourcify. The 90 data chunks are verified on
+[Sourcify](https://repo.sourcify.dev/8453/0xF5020BD9afa2bc656492f0E85342f24a50956614)
+as Yul objects whose deployed bytecode is the page slice itself; explorers
+that only compile Solidity show them as the raw bytes they are.
