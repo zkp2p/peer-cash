@@ -424,6 +424,7 @@ Runnable first-party examples in [`examples/`](examples):
 
 - [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
 - [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.
+- [`carpe-diem-provider-cashout`](examples/carpe-diem-provider-cashout) - cash out confirmed Carpe Diem provider DIEM revenue through the connected Base wallet.
 - [`mpp-merchant-cashout`](examples/mpp-merchant-cashout) - turn confirmed MPP merchant revenue into an unsigned Peer Cash plan while the merchant keeps custody and signing.
 - [`onchain-demo`](examples/onchain-demo) - the Peer Cash Demo: the express sell flow as one page that bundles the SDK and is stored on Base as contract bytecode, served by an immutable ERC-5219 wrapper,
   [live on Base](https://basescan.org/address/0x6d6c7af86bfc6f49f32761e1718cf982224cf343).
