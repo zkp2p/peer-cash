@@ -20,7 +20,8 @@ and is released when a buyer proves the fiat payment. The SDK never holds keys.
    transactions. Source-route tools quote or observe; the host owns execution.
 
 Persist `depositId` immediately. It is the durable key for `order()`,
-`orders()`, `watch()`, `topUp()`, and `withdraw()`.
+`watch()`, `topUp()`, and `withdraw()`. Use `orders(owner)` to list a wallet's
+orders.
 
 ## Core loop
 
@@ -49,10 +50,11 @@ persist(result.depositId);
 const order = await cash.order(result.depositId);
 ```
 
-Discover platforms, currencies, payee hints, bounds, and source assets from
-`capabilities()`; do not hardcode them. `estimate()` is an oracle estimate, not
-a quote. The binding rate resolves when a buyer fills. Treat `estimate().eta`
-and `fillStats()` as historical evidence, never a guarantee.
+Discover platforms, currencies, payee hints, and bounds from `capabilities()`;
+do not hardcode them. Request live Relay or NEAR Intents source assets with
+`includeRelaySources` or `includeNearIntentsSources`. `estimate()` is an oracle
+estimate, not a quote. The binding rate resolves when a buyer fills. Treat
+`estimate().eta` and `fillStats()` as historical evidence, never a guarantee.
 
 ## Access policy and dispute protection
 
