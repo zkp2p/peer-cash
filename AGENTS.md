@@ -24,8 +24,9 @@ can withdraw an unmatched deposit.
    the plan, submit the transactions in order, and wait for each receipt. After
    `createDeposit` confirms, pass its receipt to `finalizePreparedCashout()` and
    persist the returned `depositId`. If the original plan set
-   `accessPolicyRequired: true`, submit and confirm
-   `prepareAccessPolicy(depositId)` with the depositor next.
+   a non-empty `accessPolicyPaymentMethods`, submit and confirm
+   `prepareAccessPolicy(depositId, paymentMethod)` with the depositor for each
+   returned method.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
    `@zkp2p/cash/tools` and map the tool names to the verbs above. Base-USDC
    mutating tools return unsigned transactions. `cash_source_quote` is a quote,
@@ -45,13 +46,13 @@ deposit-level integration share instead of applying maker L1/L2.
 **Platform caveats:**
 
 - **Venmo, Cash App, and PayPal restrict who can signal intents by default.**
-  If any payout leg uses one of these platforms, signed
-  `cashout()` confirms `createDeposit`, then submits and confirms the Plus, Pro,
-  Peer Makers, and Peer Pay policy using the same viem wallet. This is a
-  deliberate non-atomic follow-up with a brief unprotected interval. For
-  `prepare()`, check `accessPolicyRequired`; after `createDeposit` confirms,
-  finalize its receipt and submit `prepareAccessPolicy(depositId)` with the
-  depositor. Any viem EOA works; Privy is not required.
+  Signed `cashout()` confirms `createDeposit`, then submits and confirms a
+  method-scoped Peer Pay merchant policy for every restricted payout leg using
+  the same viem wallet. This is a deliberate non-atomic follow-up with a brief
+  unprotected interval. For `prepare()`, read `accessPolicyPaymentMethods`;
+  after `createDeposit` confirms, finalize its receipt and submit
+  `prepareAccessPolicy(depositId, paymentMethod)` for every returned method.
+  Any viem EOA works; Privy is not required.
 
 - **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
@@ -312,7 +313,7 @@ Prove your integration against `environment: 'staging'` with a funded test
 wallet. Never wait on a buyer - buyer-side is out of your scope:
 
 1. `cashout()` a small amount (1–2 USDC) → capture `depositId` and, for a
-   restricted payout, `accessPolicyTxHash`.
+   restricted payout, every entry in `accessPolicyTxHashes`.
 2. `order(depositId)` shows `awaiting-buyer` (retry through indexer lag).
 3. `orders(owner)` includes the deposit.
 4. `withdraw(depositId)` → transaction succeeds.

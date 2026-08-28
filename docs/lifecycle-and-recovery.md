@@ -85,13 +85,14 @@ the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
 
 The deprecated `requiresAtomicAccessPolicy` capability is always `false`:
 policy attachment is sequential, not atomic. If any payout leg uses Venmo,
-Cash App, or PayPal, the cash-out nevertheless restricts intent signaling to
-the Plus, Pro, Peer Makers, and Peer Pay groups by default. Signed `cashout()`
-confirms the deposit before submitting and confirming the policy with the same
-viem wallet, so a brief unprotected interval exists. For `prepare()`,
-`accessPolicyRequired` marks whether the host must call
-`prepareAccessPolicy(depositId)` after finalizing the confirmed deposit receipt.
-Any viem `WalletClient`, including an EOA, can submit it; Privy is not required.
+Cash App, or PayPal, the cash-out restricts intent signaling to the Peer Pay
+merchant group for that payment method. Signed `cashout()` confirms the
+deposit before submitting and confirming every required policy with the same
+viem wallet, so a brief unprotected interval exists. For `prepare()`, iterate
+`accessPolicyPaymentMethods` and call
+`prepareAccessPolicy(depositId, paymentMethod)` after finalizing the confirmed
+deposit receipt. Any viem `WalletClient`, including an EOA, can submit it;
+Privy is not required.
 If the follow-up fails, the deposit already exists. Never repeat the cash-out.
 When `ACCESS_POLICY_CONFIGURATION_FAILED.recovery.transactionHash` is present,
 inspect it before preparing another policy; resubmit only when that transaction

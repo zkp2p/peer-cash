@@ -17,33 +17,18 @@ export const BASE_CHAIN_ID = 8453;
 /** Canonical USDC on Base (6 decimals). The deposit asset for every cash-out. */
 export const BASE_USDC_ADDRESS = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' as const;
 
-/** Platforms whose cash-outs attach the canonical access groups after deposit creation. */
+/** Platforms whose cash-outs attach the Peer Pay merchant group after deposit creation. */
 export const CASH_RESTRICTED_PLATFORMS = new Set(['venmo', 'cashapp', 'paypal']);
 
 /**
- * Canonical Plus, Pro, Peer Makers, and Peer Pay groups for each contract
- * environment. Preproduction uses the production Base contracts; staging has
- * its own registry and cohorts.
+ * Canonical Peer Pay merchant group for each contract environment.
+ * Preproduction uses the production Base contracts; staging has its own
+ * registry and cohort.
  */
 export const CASH_ACCESS_GROUP_IDS: Record<RuntimeEnv, readonly Hex[]> = {
-  production: [
-    '0xb8747401b308d4891385620071b5916e9c61284f25c4611541c529703de5babf',
-    '0xf030f72e772f954059ca28f94974088aaf6ba37bb1f264df48843a3d0c221dc3',
-    '0xdf1c64c54745aa1ce00642a5874f97e3183bf5e993c1f559d0a37a4df0b803c7',
-    '0x174b8a29536721a3eae290bfd55651b85a53fc334b971d993fa93ed8dde15e48',
-  ],
-  preproduction: [
-    '0xb8747401b308d4891385620071b5916e9c61284f25c4611541c529703de5babf',
-    '0xf030f72e772f954059ca28f94974088aaf6ba37bb1f264df48843a3d0c221dc3',
-    '0xdf1c64c54745aa1ce00642a5874f97e3183bf5e993c1f559d0a37a4df0b803c7',
-    '0x174b8a29536721a3eae290bfd55651b85a53fc334b971d993fa93ed8dde15e48',
-  ],
-  staging: [
-    '0xf6133c227eab8ae7da1ee143945bf7f31204394f3ba801dc9691f8af6ca8efa5',
-    '0xa6beb459bc621e7b050e431736c1c3298da26356d7095719185e859d68f70d9e',
-    '0x9cded1332f25c3ee0a9a822a4c827d3fbd081a8d7b2ba39c49917ec1983b8d6c',
-    '0xc82c20c00033046a2f017b65532d7148a337282f17c73296663a530e49ba00f7',
-  ],
+  production: ['0x174b8a29536721a3eae290bfd55651b85a53fc334b971d993fa93ed8dde15e48'],
+  preproduction: ['0x174b8a29536721a3eae290bfd55651b85a53fc334b971d993fa93ed8dde15e48'],
+  staging: ['0xc82c20c00033046a2f017b65532d7148a337282f17c73296663a530e49ba00f7'],
 };
 
 /** USDC has 6 decimals. */

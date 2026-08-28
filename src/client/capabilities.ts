@@ -62,7 +62,8 @@ export interface CashPlatformCapability {
   requiresIdentityAttestation: boolean;
   /**
    * @deprecated Always false. This does not report the sequential restricted-
-   * platform policy; prepared hosts must inspect `PrepareResult.accessPolicyRequired`.
+   * platform policy; prepared hosts must inspect
+   * `PrepareResult.accessPolicyPaymentMethods`.
    */
   requiresAtomicAccessPolicy: boolean;
 }

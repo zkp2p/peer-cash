@@ -41,6 +41,7 @@ describe('MPP merchant cash-out example', () => {
           amounts.push(input.amount);
           return {
             accessPolicyRequired: false,
+            accessPolicyPaymentMethods: [],
             register: { hashedOnchainIds: [] },
             steps: [],
             txs: [],
@@ -76,6 +77,7 @@ describe('MPP merchant cash-out example', () => {
         async prepare() {
           return {
             accessPolicyRequired: true,
+            accessPolicyPaymentMethods: [`0x${'01'.repeat(32)}`],
             register: { hashedOnchainIds: [] },
             steps: [],
             txs: [],

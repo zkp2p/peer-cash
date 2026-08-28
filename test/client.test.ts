@@ -73,6 +73,7 @@ const NOW = Math.floor(Date.now() / 1000);
 const ESCROW = '0x1111111111111111111111111111111111111111';
 const DEPOSIT_ID = `${ESCROW}_5`;
 const UNKNOWN_PAYMENT_METHOD_HASH = `0x${'11'.repeat(32)}`;
+const VENMO_PAYMENT_METHOD = getPaymentMethodsCatalog(8453, 'staging')['venmo']!.paymentMethodHash;
 
 const DEPOSIT_RECEIVED_ABI: Abi = [
   {
@@ -809,6 +810,7 @@ describe('cashout()', () => {
       expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
         escrow: ESCROW,
         depositId: 5n,
+        paymentMethod: getPaymentMethodsCatalog(8453, 'staging')[platform]!.paymentMethodHash,
         enabled: true,
         groupIds: CASH_ACCESS_GROUP_IDS.staging,
         takers: [],
@@ -829,9 +831,56 @@ describe('cashout()', () => {
         txHash: '0xhash',
         onchainDepositId: 5n,
         accessPolicyTxHash: '0xaccess',
+        accessPolicyTxHashes: ['0xaccess'],
       });
     },
   );
+
+  it('configures every restricted payout method and returns every policy hash', async () => {
+    mockInstance.registerPayeeDetails.mockResolvedValue({
+      depositDetails: [{}, {}],
+      hashedOnchainIds: ['0xvenmo-payee', '0xcashapp-payee'],
+    });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+    vi.mocked(eoaSigner.sendTransaction)
+      .mockResolvedValueOnce('0xpolicy1')
+      .mockResolvedValueOnce('0xpolicy2');
+
+    const result = await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: [
+          {
+            platform: 'venmo',
+            currency: 'USD',
+            payee: { offchainId: '@seller' },
+          },
+          {
+            platform: 'cashapp',
+            currency: 'USD',
+            payee: { offchainId: '$seller' },
+          },
+        ],
+      },
+      { signer: eoaSigner },
+    );
+
+    const catalog = getPaymentMethodsCatalog(8453, 'staging');
+    expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ paymentMethod: catalog['venmo']!.paymentMethodHash }),
+    );
+    expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ paymentMethod: catalog['cashapp']!.paymentMethodHash }),
+    );
+    expect(result.accessPolicyTxHash).toBe('0xpolicy2');
+    expect(result.accessPolicyTxHashes).toEqual(['0xpolicy1', '0xpolicy2']);
+  });
 
   it('returns the created deposit id when access-policy signing is rejected', async () => {
     mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
@@ -856,6 +905,7 @@ describe('cashout()', () => {
         kind: 'configure-cashout-access-policy',
         depositId: `${ESCROW}_5`,
         groupIds: CASH_ACCESS_GROUP_IDS.staging,
+        paymentMethod: VENMO_PAYMENT_METHOD,
       },
     });
   });
@@ -885,7 +935,7 @@ describe('cashout()', () => {
       },
     });
     expect(isCashError(error) && error.remediation).toBe(
-      'Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId) with the same depositor wallet.',
+      'Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId, recovery.paymentMethod) with the same depositor wallet.',
     );
   });
 
@@ -2102,10 +2152,11 @@ describe('prepare()', () => {
       prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
     });
 
-    const { txs, steps, register, accessPolicyRequired } = await client().prepare({
-      amount: 5_000_000n,
-      receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
-    });
+    const { txs, steps, register, accessPolicyRequired, accessPolicyPaymentMethods } =
+      await client().prepare({
+        amount: 5_000_000n,
+        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
+      });
 
     expect(txs).toHaveLength(2);
     expect(steps.map((s) => s.kind)).toEqual(['approve', 'createDeposit']);
@@ -2114,6 +2165,7 @@ describe('prepare()', () => {
     expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xdeposit' });
     expect(register.hashedOnchainIds).toEqual(['0xpayeehash']);
     expect(accessPolicyRequired).toBe(true);
+    expect(accessPolicyPaymentMethods).toEqual([VENMO_PAYMENT_METHOD]);
     // No signing surface touched.
     expect(mockInstance.createDeposit).not.toHaveBeenCalled();
     expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
@@ -2150,6 +2202,7 @@ describe('prepare()', () => {
     );
     expect(result.register.hashedOnchainIds).toEqual(payeeHashes);
     expect(result.accessPolicyRequired).toBe(false);
+    expect(result.accessPolicyPaymentMethods).toEqual([]);
   });
 
   it('rejects Relay source routing because prepare cannot execute the bridge pre-step', async () => {
@@ -2252,12 +2305,13 @@ describe('finalizePreparedCashout()', () => {
 });
 
 describe('prepareAccessPolicy()', () => {
-  it('prepares the canonical four-group policy for an externally created cash-out', () => {
-    const prepared = client().prepareAccessPolicy(DEPOSIT_ID);
+  it('prepares the method-scoped Peer Pay policy for an externally created cash-out', () => {
+    const prepared = client().prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
 
     expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
       escrow: ESCROW,
       depositId: 5n,
+      paymentMethod: VENMO_PAYMENT_METHOD,
       enabled: true,
       groupIds: CASH_ACCESS_GROUP_IDS.staging,
       takers: [],
@@ -2274,7 +2328,7 @@ describe('prepareAccessPolicy()', () => {
   it.each(['production', 'preproduction'] as const)(
     'uses the production group registry for %s',
     (environment) => {
-      createCashClient({ environment }).prepareAccessPolicy(DEPOSIT_ID);
+      createCashClient({ environment }).prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
 
       expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith(
         expect.objectContaining({ groupIds: CASH_ACCESS_GROUP_IDS.production }),
