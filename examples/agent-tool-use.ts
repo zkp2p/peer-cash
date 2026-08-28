@@ -96,8 +96,9 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
         // Tool/prepare path: Base USDC only. The host must complete Relay or
         // NEAR Intents source routing first, then call this tool with the
         // confirmed Base USDC amount. Persist
-        // accessPolicyRequired: after createDeposit confirms, the host adapter
-        // calls finalizePreparedCashout(receipt), then prepareAccessPolicy().
+        // accessPolicyPaymentMethods: after createDeposit confirms, the host
+        // calls finalizePreparedCashout(receipt), then prepareAccessPolicy()
+        // once per listed method.
         const input = {
           amount: BigInt(args.amount as string),
           receive: args.receive as never,
@@ -160,7 +161,7 @@ console.log(`agent sees ${caps.platforms.length} platforms; venmo capability:`);
 console.log(
   `  hint="${venmo?.payeeHint}" identityAttestation=${venmo?.requiresIdentityAttestation}`,
 );
-console.log('  sequential access policy is reported by cash_cashout.accessPolicyRequired\n');
+console.log('  method-scoped policies are reported by cash_cashout.accessPolicyPaymentMethods\n');
 
 const est = await executeTool('cash_estimate', {
   amount: usdc(250).toString(),

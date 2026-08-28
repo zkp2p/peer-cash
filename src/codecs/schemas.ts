@@ -474,6 +474,7 @@ export const cashoutResultJsonSchema = z.object({
   onchainDepositId: nonNegativeBigintString,
   order: cashOrderJsonSchema,
   accessPolicyTxHash: z.string().optional(),
+  accessPolicyTxHashes: z.array(z.string()).optional(),
   source: z
     .object({
       amount: nonNegativeBigintString,
@@ -489,6 +490,7 @@ export const prepareResultJsonSchema = z.object({
   steps: z.array(cashPreparedStepJsonSchema),
   register: z.object({ hashedOnchainIds: z.array(z.string()) }),
   accessPolicyRequired: z.boolean(),
+  accessPolicyPaymentMethods: z.array(z.string()).optional(),
 });
 
 export const withdrawResultJsonSchema = z.object({
@@ -643,6 +645,7 @@ export const cashErrorRecoveryJsonSchema = z.discriminatedUnion('kind', [
       kind: z.literal('configure-cashout-access-policy'),
       depositId: z.string(),
       groupIds: z.array(z.string()),
+      paymentMethod: z.string().optional(),
       transactionHash: z.string().optional(),
       source: z.object(cashSourceRecoveryJsonShape).strict().optional(),
     })

@@ -35,9 +35,9 @@ protocol-held funds and no custodial off-ramp provider.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
 - **Restricted intent signaling.** If any payout leg uses Venmo, Cash App, or
-  PayPal, the Plus, Pro, Peer Makers, and Peer Pay groups attach after the
-  deposit confirms. Signed `cashout()` handles the sequential follow-up with
-  the same viem wallet. Prepared hosts must finish it explicitly; any EOA works.
+  PayPal, a method-scoped Peer Pay merchant policy attaches after the deposit
+  confirms. Signed `cashout()` handles every sequential follow-up with the same
+  viem wallet. Prepared hosts must finish them explicitly; any EOA works.
 - **Honest ETA.** Use `estimate().eta`: `{ seconds, label }` backed by rolling
   30-day indexer data from zero-spread (`spreadBps: 0`) market-rate deposits in
   the same payout corridor, measured from deposit creation to first fill. Do
@@ -77,11 +77,11 @@ const res = await cash.cashout(
   },
   { signer },
 );
-const { txs, steps, accessPolicyRequired } = await cash.prepare({/* same input */}); // 2b unsigned plan
+const { txs, steps, accessPolicyPaymentMethods } = await cash.prepare({/* same input */}); // 2b unsigned plan
 // Submit txs in order. After createDeposit confirms:
 const prepared = cash.finalizePreparedCashout(createDepositReceipt);
-if (accessPolicyRequired) {
-  const policyTx = cash.prepareAccessPolicy(prepared.depositId);
+for (const paymentMethod of accessPolicyPaymentMethods) {
+  const policyTx = cash.prepareAccessPolicy(prepared.depositId, paymentMethod);
   await hostSubmitAndConfirm(policyTx);
 }
 const order = await cash.order(res.depositId); // 3 observe
@@ -238,7 +238,7 @@ Run against `environment: 'staging'` with a small funded wallet.
 Prove both routes without waiting for a buyer:
 
 1. Create a real 1–2 USDC Base-USDC deposit; retain `depositId`, the Base tx,
-   and `accessPolicyTxHash` when using Venmo, Cash App, or PayPal.
+   and every `accessPolicyTxHashes` entry when using Venmo, Cash App, or PayPal.
 2. Retry through indexer lag until `order(depositId)` is `awaiting-buyer`, and
    assert `orders(owner)` contains it.
 3. Withdraw it; assert `returned` and the Base USDC balance is restored minus

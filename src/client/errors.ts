@@ -98,6 +98,7 @@ export type CashErrorRecovery =
       kind: 'configure-cashout-access-policy';
       depositId: string;
       groupIds: string[];
+      paymentMethod?: string;
       transactionHash?: string;
       /** Present when Relay funded the already-created deposit. */
       source?: CashSourceRecoveryBase;
@@ -589,6 +590,7 @@ export const errors = {
     groupIds: readonly string[],
     context: {
       cause?: unknown;
+      paymentMethod?: string;
       transactionHash?: string;
       source?: {
         amount: bigint;
@@ -603,11 +605,12 @@ export const errors = {
         code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
         message: `Cash-out deposit ${depositId} was created, but its access policy could not be confirmed.`,
         retryable: false,
-        remediation: `Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId) with the same depositor wallet.`,
+        remediation: `Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId, recovery.paymentMethod) with the same depositor wallet.`,
         recovery: {
           kind: 'configure-cashout-access-policy',
           depositId,
           groupIds: [...groupIds],
+          ...(context.paymentMethod ? { paymentMethod: context.paymentMethod } : {}),
           ...(context.transactionHash ? { transactionHash: context.transactionHash } : {}),
           ...(context.source
             ? {

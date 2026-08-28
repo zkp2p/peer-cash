@@ -478,6 +478,7 @@ describe('prepared tx + result codecs', () => {
       ],
       register: { hashedOnchainIds: ['0x1'] },
       accessPolicyRequired: true,
+      accessPolicyPaymentMethods: ['0xmethod' as const],
     };
     expect(prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(result))))).toEqual(
       result,
@@ -493,6 +494,7 @@ describe('prepared tx + result codecs', () => {
     };
 
     expect(prepareResultFromJson(result).accessPolicyRequired).toBe(false);
+    expect(prepareResultFromJson(result).accessPolicyPaymentMethods).toEqual([]);
   });
 
   it('cashoutResult round-trips including the nested order', () => {
@@ -503,6 +505,7 @@ describe('prepared tx + result codecs', () => {
       onchainDepositId: 1n,
       order,
       accessPolicyTxHash: '0xaccess' as const,
+      accessPolicyTxHashes: ['0xaccess' as const],
       source: {
         amount: 1_000_000n,
         requestId: 'relay-request',
@@ -517,6 +520,7 @@ describe('prepared tx + result codecs', () => {
     expect(restored.onchainDepositId).toBe(1n);
     expect(restored.source?.amount).toBe(1_000_000n);
     expect(restored.accessPolicyTxHash).toBe('0xaccess');
+    expect(restored.accessPolicyTxHashes).toEqual(['0xaccess']);
     expect(restored.source?.transactions).toEqual(result.source.transactions);
     expect(restored.order.state).toBe(order.state);
     expect(restored.order.explain()).toBe(order.explain());
@@ -631,6 +635,7 @@ describe('CashError codec', () => {
       ['0xplus', '0xpro', '0xmakers', '0xpeerpay'],
       {
         cause: new Error('receipt unavailable'),
+        paymentMethod: '0xmethod',
         transactionHash: '0xpolicy',
         source: {
           amount: 975_000n,

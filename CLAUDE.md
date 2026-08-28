@@ -42,10 +42,11 @@ is judged at the API surface, not the dependency tree.
   mint it; first-party Peer web obtains it through the Peer TEE browser
   extension. A previously registered bare handle can be reused.
 - **Restricted cash-outs finish sequentially.** If any payout leg uses Venmo,
-  Cash App, or PayPal, attach the canonical four-group policy after the deposit
-  confirms. Preserve `accessPolicyRequired`, `depositId`, and any policy hash.
-  Never repeat the cash-out after a policy failure; inspect an existing policy
-  transaction before resubmitting.
+  Cash App, or PayPal, attach the Peer Pay merchant policy to each restricted
+  payment method after the deposit confirms. Preserve
+  `accessPolicyPaymentMethods`, `depositId`, and every policy hash. Never repeat
+  the cash-out after a policy failure; inspect an existing policy transaction
+  before resubmitting.
 - **Environment owns curator routing.** Preproduction defaults to
   `https://api-preprod.zkp2p.xyz`, staging to
   `https://api-staging.zkp2p.xyz`; retain explicit `curatorUrl` overrides.

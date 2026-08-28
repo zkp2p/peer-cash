@@ -507,6 +507,7 @@ export function cashoutResultToJson(result: CashoutResult): CashoutResultJson {
     onchainDepositId: result.onchainDepositId.toString(),
     order: orderToJson(result.order),
     accessPolicyTxHash: result.accessPolicyTxHash,
+    accessPolicyTxHashes: result.accessPolicyTxHashes,
     source: result.source
       ? {
           ...result.source,
@@ -525,6 +526,7 @@ export function cashoutResultFromJson(json: unknown): CashoutResult {
     onchainDepositId: BigInt(parsed.onchainDepositId),
     order: orderFromJson(parsed.order),
     accessPolicyTxHash: parsed.accessPolicyTxHash as CashoutResult['accessPolicyTxHash'],
+    accessPolicyTxHashes: parsed.accessPolicyTxHashes as CashoutResult['accessPolicyTxHashes'],
     source: parsed.source
       ? {
           ...parsed.source,
@@ -542,6 +544,7 @@ export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
     steps: result.steps.map(preparedStepToJson),
     register: result.register,
     accessPolicyRequired: result.accessPolicyRequired,
+    accessPolicyPaymentMethods: result.accessPolicyPaymentMethods,
   };
 }
 
@@ -552,6 +555,7 @@ export function prepareResultFromJson(json: unknown): PrepareResult {
     steps: parsed.steps.map(preparedStepFromJson),
     register: parsed.register,
     accessPolicyRequired: parsed.accessPolicyRequired,
+    accessPolicyPaymentMethods: (parsed.accessPolicyPaymentMethods ?? []) as `0x${string}`[],
   };
 }
 
@@ -662,6 +666,9 @@ export function cashErrorFromJson(json: unknown): CashError {
         kind: parsed.recovery.kind,
         depositId: parsed.recovery.depositId,
         groupIds: parsed.recovery.groupIds,
+        ...(parsed.recovery.paymentMethod !== undefined
+          ? { paymentMethod: parsed.recovery.paymentMethod }
+          : {}),
         ...(parsed.recovery.transactionHash !== undefined
           ? { transactionHash: parsed.recovery.transactionHash }
           : {}),
