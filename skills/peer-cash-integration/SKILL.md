@@ -34,12 +34,13 @@ protocol-held funds and no custodial off-ramp provider.
   - anything in your UI or agent output implying a locked rate is a bug.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
-- **Restricted intent signaling.** If any payout leg uses Venmo, Cash App, or
-  PayPal, a method-scoped Peer Pay merchant policy attaches after the deposit
+- **Restricted intent signaling.** If any payout leg uses Venmo or PayPal, a
+  method-scoped Peer Pay merchant policy attaches after the deposit
   confirms. Signed `cashout()` handles every sequential follow-up with the same
   viem wallet. Prepared hosts must finish them explicitly; any EOA works.
   Method-scoped dispute protection is already default-on, so Cash does not
-  readiness-gate creation or submit an explicit enable transaction.
+  readiness-gate creation or submit an explicit enable transaction. Cash App
+  is non-chargebackable, stays public, and does not require stake.
 - **Honest ETA.** Use `estimate().eta`: `{ seconds, label }` backed by rolling
   30-day indexer data from zero-spread (`spreadBps: 0`) market-rate deposits in
   the same payout corridor, measured from deposit creation to first fill. Do
@@ -240,7 +241,7 @@ Run against `environment: 'staging'` with a small funded wallet.
 Prove both routes without waiting for a buyer:
 
 1. Create a real 1–2 USDC Base-USDC deposit; retain `depositId`, the Base tx,
-   and every `accessPolicyTxHashes` entry when using Venmo, Cash App, or PayPal.
+   and every `accessPolicyTxHashes` entry when using Venmo or PayPal.
 2. Retry through indexer lag until `order(depositId)` is `awaiting-buyer`, and
    assert `orders(owner)` contains it.
 3. Withdraw it; assert `returned` and the Base USDC balance is restored minus

@@ -13,7 +13,7 @@
  * identity attestation obtained by Peer web through the Peer TEE browser
  * extension; an existing registered handle can be reused. This private-key EOA
  * works directly with every supported platform;
- * no Privy wallet is required. Venmo, Cash App, and PayPal attach their access
+ * no Privy wallet is required. Venmo and PayPal attach their access
  * policy in a confirmed follow-up transaction. Override the demo corridor with:
  *   CASH_PLATFORM=revolut CASH_CURRENCY=EUR CASH_PAYEE=your-revtag
  */
