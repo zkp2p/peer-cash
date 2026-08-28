@@ -77,12 +77,17 @@ const res = await cash.cashout(
   },
   { signer },
 );
-const { txs, steps, accessPolicyPaymentMethods } = await cash.prepare({/* same input */}); // 2b unsigned plan
+const { txs, steps, accessPolicyPaymentMethods, disputeProtectionPaymentMethods } =
+  await cash.prepare({/* same input */}); // 2b unsigned plan
 // Submit txs in order. After createDeposit confirms:
 const prepared = cash.finalizePreparedCashout(createDepositReceipt);
 for (const paymentMethod of accessPolicyPaymentMethods) {
   const policyTx = cash.prepareAccessPolicy(prepared.depositId, paymentMethod);
   await hostSubmitAndConfirm(policyTx);
+}
+for (const paymentMethod of disputeProtectionPaymentMethods) {
+  const protectionTx = await cash.prepareDisputeProtection(prepared.depositId, paymentMethod);
+  await hostSubmitAndConfirm(protectionTx);
 }
 const order = await cash.order(res.depositId); // 3 observe
 const mine = await cash.orders(ownerAddress, { inFlight: true }); // 4 list
@@ -150,9 +155,9 @@ first; use signed `cashout({ source }, { signer, sourceSigner })`, or execute
 and confirm Relay in the host before preparing a Base-USDC cashout.
 `cash_source_quote` and `cash_source_status` are quote/read tools, not a
 host-side execution path. The built-in tool manifest also does not expose
-receipt finalization or access-policy submission as separate tools; the host
-adapter calls those `CashClient` methods after its signer confirms
-`createDeposit`.
+receipt finalization, access-policy submission, or dispute-protection
+submission as separate tools; the host adapter calls those `CashClient`
+methods after its signer confirms `createDeposit`.
 Every protocol transaction carries ERC-8021 attribution. To receive the
 deposit-level integration share, copy the six-character code from your Peer
 mobile or web referral screen and configure it directly:
@@ -221,6 +226,10 @@ those, don't re-derive. The recovery boundaries that matter most in practice:
   policy was not confirmed. Never cash out again. Inspect
   `error.recovery.transactionHash` when present; prepare another policy only
   if that transaction is absent or confirmed reverted.
+- `DISPUTE_PROTECTION_UNAVAILABLE` = no deposit was created; retry when the
+  protected stack is ready or choose an unrestricted rail.
+- `DISPUTE_PROTECTION_CONFIGURATION_FAILED` = the deposit exists. Inspect its
+  recovery hash before preparing protection again; never repeat the cash-out.
 - `INDEXER_UNAVAILABLE` / `ORACLE_READ_FAILED` = retry the read only. Do not
   repeat the transaction that produced the id or balance being inspected.
 - `SIGNER_CHAIN_MISMATCH` = switch to the required chain and obtain a fresh

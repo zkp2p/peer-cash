@@ -38,6 +38,8 @@ export type CashErrorCode =
   | 'SOURCE_CASHOUT_STATUS_UNKNOWN'
   | 'DEPOSIT_RESOLUTION_FAILED'
   | 'ACCESS_POLICY_CONFIGURATION_FAILED'
+  | 'DISPUTE_PROTECTION_UNAVAILABLE'
+  | 'DISPUTE_PROTECTION_CONFIGURATION_FAILED'
   | 'ALLOWANCE_NOT_VISIBLE'
   | 'SIGNER_REQUIRED'
   | 'SIGNER_CHAIN_MISMATCH'
@@ -99,6 +101,14 @@ export type CashErrorRecovery =
       depositId: string;
       groupIds: string[];
       paymentMethod?: string;
+      transactionHash?: string;
+      /** Present when Relay funded the already-created deposit. */
+      source?: CashSourceRecoveryBase;
+    }
+  | {
+      kind: 'configure-cashout-dispute-protection';
+      depositId: string;
+      paymentMethod: string;
       transactionHash?: string;
       /** Present when Relay funded the already-created deposit. */
       source?: CashSourceRecoveryBase;
@@ -611,6 +621,57 @@ export const errors = {
           depositId,
           groupIds: [...groupIds],
           ...(context.paymentMethod ? { paymentMethod: context.paymentMethod } : {}),
+          ...(context.transactionHash ? { transactionHash: context.transactionHash } : {}),
+          ...(context.source
+            ? {
+                source: {
+                  amount: context.source.amount.toString(),
+                  ...(context.source.requestId ? { requestId: context.source.requestId } : {}),
+                  txHashes: context.source.txHashes,
+                  ...(context.source.transactions
+                    ? { transactions: context.source.transactions }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+      },
+      { cause: context.cause },
+    ),
+  disputeProtectionUnavailable: (state?: string, cause?: unknown) =>
+    new CashError(
+      {
+        code: 'DISPUTE_PROTECTION_UNAVAILABLE',
+        message: `Dispute protection is not ready for restricted Peer Cash payouts${state ? ` (${state})` : ''}.`,
+        retryable: true,
+        remediation: `Retry after the dispute-protection contracts are active and accepting protected deposits, or choose an unrestricted payout platform. No cash-out deposit was created.`,
+      },
+      { cause },
+    ),
+  disputeProtectionConfigurationFailed: (
+    depositId: string,
+    paymentMethod: string,
+    context: {
+      cause?: unknown;
+      transactionHash?: string;
+      source?: {
+        amount: bigint;
+        requestId?: string;
+        txHashes: string[];
+        transactions?: CashSourceRecoveryBase['transactions'];
+      };
+    } = {},
+  ) =>
+    new CashError(
+      {
+        code: 'DISPUTE_PROTECTION_CONFIGURATION_FAILED',
+        message: `Cash-out deposit ${depositId} was created, but dispute protection could not be confirmed for ${paymentMethod}.`,
+        retryable: false,
+        remediation: `Do not create another cash-out. If recovery.transactionHash is present, inspect that dispute-protection transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareDisputeProtection(recovery.depositId, recovery.paymentMethod) with the same depositor wallet.`,
+        recovery: {
+          kind: 'configure-cashout-dispute-protection',
+          depositId,
+          paymentMethod,
           ...(context.transactionHash ? { transactionHash: context.transactionHash } : {}),
           ...(context.source
             ? {
