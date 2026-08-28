@@ -69,8 +69,8 @@ in memory so a second request cannot prepare the same revenue again. A
 production service must persist settlement, reservation, transaction, and
 deposit state before exposing an equivalent operator endpoint.
 
-The minimal planner fails closed when a platform requires restricted-rail
-follow-ups. A production host can support those platforms by waiting for the
-deposit receipt, calling `finalizePreparedCashout`, then submitting
-`prepareAccessPolicy` once per `accessPolicyPaymentMethods` entry and
-`prepareDisputeProtection` once per `disputeProtectionPaymentMethods` entry.
+The minimal planner fails closed when a platform requires the restricted-rail
+access-policy follow-up. A production host can support those platforms by
+waiting for the deposit receipt, calling `finalizePreparedCashout`, then calling
+`prepareAccessPolicy` once per `accessPolicyPaymentMethods` entry and submitting
+each method-scoped transaction.

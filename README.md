@@ -39,15 +39,15 @@ const fillStats = await cash.fillStats();
 const pairStats = fillStats['venmo:USD'];
 const multiCurrencyStats = fillStats['revolut:EUR+GBP+USD'];
 
-const { depositId, accessPolicyTxHashes, disputeProtectionTxHashes } = await cash.cashout(
+const { depositId, accessPolicyTxHashes } = await cash.cashout(
   {
     amount: usdc(1000),
     receive: { platform: 'venmo', currency: 'USD', payee: '@you' },
   },
   { signer }, // any viem WalletClient on Base, including an EOA
 );
-// Restricted rails return only after both defaults confirm.
-console.log(depositId, accessPolicyTxHashes, disputeProtectionTxHashes);
+// Venmo, Cash App, and PayPal return only after their access policy confirms.
+console.log(depositId, accessPolicyTxHashes);
 
 // One method can offer several currencies. The buyer chooses the fill
 // currency, and each option resolves at its own live oracle rate.
@@ -92,9 +92,8 @@ Peer Cash and the general ZKP2P SDK serve different integration depths:
 | `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
 
 Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
-cannot express custom spreads, buyer-side proof flows, vaults, dispute
-management, or arbitrary protocol operations. The protected restricted-rail
-default is fixed rather than a configurable dispute surface.
+cannot express custom spreads, buyer-side proof flows, vaults, disputes, or
+arbitrary protocol operations.
 
 ## The core verbs
 
@@ -109,10 +108,9 @@ default is fixed rather than a configurable dispute surface.
 | `quoteNearIntentsSource(input)`                                | Signed 1Click quote with an origin-chain deposit address and optional memo                                                      |
 | `submitNearIntentsDeposit(input)` / `nearIntentsStatus(input)` | Optionally register an origin tx, then track 1Click delivery/refund evidence                                                    |
 | `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
-| `cashout(input, { signer })`                                   | Creates the order; restricted methods then attach the Peer Pay merchant policy and enable dispute protection                    |
-| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then iterate both restricted-method follow-up lists                              |
+| `cashout(input, { signer })`                                   | Creates the order with any viem wallet; restricted methods then attach the Peer Pay merchant policy                             |
+| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then iterate `accessPolicyPaymentMethods` for follow-ups                         |
 | `prepareAccessPolicy(depositId, paymentMethod)`                | Prepare one post-deposit, method-scoped Peer Pay merchant policy transaction                                                    |
-| `prepareDisputeProtection(depositId, paymentMethod)`           | Prepare one post-deposit, method-scoped dispute-protection transaction                                                          |
 | `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
@@ -141,12 +139,12 @@ mixed historical deposit.
 
 ## Payout rails and access policies
 
-| Payout rail           | Restricted-rail defaults                                                     | New payee registration                                                                 |
-| --------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Venmo / Cash App      | Method-scoped Peer Pay merchant policy plus dispute protection               | Curator validates the live handle                                                      |
-| PayPal                | Same method-scoped merchant-group and dispute-protection follow-ups          | Requires a Peer TEE browser-extension identity attestation                             |
-| Wise                  | No restricted-rail follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
-| Other supported rails | No restricted-rail follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
+| Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
+| --------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Venmo / Cash App      | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
+| PayPal                | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
+| Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
+| Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
 
 No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
 work with any viem `WalletClient`, including a local or externally connected
@@ -155,27 +153,23 @@ EOA; no Privy wallet or signer API is required. The deprecated
 always `false`.
 
 Venmo, Cash App, and PayPal cash-outs restrict intent signaling to the Peer Pay
-merchant group and enable dispute protection by default. Both defaults are
-method-scoped. Signed `cashout()` first proves the dispute-protection stack is
-ready, then creates the deposit and uses the same wallet to submit and confirm
-both follow-ups. Prepared integrations receive matching
-`accessPolicyPaymentMethods` and `disputeProtectionPaymentMethods`; after
-confirming `createDeposit`, call `finalizePreparedCashout(receipt)`, then submit
-`prepareAccessPolicy(depositId, paymentMethod)` and
-`prepareDisputeProtection(depositId, paymentMethod)` for every returned method.
-Other platforms do not need either follow-up.
+merchant group by default. Each restricted payout method gets its own policy.
+Signed `cashout()` creates the deposit first, then uses the same wallet to
+submit and confirm every required policy transaction; this intentionally
+leaves a brief interval where any taker can signal. Method-scoped dispute
+protection is already default-on for these rails, so Cash neither
+readiness-gates deposit creation nor submits
+`setDisputeProtectionEnabled(true)`. Prepared integrations receive
+`accessPolicyPaymentMethods`; after confirming `createDeposit`, call
+`finalizePreparedCashout(receipt)`, then submit
+`prepareAccessPolicy(depositId, paymentMethod)` once for every returned method.
+Other platforms do not need the follow-up.
 
 If policy attachment fails, `ACCESS_POLICY_CONFIGURATION_FAILED.recovery`
 identifies the existing deposit and any submitted policy transaction. Never
 create another cash-out. When `recovery.transactionHash` is present, inspect
 that transaction before resubmitting; otherwise prepare the policy again with
 the same depositor wallet.
-
-If protection is not ready, `DISPUTE_PROTECTION_UNAVAILABLE` fails before the
-deposit is created. If its post-deposit transaction fails,
-`DISPUTE_PROTECTION_CONFIGURATION_FAILED.recovery` identifies the existing
-deposit and submitted hash, if any; inspect it before using
-`prepareDisputeProtection` for recovery and never repeat the cash-out.
 
 `capabilities()` presents Zelle as one platform. A cashout with
 `receive.platform: 'zelle'` attaches only the generic Zelle payment method to
@@ -318,11 +312,6 @@ they are available. A source-routed result includes both a flat
   `prepareAccessPolicy(error.recovery.depositId, error.recovery.paymentMethod)`
   only if the prior policy
   transaction did not succeed.
-- `DISPUTE_PROTECTION_UNAVAILABLE`: the protected contract stack is not ready;
-  no deposit was created. Retry later or use an unrestricted payout platform.
-- `DISPUTE_PROTECTION_CONFIGURATION_FAILED`: the deposit exists, but one
-  required protection transaction was not confirmed. Inspect its recovery hash
-  before calling `prepareDisputeProtection`; never create another cash-out.
 
 Wallet clients pinned to the wrong chain fail with `SIGNER_CHAIN_MISMATCH`
 before a quote or transaction is submitted. Chainless wallets are checked
@@ -404,9 +393,7 @@ analytics-only ERC-8021 codes such as `acme-app`.
 - After a prepared restricted cash-out confirms, the host adapter must call
   `finalizePreparedCashout(receipt)` and submit
   `prepareAccessPolicy(depositId, paymentMethod)` for every value in
-  `accessPolicyPaymentMethods`, plus
-  `prepareDisputeProtection(depositId, paymentMethod)` for every value in
-  `disputeProtectionPaymentMethods`; these receipt/signing operations are
+  `accessPolicyPaymentMethods`; these receipt/signing operations are
   `CashClient` methods, not built-in tool calls.
 - Every error carries `code`, `retryable`, and a `remediation` sentence.
 - Every order carries `nextActions: ('wait' | 'withdraw')[]` - no heuristics.

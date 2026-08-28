@@ -42,8 +42,6 @@ describe('MPP merchant cash-out example', () => {
           return {
             accessPolicyRequired: false,
             accessPolicyPaymentMethods: [],
-            disputeProtectionRequired: false,
-            disputeProtectionPaymentMethods: [],
             register: { hashedOnchainIds: [] },
             steps: [],
             txs: [],
@@ -80,8 +78,6 @@ describe('MPP merchant cash-out example', () => {
           return {
             accessPolicyRequired: true,
             accessPolicyPaymentMethods: [`0x${'01'.repeat(32)}`],
-            disputeProtectionRequired: true,
-            disputeProtectionPaymentMethods: [`0x${'01'.repeat(32)}`],
             register: { hashedOnchainIds: [] },
             steps: [],
             txs: [],

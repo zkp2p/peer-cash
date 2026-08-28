@@ -267,8 +267,6 @@ export interface CashoutResult {
   accessPolicyTxHash?: Hash;
   /** Confirmed method-scoped policy transactions for restricted payout legs. */
   accessPolicyTxHashes?: Hash[];
-  /** Confirmed method-scoped dispute-protection transactions for restricted payout legs. */
-  disputeProtectionTxHashes?: Hash[];
   /** Present when `cashout()` first routed a source asset through Relay. */
   source?: {
     /** Conservative Base USDC amount deposited (Relay's guaranteed minimum output). */
@@ -295,10 +293,6 @@ export interface PrepareResult {
   accessPolicyRequired: boolean;
   /** Method hashes that each require a post-deposit Peer Pay policy transaction. */
   accessPolicyPaymentMethods: Hex[];
-  /** Whether the host must enable dispute protection after `createDeposit` confirms. */
-  disputeProtectionRequired: boolean;
-  /** Method hashes that each require a post-deposit dispute-protection transaction. */
-  disputeProtectionPaymentMethods: Hex[];
 }
 
 /** Confirmed createDeposit receipt from an externally executed prepare() plan. */
@@ -385,8 +379,6 @@ export interface CashClient {
   finalizePreparedCashout(receipt: PreparedCashoutReceipt): CashoutResult;
   /** Prepare one method-scoped Peer Pay follow-up for a restricted cash-out. */
   prepareAccessPolicy(depositId: string, paymentMethod: Hex): PreparedTransaction;
-  /** Prepare one method-scoped dispute-protection follow-up for a restricted cash-out. */
-  prepareDisputeProtection(depositId: string, paymentMethod: Hex): Promise<PreparedTransaction>;
   /** 3 - Observe: resumable from `depositId` alone; no session state anywhere. */
   order(depositId: string): Promise<CashOrder>;
   /**
@@ -486,7 +478,7 @@ function isKnownPreBroadcastFailure(mapped: CashError): boolean {
   );
 }
 
-function cashoutRestrictedPaymentMethods(
+function cashoutAccessPolicyPaymentMethods(
   depositInput: CashDepositInput,
   environment: RuntimeEnv,
 ): Hex[] {
@@ -1067,46 +1059,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
     }
   }
 
-  async function assertCashoutDisputeProtectionReady(
-    client: Zkp2pClient,
-    paymentMethods: readonly Hex[],
-  ): Promise<void> {
-    if (paymentMethods.length === 0) return;
-
-    try {
-      const readiness = await client.getDisputeProtectionReadiness();
-      if (!readiness.readyForDisputeProtection) {
-        throw errors.disputeProtectionUnavailable(readiness.state);
-      }
-    } catch (err) {
-      if (isCashError(err)) throw err;
-      throw errors.disputeProtectionUnavailable(undefined, err);
-    }
-  }
-
-  async function prepareCashoutDisputeProtection(
-    depositId: string,
-    paymentMethod: Hex,
-    client: Zkp2pClient = readClient,
-    source?: CashoutResult['source'],
-  ): Promise<PreparedTransaction> {
-    const { compositeId, escrowAddress, onchainDepositId } = parseDepositId(depositId);
-    try {
-      return await client.setDisputeProtectionEnabled.prepare({
-        escrow: escrowAddress as Address,
-        depositId: onchainDepositId,
-        paymentMethod,
-        enabled: true,
-        txOverrides: attribution,
-      });
-    } catch (err) {
-      throw errors.disputeProtectionConfigurationFailed(compositeId, paymentMethod, {
-        cause: err,
-        ...(source ? { source } : {}),
-      });
-    }
-  }
-
   async function configureCashoutAccess(
     client: Zkp2pClient,
     signer: WalletClient,
@@ -1115,7 +1067,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     source?: CashoutResult['source'],
   ): Promise<Hash[]> {
     const groupIds = CASH_ACCESS_GROUP_IDS[environment];
-    const paymentMethods = cashoutRestrictedPaymentMethods(depositInput, environment);
+    const paymentMethods = cashoutAccessPolicyPaymentMethods(depositInput, environment);
     const hashes: Hash[] = [];
 
     for (const paymentMethod of paymentMethods) {
@@ -1153,62 +1105,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
         throw errors.accessPolicyConfigurationFailed(depositId, groupIds, {
           cause: errors.transactionFailed(hash),
           paymentMethod,
-          transactionHash: hash,
-          ...(source ? { source } : {}),
-        });
-      }
-      hashes.push(hash);
-    }
-    return hashes;
-  }
-
-  async function configureCashoutDisputeProtection(
-    client: Zkp2pClient,
-    signer: WalletClient,
-    depositInput: CashDepositInput,
-    depositId: string,
-    source?: CashoutResult['source'],
-  ): Promise<Hash[]> {
-    const paymentMethods = cashoutRestrictedPaymentMethods(depositInput, environment);
-    const hashes: Hash[] = [];
-
-    for (const paymentMethod of paymentMethods) {
-      const prepared = await prepareCashoutDisputeProtection(
-        depositId,
-        paymentMethod,
-        client,
-        source,
-      );
-
-      let hash: Hash;
-      try {
-        hash = await signer.sendTransaction({
-          account: signer.account!,
-          chain: signer.chain,
-          to: prepared.to,
-          data: prepared.data,
-          value: prepared.value,
-        });
-      } catch (err) {
-        throw errors.disputeProtectionConfigurationFailed(depositId, paymentMethod, {
-          cause: err,
-          ...(source ? { source } : {}),
-        });
-      }
-
-      let receipt;
-      try {
-        receipt = await client.publicClient.waitForTransactionReceipt({ hash });
-      } catch (err) {
-        throw errors.disputeProtectionConfigurationFailed(depositId, paymentMethod, {
-          cause: err,
-          transactionHash: hash,
-          ...(source ? { source } : {}),
-        });
-      }
-      if (receipt.status === 'reverted') {
-        throw errors.disputeProtectionConfigurationFailed(depositId, paymentMethod, {
-          cause: errors.transactionFailed(hash),
           transactionHash: hash,
           ...(source ? { source } : {}),
         });
@@ -1319,8 +1215,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
         }
         const cashoutAmount = relayQuote.outputAmount;
         const depositInput = validateDepositInput(cashoutAmount, input, payoutInput);
-        const restrictedPaymentMethods = cashoutRestrictedPaymentMethods(depositInput, environment);
-        await assertCashoutDisputeProtectionReady(client, restrictedPaymentMethods);
         const params = await buildDepositParams(client, depositInput);
 
         // Spender must be the escrow createDeposit will target - the default can
@@ -1409,13 +1303,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           resolved.compositeId,
           routedSource,
         );
-        const disputeProtectionTxHashes = await configureCashoutDisputeProtection(
-          client,
-          opts.signer,
-          depositInput,
-          resolved.compositeId,
-          routedSource,
-        );
         const order = deriveCashOrder(resolved.compositeId, [], {
           remainingAmount: depositInput.amount,
           status: 'ACTIVE',
@@ -1433,14 +1320,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
                 accessPolicyTxHashes,
               }
             : {}),
-          ...(disputeProtectionTxHashes.length > 0 ? { disputeProtectionTxHashes } : {}),
           source: routedSource,
         };
       }
 
       const depositInput = validateDepositInput(input.amount, input, payoutInput);
-      const restrictedPaymentMethods = cashoutRestrictedPaymentMethods(depositInput, environment);
-      await assertCashoutDisputeProtectionReady(client, restrictedPaymentMethods);
       const params = await buildDepositParams(client, depositInput);
 
       // Spender must be the escrow createDeposit will target - the default can
@@ -1496,12 +1380,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
         depositInput,
         resolved.compositeId,
       );
-      const disputeProtectionTxHashes = await configureCashoutDisputeProtection(
-        client,
-        opts.signer,
-        depositInput,
-        resolved.compositeId,
-      );
       const order = deriveCashOrder(resolved.compositeId, [], {
         remainingAmount: depositInput.amount,
         status: 'ACTIVE',
@@ -1519,15 +1397,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
               accessPolicyTxHashes,
             }
           : {}),
-        ...(disputeProtectionTxHashes.length > 0 ? { disputeProtectionTxHashes } : {}),
       };
     },
 
     async prepare(input: CashoutInput): Promise<PrepareResult> {
       if (input.source) throw errors.sourceRouteUnsupportedInPrepare();
       const depositInput = validateDepositInput(input.amount, input);
-      const restrictedPaymentMethods = cashoutRestrictedPaymentMethods(depositInput, environment);
-      await assertCashoutDisputeProtectionReady(readClient, restrictedPaymentMethods);
       const params = await buildDepositParams(readClient, depositInput);
 
       const { prepared } = await readClient.prepareCreateDeposit({
@@ -1551,6 +1426,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
       const hashedOnchainIds = (params.paymentMethodDataOverride ?? []).map((d) => d.payeeDetails);
 
+      const accessPolicyPaymentMethods = cashoutAccessPolicyPaymentMethods(
+        depositInput,
+        environment,
+      );
+
       return {
         txs: [approve, prepared],
         steps: [
@@ -1564,10 +1444,8 @@ export function createCashClient(options: CashClientOptions): CashClient {
           },
         ],
         register: { hashedOnchainIds },
-        accessPolicyRequired: restrictedPaymentMethods.length > 0,
-        accessPolicyPaymentMethods: restrictedPaymentMethods,
-        disputeProtectionRequired: restrictedPaymentMethods.length > 0,
-        disputeProtectionPaymentMethods: restrictedPaymentMethods,
+        accessPolicyRequired: accessPolicyPaymentMethods.length > 0,
+        accessPolicyPaymentMethods,
       };
     },
 
@@ -1602,10 +1480,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     prepareAccessPolicy(depositId: string, paymentMethod: Hex) {
       return prepareCashoutAccess(depositId, paymentMethod);
-    },
-
-    prepareDisputeProtection(depositId: string, paymentMethod: Hex) {
-      return prepareCashoutDisputeProtection(depositId, paymentMethod);
     },
 
     async order(depositId: string): Promise<CashOrder> {
