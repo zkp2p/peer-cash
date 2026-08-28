@@ -46,7 +46,7 @@ const { depositId, accessPolicyTxHashes } = await cash.cashout(
   },
   { signer }, // any viem WalletClient on Base, including an EOA
 );
-// Venmo, Cash App, and PayPal return only after their access policy confirms.
+// Venmo and PayPal return only after their access policy confirms.
 console.log(depositId, accessPolicyTxHashes);
 
 // One method can offer several currencies. The buyer chooses the fill
@@ -141,8 +141,9 @@ mixed historical deposit.
 
 | Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
 | --------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Venmo / Cash App      | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
+| Venmo                 | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
 | PayPal                | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
+| Cash App              | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
 | Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
 | Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
 
@@ -152,7 +153,7 @@ EOA; no Privy wallet or signer API is required. The deprecated
 `requiresAtomicAccessPolicy` capability remains for wire compatibility and is
 always `false`.
 
-Venmo, Cash App, and PayPal cash-outs restrict intent signaling to the Peer Pay
+Venmo and PayPal cash-outs restrict intent signaling to the Peer Pay
 merchant group by default. Each restricted payout method gets its own policy.
 Signed `cashout()` creates the deposit first, then uses the same wallet to
 submit and confirm every required policy transaction; this intentionally
@@ -307,7 +308,7 @@ they are available. A source-routed result includes both a flat
   returned no hash. Treat it as potentially broadcast. Inspect recent Base
   wallet activity and the supplied recovery action before any retry.
 - `ACCESS_POLICY_CONFIGURATION_FAILED`: the deposit exists, but its required
-  Venmo, Cash App, or PayPal policy was not confirmed. Do not cash out again;
+  Venmo or PayPal policy was not confirmed. Do not cash out again;
   inspect `recovery.transactionHash` when present, then retry
   `prepareAccessPolicy(error.recovery.depositId, error.recovery.paymentMethod)`
   only if the prior policy

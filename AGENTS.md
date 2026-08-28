@@ -45,7 +45,7 @@ deposit-level integration share instead of applying maker L1/L2.
 
 **Platform caveats:**
 
-- **Venmo, Cash App, and PayPal restrict who can signal intents by default.**
+- **Venmo and PayPal restrict who can signal intents by default.**
   Signed `cashout()` confirms `createDeposit`, then submits and confirms a
   method-scoped Peer Pay merchant policy for every restricted payout leg using
   the same viem wallet. This is a deliberate non-atomic follow-up with a brief
@@ -56,6 +56,9 @@ deposit-level integration share instead of applying maker L1/L2.
   its receipt and submit
   `prepareAccessPolicy(depositId, paymentMethod)` for every returned method.
   Any viem EOA works; Privy is not required.
+
+- **Cash App is non-chargebackable.** Cash App cash-outs stay public, do not
+  attach a Peer Pay merchant policy, and never require dispute-protection stake.
 
 - **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint

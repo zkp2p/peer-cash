@@ -778,7 +778,30 @@ describe('cashout()', () => {
     expect(result.order.state).toBe('awaiting-buyer');
   });
 
-  it.each(['venmo', 'cashapp', 'paypal'])(
+  it('keeps Cash App public without access policy or dispute-protection stake', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    const result = await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'cashapp', currency: 'USD', payee: { offchainId: '$seller' } },
+      },
+      { signer: eoaSigner },
+    );
+
+    expect(mockInstance.accessPolicy.prepareConfigureDeposit).not.toHaveBeenCalled();
+    expect(mockInstance.getDisputeProtectionReadiness).not.toHaveBeenCalled();
+    expect(mockInstance.setDisputeProtectionEnabled.prepare).not.toHaveBeenCalled();
+    expect(eoaSigner.sendTransaction).not.toHaveBeenCalled();
+    expect(result.accessPolicyTxHash).toBeUndefined();
+    expect(result.accessPolicyTxHashes).toBeUndefined();
+  });
+
+  it.each(['venmo', 'paypal'])(
     'supports %s with a generic EOA signer, attaches the canonical access group, and relies on default-on protection',
     async (platform) => {
       mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
@@ -843,7 +866,7 @@ describe('cashout()', () => {
   it('configures every restricted payout method and returns every policy hash', async () => {
     mockInstance.registerPayeeDetails.mockResolvedValue({
       depositDetails: [{}, {}],
-      hashedOnchainIds: ['0xvenmo-payee', '0xcashapp-payee'],
+      hashedOnchainIds: ['0xvenmo-payee', '0xpaypal-payee'],
     });
     mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
     mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
@@ -864,9 +887,9 @@ describe('cashout()', () => {
             payee: { offchainId: '@seller' },
           },
           {
-            platform: 'cashapp',
+            platform: 'paypal',
             currency: 'USD',
-            payee: { offchainId: '$seller' },
+            payee: { offchainId: 'seller@example.com' },
           },
         ],
       },
@@ -880,7 +903,7 @@ describe('cashout()', () => {
     );
     expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ paymentMethod: catalog['cashapp']!.paymentMethodHash }),
+      expect.objectContaining({ paymentMethod: catalog['paypal']!.paymentMethodHash }),
     );
     expect(result.accessPolicyTxHash).toBe('0xpolicy2');
     expect(result.accessPolicyTxHashes).toEqual(['0xpolicy1', '0xpolicy2']);
@@ -924,7 +947,11 @@ describe('cashout()', () => {
       .cashout(
         {
           amount: 5_000_000n,
-          receive: { platform: 'cashapp', currency: 'USD', payee: { offchainId: '$seller' } },
+          receive: {
+            platform: 'paypal',
+            currency: 'USD',
+            payee: { offchainId: 'seller@example.com' },
+          },
         },
         { signer },
       )
