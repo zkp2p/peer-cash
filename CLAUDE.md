@@ -18,7 +18,9 @@ is judged at the API surface, not the dependency tree.
   not the route's actual output.
 - **No rate control.** `spreadBps: 0` is a constant, not a parameter. The API
   must remain physically unable to express rate/spread configuration,
-  buyer-side operations, disputes, SAR, vaults/DRM, or corridor gating.
+  buyer-side operations, dispute management, SAR, vaults/DRM, or corridor
+  gating. Method-scoped protection for restricted cash-outs is a fixed
+  maker-side deposit default, not a configurable dispute surface.
 - **`estimate`, never `quote`.** There is no committed rate; the binding rate
   resolves at the Chainlink oracle when a buyer fills. Anything that implies a
   locked price is a bug.
@@ -42,10 +44,11 @@ is judged at the API surface, not the dependency tree.
   mint it; first-party Peer web obtains it through the Peer TEE browser
   extension. A previously registered bare handle can be reused.
 - **Restricted cash-outs finish sequentially.** If any payout leg uses Venmo,
-  Cash App, or PayPal, attach the Peer Pay merchant policy to each restricted
-  payment method after the deposit confirms. Preserve
-  `accessPolicyPaymentMethods`, `depositId`, and every policy hash. Never repeat
-  the cash-out after a policy failure; inspect an existing policy transaction
+  Cash App, or PayPal, attach both the Peer Pay merchant policy and the existing
+  dispute-protection opt-in to each restricted payment method after the deposit
+  confirms. This is a maker-side deposit default, not a buyer dispute-management
+  API. Preserve both method lists, `depositId`, and every follow-up hash. Never
+  repeat the cash-out after a follow-up failure; inspect an existing transaction
   before resubmitting.
 - **Environment owns curator routing.** Preproduction defaults to
   `https://api-preprod.zkp2p.xyz`, staging to

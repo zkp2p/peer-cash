@@ -475,6 +475,7 @@ export const cashoutResultJsonSchema = z.object({
   order: cashOrderJsonSchema,
   accessPolicyTxHash: z.string().optional(),
   accessPolicyTxHashes: z.array(z.string()).optional(),
+  disputeProtectionTxHashes: z.array(z.string()).optional(),
   source: z
     .object({
       amount: nonNegativeBigintString,
@@ -491,6 +492,8 @@ export const prepareResultJsonSchema = z.object({
   register: z.object({ hashedOnchainIds: z.array(z.string()) }),
   accessPolicyRequired: z.boolean(),
   accessPolicyPaymentMethods: z.array(z.string()).optional(),
+  disputeProtectionRequired: z.boolean().optional(),
+  disputeProtectionPaymentMethods: z.array(z.string()).optional(),
 });
 
 export const withdrawResultJsonSchema = z.object({
@@ -580,6 +583,8 @@ const CASH_ERROR_CODES = defineCashErrorCodes([
   'SOURCE_CASHOUT_STATUS_UNKNOWN',
   'DEPOSIT_RESOLUTION_FAILED',
   'ACCESS_POLICY_CONFIGURATION_FAILED',
+  'DISPUTE_PROTECTION_UNAVAILABLE',
+  'DISPUTE_PROTECTION_CONFIGURATION_FAILED',
   'ALLOWANCE_NOT_VISIBLE',
   'SIGNER_REQUIRED',
   'SIGNER_CHAIN_MISMATCH',
@@ -646,6 +651,15 @@ export const cashErrorRecoveryJsonSchema = z.discriminatedUnion('kind', [
       depositId: z.string(),
       groupIds: z.array(z.string()),
       paymentMethod: z.string().optional(),
+      transactionHash: z.string().optional(),
+      source: z.object(cashSourceRecoveryJsonShape).strict().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('configure-cashout-dispute-protection'),
+      depositId: z.string(),
+      paymentMethod: z.string(),
       transactionHash: z.string().optional(),
       source: z.object(cashSourceRecoveryJsonShape).strict().optional(),
     })

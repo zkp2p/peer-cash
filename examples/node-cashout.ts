@@ -55,6 +55,9 @@ console.log(`deposit created: ${result.depositId} (tx ${result.txHash})`);
 for (const hash of result.accessPolicyTxHashes ?? []) {
   console.log(`access policy attached: ${hash}`);
 }
+for (const hash of result.disputeProtectionTxHashes ?? []) {
+  console.log(`dispute protection enabled: ${hash}`);
+}
 // Persist this in YOUR system: userId → result.depositId
 
 // 3/5 - Track it. A real service would watch until terminal; the demo bails
