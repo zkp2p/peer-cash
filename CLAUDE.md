@@ -1,128 +1,66 @@
-# @zkp2p/cash - contributor guide
+# @zkp2p/cash contributor guide
 
-Peer Cash is an offramp-only SDK: route Relay-supported EVM assets or NEAR
-Intents 1Click external deposits into Base USDC, then cash out Base USDC to
-fiat at the live Chainlink oracle market rate (0% spread, always). It is a thin
-facade over the published `@zkp2p/sdk` plus source-provider adapters. Minimal
-is judged at the API surface, not the dependency tree.
+Peer Cash is an offramp-only facade over `@zkp2p/sdk` plus Relay and NEAR
+Intents adapters. It routes supported assets into canonical Base USDC and
+creates a zero-spread maker deposit. `AGENTS.md` is the shipped integrator
+manual; this file owns contributor rules.
 
-## Ground rules
+## Product invariants
 
-- **Offramp only.** `cashout` is the only mutating product verb. No onramp
-  vocabulary anywhere in code, types, or docs.
-- **Base USDC is the only destination.** The default path is same-chain Base
-  USDC. Source assets come from Relay SDK metadata and quote execution; do not
-  add static chain/token allowlists. High-level cash-out examples use
-  `EXACT_INPUT`: `amount` is source-token base units, and `source.amount` is
-  Relay's guaranteed minimum Base USDC output and the exact deposit amount,
-  not the route's actual output.
-- **No rate control.** `spreadBps: 0` is a constant, not a parameter. The API
-  must remain physically unable to express rate/spread configuration,
-  buyer-side operations, disputes, SAR, vaults/DRM, or corridor gating.
-- **`estimate`, never `quote`.** There is no committed rate; the binding rate
-  resolves at the Chainlink oracle when a buyer fills. Anything that implies a
-  locked price is a bug.
-- **ETA is indexer-derived.** `estimate().eta` is `{ seconds, label }` backed
-  by rolling 30-day data from deposit creation to first fill. Do not use
-  signal-to-fulfillment latency as the ETA.
-- **Serializable wire types.** Every public wire type has a zod schema and
-  JSON codec in `src/codecs/`. New public types must ship with both.
-- **One unwind verb.** `withdraw(depositId)` is state-aware (prunes expired
-  intents first when needed). Never split it back into cancel/recover.
-- **Source recovery is explicit.** Preserve Relay request IDs and chain-aware
-  transaction hashes. A completed route followed by a failed Base cashout
-  retries Base-only; a submission without a hash or an unknown Base receipt
-  must be inspected before any resubmission.
-- **External deposits stay external.** NEAR Intents returns a signed origin
-  deposit address/memo. The caller persists it and sends once with the origin
-  wallet; Peer Cash validates quote echoes and tracks status but never pretends
-  a viem signer can execute Zcash. Browser JWTs stay behind same-origin proxies.
-- **Payee attestation is registration-scoped.** Wise and PayPal require an
-  identity attestation for a new registration. The SDK accepts but does not
-  mint it; first-party Peer web obtains it through the Peer TEE browser
-  extension. A previously registered bare handle can be reused.
-- **Restricted cash-outs finish sequentially.** If any payout leg uses Venmo or
-  PayPal, attach the Peer Pay merchant policy to each restricted
-  payment method after the deposit confirms. Preserve
-  `accessPolicyPaymentMethods`, `depositId`, and every policy hash. Never repeat
-  the cash-out after a policy failure; inspect an existing policy transaction
-  before resubmitting. Dispute protection is already default-on for these
-  method-scoped deposits, so Cash must not readiness-gate creation or submit an
-  explicit enable transaction. Cash App is non-chargebackable, stays public,
-  and does not require dispute-protection stake.
-- **Environment owns curator routing.** Preproduction defaults to
-  `https://api-preprod.zkp2p.xyz`, staging to
-  `https://api-staging.zkp2p.xyz`; retain explicit `curatorUrl` overrides.
-- **The chain is the database.** No storage layer. Orders derive from the
-  indexer by `depositId`; resumability from the id alone is an invariant.
+- `cashout` is the only product mutation. Do not add onramp, buyer, dispute,
+  vault, rate-control, or arbitrary contract surfaces.
+- Base USDC is the only destination. Source support comes from live provider
+  metadata and quotes, not static chain or token allowlists.
+- `spreadBps: 0` is constant. Say `estimate`, never quote; the binding
+  Chainlink rate resolves when a buyer fills.
+- `withdraw(depositId)` is the single unwind verb and handles pruning.
+- Every public wire type has a zod schema and lossless JSON codec.
+- The chain and indexer own state. `depositId` alone must resume an order.
+- Preserve route request IDs, transaction evidence, and unknown-outcome
+  boundaries. Never turn an uncertain submission into an automatic retry.
+- NEAR Intents remains an external-deposit flow. The caller sends once; browser
+  credentials stay behind the same-origin proxy.
+- Wise and PayPal identity attestations apply to new payee registration. Cash
+  accepts but does not mint them.
+- Venmo and PayPal require one method-scoped Peer Pay policy after deposit
+  confirmation. Prepared hosts iterate `accessPolicyPaymentMethods`. Never
+  recreate a deposit after policy failure.
+- Access restriction and stake-backed dispute protection are separate. Venmo
+  and PayPal currently have nonzero risk windows and default-on protection.
+  Cash App is non-chargebackable, stays public, and does not require stake.
+- Environment selects Curator: production, preproduction, or staging. Preserve
+  explicit `curatorUrl` overrides.
 
 ## Layout
 
-- `src/engine/` — pure, deterministic logic (state derivation, deposit-param
-  construction, receipt parsing). No I/O. Ported from the reviewed reference
-  implementation; keep it dependency-light and fully unit-tested.
-- `src/client/` — `createCashClient` facade over a read-only `Zkp2pClient`,
-  Relay and NEAR Intents source routing, the verbs, typed errors.
-- `src/codecs/` — zod schemas + JSON (de)serialization for every wire type.
-- `src/tools/` — JSON-schema tool manifest of the verbs for agent runtimes.
-- `src/react/` — optional hooks (`useEstimate`, `useCashout`, `useOrder`,
-  `useOrders`). React is an optional peer dep; nothing outside `src/react/`
-  may import it.
+- `src/engine/`: deterministic state, deposit params, and receipt parsing; no I/O.
+- `src/client/`: client facade, source routing, verbs, and typed errors.
+- `src/codecs/`: schemas and JSON codecs.
+- `src/tools/`: JSON-schema agent manifest.
+- `src/react/`: optional hooks. Nothing outside it may import React.
 
-## Commands
+## Verification
 
-bun is the package manager. `bun run ci` is the full gate:
-typecheck → lint → format:check → test → production audit → build → packed
-artifact compatibility check. Run it before every commit that touches `src/`.
-GitHub Actions runs the identical gate (`bun install --frozen-lockfile && bun
-run ci`) on Node 22; a PR is mergeable only when it is green.
+Bun owns the lockfile. `bun run ci` is the merge gate: typecheck, lint, format,
+tests, production audit, build, and packed-artifact checks. Unit tests are
+hermetic; maker-side live coverage belongs in `scripts/verify-staging.ts`.
 
-## Testing
+When the public surface changes, update README, `AGENTS.md`, `llms.txt`, the
+integration skill, examples, schemas/codecs, and tests in the same PR.
 
-`test/` uses vitest. The engine has golden-file coverage: every state
-transition, partial fills, dust. Client verbs are tested against mocked
-`Zkp2pClient` surfaces. Never call live networks from unit tests; the staging
-regression lives in `scripts/verify-staging.ts` and runs maker-side only.
+## Dependencies and releases
 
-## Pull requests
+- Pin `@zkp2p/sdk` exactly and adopt it deliberately. Keep viem as
+  `>=2.37.3 <3` peer dependency and React optional.
+- Release PRs change only `package.json` version and use
+  `chore: release @zkp2p/cash X.Y.Z`. Pre-1.0 breaking changes bump minor;
+  compatible changes bump patch; candidates use `-rc.N`.
+- After the release PR merges, publish from a clean checkout with
+  `bun install --frozen-lockfile && bun run ci && npm publish`. Publishing is
+  manual and maintainer-only; there are no release tags.
+- The packed allowlist is `dist/`, `docs/`, `examples/`, `skills/`,
+  `AGENTS.md`, `README.md`, `LICENSE`, and `llms.txt`. Do not ship tests,
+  scripts, lockfiles, or environment files.
 
-- Branch as `type/short-description`; commit and PR titles use conventional
-  prefixes (`feat:`, `fix:`, `docs:`, `chore:`, `chore(deps):`).
-- When the public surface changes, update every consumer-facing artifact in
-  the same PR: the README verb table, `AGENTS.md`, `llms.txt`,
-  `skills/peer-cash-integration/SKILL.md`, `examples/`, and the codecs
-  (`src/codecs/` schema + JSON codec + tests). Doc drift is a defect, not a
-  follow-up.
-- `AGENTS.md` is the _shipped integrator manual_ for agents using the package;
-  this file (`CLAUDE.md`) is the contributor entry point. Keep that split.
-
-## Dependency policy
-
-- `@zkp2p/sdk` is pinned exact and adopted deliberately via its own PR
-  (`chore(deps): bump @zkp2p/sdk to X.Y.Z`). Run `bun outdated --latest` so
-  compatible majors are not hidden by existing ranges, explain every hold,
-  then update and run `bun run ci`.
-- viem is a peer dependency (`>=2.37.3 <3`); never move it into
-  `dependencies`. React stays an optional peer, and nothing outside
-  `src/react/` may import it.
-- Keep `@types/node` aligned with CI's Node major and `@eslint/js` aligned with
-  ESLint. Hold a toolchain major until the surrounding toolchain supports it;
-  a version bump the gate cannot verify is not an upgrade.
-
-## Releasing and publishing
-
-1. Release PRs are titled `chore: release @zkp2p/cash X.Y.Z` and change only
-   the `version` field in `package.json`. Pre-1.0 semver: minor for breaking
-   surface changes, patch otherwise; release candidates use `-rc.N`. There are
-   no git tags and no changelog file - history lives in the PR titles.
-2. Merge the release PR, then publish from a clean checkout of that commit:
-   `bun install --frozen-lockfile && bun run ci && npm publish`. `prepack`
-   rebuilds `dist/`; publishing is manual and maintainer-only (no CI publish
-   job). `npm view @zkp2p/cash maintainers` lists who can.
-3. The packed artifact ships exactly the package.json `files` allowlist:
-   `dist/`, `docs/`, `examples/`, `skills/`, `AGENTS.md`, `README.md`,
-   `LICENSE`, `llms.txt`. `scripts/check-packed-package.ts` (part of
-   `bun run ci`) fails if a required file is missing or a forbidden one
-   (`test/`, `scripts/`, lockfiles, `.env*`) leaks in.
-4. An agent without publish rights stops at the merged release PR and hands
-   off to a maintainer.
+Use conventional imperative PR and commit subjects. Keep changes focused and
+update tests with behavior.

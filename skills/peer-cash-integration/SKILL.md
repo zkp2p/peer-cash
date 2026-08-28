@@ -97,68 +97,21 @@ await cash.withdraw(res.depositId, { signer }); // 6 unwind (amount: for partial
 await cash.topUp(res.depositId, usdc(50), { signer }); // 7 top up a live order
 ```
 
-Signer-backed exact-input source path:
+For a signer-backed EVM source, pass an `EXACT_INPUT` `source` plus
+`sourceSigner` to `cashout()`. Persist the result's guaranteed Base USDC,
+Relay request ID, and origin/destination transaction evidence.
 
-```ts
-const routed = await cash.cashout(
-  {
-    amount: sourceAmount,
-    source: {
-      chainId: sourceChainId,
-      currency: sourceToken,
-      tradeType: 'EXACT_INPUT',
-    },
-    receive,
-  },
-  { signer, sourceSigner },
-);
+For NEAR Intents, discover the live asset, request and persist the quote, fund
+its deposit address exactly once with the origin wallet, register that same
+hash when needed, then poll the route to `SUCCESS`. Reconcile the Base receipt
+and output before starting a Base-only cash-out.
 
-persist({
-  depositId: routed.depositId,
-  guaranteedBaseUsdc: routed.source?.amount,
-  requestId: routed.source?.requestId,
-  transactions: routed.source?.transactions,
-});
-```
-
-External-deposit NEAR Intents source path:
-
-```ts
-const quote = await cash.quoteNearIntentsSource({
-  sourceAsset: nearAssetId,
-  amount: usdc(1),
-  recipient: signer.account.address,
-  refundTo: originRefundAddress,
-  tradeType: 'EXACT_OUTPUT',
-  deadline: new Date(Date.now() + 3 * 60_000).toISOString(),
-});
-persist(quote);
-const txHash = await originWallet.send(quote.depositAddress!, quote.inputAmount);
-await cash.submitNearIntentsDeposit({
-  depositAddress: quote.depositAddress!,
-  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
-  txHash,
-});
-const route = await cash.nearIntentsStatus({
-  depositAddress: quote.depositAddress!,
-  ...(quote.depositMemo ? { depositMemo: quote.depositMemo } : {}),
-  expectedQuote: quote,
-});
-// Reconcile Base delivery after SUCCESS, then use a Base-only prepare/cashout.
-```
-
-Base-USDC cashout, withdraw, and top-up also have unsigned `prepare*`
-counterparts. `prepare()` rejects `source`. Source-routed cashout runs Relay
-first; use signed `cashout({ source }, { signer, sourceSigner })`, or execute
-and confirm Relay in the host before preparing a Base-USDC cashout.
-`cash_source_quote` and `cash_source_status` are quote/read tools, not a
-host-side execution path. The built-in tool manifest also does not expose
-receipt finalization or access-policy submission as separate tools; the host
-adapter calls those `CashClient` methods after its signer confirms
-`createDeposit`.
-Every protocol transaction carries ERC-8021 attribution. To receive the
-deposit-level integration share, copy the six-character code from your Peer
-mobile or web referral screen and configure it directly:
+Base-USDC cash-out, withdrawal, and top-up have unsigned `prepare*` variants.
+`prepare()` rejects `source`; a host must execute and confirm Relay before
+preparing the Base order. Source tools only quote and observe. The host adapter
+also finalizes receipts and submits access policies after `createDeposit`.
+Every protocol transaction carries ERC-8021 attribution. An integration can
+configure the six-character code from its Peer referral screen:
 
 ```ts
 const cash = createCashClient({
@@ -167,12 +120,9 @@ const cash = createCashClient({
 });
 ```
 
-The SDK emits `peer-cash`, then `peer-ref-ABC123`, then any analytics-only
-`createCashClient({ referrer })` codes. No API key or referral-enrollment
-transaction is required. Curator pays the eligible code owner 50 bps (capped
-by the Peer service-fee budget) instead of applying the maker L1/L2 ladder for
-that deposit. Use one referral code per deposit. Renaming the displayed code
-later does not change the owner of an already-attributed open deposit.
+The SDK emits `peer-cash`, then the referral marker, then analytics-only
+`referrer` codes. Use one referral code per deposit; it selects the eligible
+direct integration share without an enrollment transaction or API key.
 
 Wise and PayPal require an identity attestation for a new payee registration.
 The SDK accepts the structured attestation but does not mint it; first-party
@@ -194,9 +144,9 @@ needed.
 
 ## 5. Failure playbook
 
-Every error is a `CashError` with `code`, `retryable`, `remediation`. The
-full table lives in `AGENTS.md` and `docs/lifecycle-and-recovery.md` - quote
-those, don't re-derive. The recovery boundaries that matter most in practice:
+Every error is a `CashError` with `code`, `retryable`, and `remediation`. The
+full table lives in `docs/lifecycle-and-recovery.md`; do not re-derive it. Key
+boundaries:
 
 - `ORDER_NOT_FOUND` seconds after `cashout()` = indexer lag. The receipt is
   the truth; retry. `watch()` and the React hooks absorb it.
@@ -226,10 +176,6 @@ those, don't re-derive. The recovery boundaries that matter most in practice:
   if that transaction is absent or confirmed reverted.
 - `INDEXER_UNAVAILABLE` / `ORACLE_READ_FAILED` = retry the read only. Do not
   repeat the transaction that produced the id or balance being inspected.
-- `SIGNER_CHAIN_MISMATCH` = switch to the required chain and obtain a fresh
-  Relay quote before retrying.
-- `SIGNER_CHAIN_UNAVAILABLE` = reconnect the wallet and verify its live chain
-  before any quote or mutation.
 - Buyer never pays → nothing to do: the intent expires, `nextActions` gains
   `'withdraw'`, one `withdraw()` call returns the funds (prune + withdraw).
 
