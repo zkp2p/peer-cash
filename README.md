@@ -157,8 +157,12 @@ Venmo and PayPal cash-outs restrict intent signaling to the Peer Pay
 merchant group by default. Each restricted payout method gets its own policy.
 Signed `cashout()` creates the deposit first, then uses the same wallet to
 submit and confirm every required policy transaction; this intentionally
-leaves a brief interval where any taker can signal. Method-scoped dispute
-protection is already default-on for these rails, so Cash neither
+leaves a brief interval where any taker can signal.
+
+Access restriction is separate from stake-backed dispute protection.
+Protection defaults on only when the method's live on-chain risk window is
+nonzero. Venmo and PayPal are currently protected. Cash App is
+non-chargebackable, stays public, and does not require stake. Cash neither
 readiness-gates deposit creation nor submits
 `setDisputeProtectionEnabled(true)`. Prepared integrations receive
 `accessPolicyPaymentMethods`; after confirming `createDeposit`, call

@@ -88,14 +88,15 @@ policy attachment is sequential, not atomic. If any payout leg uses Venmo or
 PayPal, the cash-out restricts intent signaling to the Peer Pay
 merchant group for that payment method. Signed `cashout()` confirms the
 deposit before submitting and confirming every required policy with the same
-viem wallet, so a brief open-to-all-takers interval exists. Method-scoped
-dispute protection is already default-on for these rails; do not preflight its
-readiness or submit a redundant enable transaction. For `prepare()`, iterate
+viem wallet, so a brief open-to-all-takers interval exists. Access restriction
+is separate from stake-backed dispute protection. Protection defaults on only
+for methods with a nonzero live risk window: currently Venmo and PayPal. Cash
+App is non-chargebackable, stays public, and does not require stake. Do not
+submit a redundant enable transaction. For `prepare()`, iterate
 `accessPolicyPaymentMethods` and call
 `prepareAccessPolicy(depositId, paymentMethod)` after finalizing the confirmed
 deposit receipt. Any viem `WalletClient`, including an EOA, can submit it;
-Privy is not required. Cash App is non-chargebackable, stays public, and does
-not require dispute-protection stake.
+Privy is not required.
 If the follow-up fails, the deposit already exists. Never repeat the cash-out.
 When `ACCESS_POLICY_CONFIGURATION_FAILED.recovery.transactionHash` is present,
 inspect it before preparing another policy; resubmit only when that transaction
