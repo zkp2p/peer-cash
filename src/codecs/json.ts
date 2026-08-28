@@ -508,7 +508,6 @@ export function cashoutResultToJson(result: CashoutResult): CashoutResultJson {
     order: orderToJson(result.order),
     accessPolicyTxHash: result.accessPolicyTxHash,
     accessPolicyTxHashes: result.accessPolicyTxHashes,
-    disputeProtectionTxHashes: result.disputeProtectionTxHashes,
     source: result.source
       ? {
           ...result.source,
@@ -528,8 +527,6 @@ export function cashoutResultFromJson(json: unknown): CashoutResult {
     order: orderFromJson(parsed.order),
     accessPolicyTxHash: parsed.accessPolicyTxHash as CashoutResult['accessPolicyTxHash'],
     accessPolicyTxHashes: parsed.accessPolicyTxHashes as CashoutResult['accessPolicyTxHashes'],
-    disputeProtectionTxHashes:
-      parsed.disputeProtectionTxHashes as CashoutResult['disputeProtectionTxHashes'],
     source: parsed.source
       ? {
           ...parsed.source,
@@ -548,8 +545,6 @@ export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
     register: result.register,
     accessPolicyRequired: result.accessPolicyRequired,
     accessPolicyPaymentMethods: result.accessPolicyPaymentMethods,
-    disputeProtectionRequired: result.disputeProtectionRequired,
-    disputeProtectionPaymentMethods: result.disputeProtectionPaymentMethods,
   };
 }
 
@@ -561,9 +556,6 @@ export function prepareResultFromJson(json: unknown): PrepareResult {
     register: parsed.register,
     accessPolicyRequired: parsed.accessPolicyRequired,
     accessPolicyPaymentMethods: (parsed.accessPolicyPaymentMethods ?? []) as `0x${string}`[],
-    disputeProtectionRequired: parsed.disputeProtectionRequired ?? false,
-    disputeProtectionPaymentMethods: (parsed.disputeProtectionPaymentMethods ??
-      []) as `0x${string}`[],
   };
 }
 
@@ -677,29 +669,6 @@ export function cashErrorFromJson(json: unknown): CashError {
         ...(parsed.recovery.paymentMethod !== undefined
           ? { paymentMethod: parsed.recovery.paymentMethod }
           : {}),
-        ...(parsed.recovery.transactionHash !== undefined
-          ? { transactionHash: parsed.recovery.transactionHash }
-          : {}),
-        ...(parsed.recovery.source !== undefined
-          ? {
-              source: {
-                amount: parsed.recovery.source.amount,
-                txHashes: parsed.recovery.source.txHashes,
-                ...(parsed.recovery.source.requestId !== undefined
-                  ? { requestId: parsed.recovery.source.requestId }
-                  : {}),
-                ...(parsed.recovery.source.transactions !== undefined
-                  ? { transactions: parsed.recovery.source.transactions }
-                  : {}),
-              },
-            }
-          : {}),
-      };
-    } else if (parsed.recovery.kind === 'configure-cashout-dispute-protection') {
-      recovery = {
-        kind: parsed.recovery.kind,
-        depositId: parsed.recovery.depositId,
-        paymentMethod: parsed.recovery.paymentMethod,
         ...(parsed.recovery.transactionHash !== undefined
           ? { transactionHash: parsed.recovery.transactionHash }
           : {}),

@@ -82,12 +82,14 @@ Key facts:
   accepts but does not mint it; first-party Peer web obtains it through the
   Peer TEE browser extension. A previously registered bare handle can be reused.
 - Venmo, Cash App, and PayPal attach a method-scoped Peer Pay merchant policy
-  and enable dispute protection after the deposit confirms. `cashout()` proves
-  protection is ready before creating the deposit and submits both follow-ups
-  with the same viem wallet. Prepared hosts iterate
-  `accessPolicyPaymentMethods` and `disputeProtectionPaymentMethods`. Any EOA
-  works; Privy is not required. After either post-deposit failure, never repeat
-  the cashout; inspect recovery.transactionHash before resubmitting.
+  after the deposit confirms, restricting which takers can signal an intent.
+  The follow-ups are intentionally non-atomic; `cashout()` submits each with
+  the same viem wallet, while prepared hosts iterate
+  `accessPolicyPaymentMethods`. Method-scoped dispute protection is already
+  default-on, so Cash does not readiness-gate creation or submit an explicit
+  enable transaction. Any EOA works; Privy is not required. On
+  ACCESS_POLICY_CONFIGURATION_FAILED, never repeat the cashout; inspect
+  recovery.transactionHash before resubmitting a policy.
 - Preproduction uses https://api-preprod.zkp2p.xyz by default; staging uses
   https://api-staging.zkp2p.xyz. curatorUrl can override either.
 
