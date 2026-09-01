@@ -34,6 +34,7 @@ const mockInstance = {
   createDeposit: vi.fn(),
   prepareCreateDeposit: vi.fn(),
   accessPolicy: {
+    prepareConfigurePeerPayMerchantDeposit: vi.fn(),
     prepareConfigureDeposit: vi.fn(),
   },
   getDisputeProtectionReadiness: vi.fn(),
@@ -209,6 +210,12 @@ beforeEach(() => {
     hashedOnchainIds: ['0xpayeehash'],
   });
   mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: true });
+  mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit.mockReturnValue({
+    to: '0x3333333333333333333333333333333333333333',
+    data: '0xaccess',
+    value: 0n,
+    chainId: 8453,
+  });
   mockInstance.accessPolicy.prepareConfigureDeposit.mockReturnValue({
     to: '0x3333333333333333333333333333333333333333',
     data: '0xaccess',
@@ -773,7 +780,7 @@ describe('cashout()', () => {
     expect(result.onchainDepositId).toBe(5n);
     expect(result.txHash).toBe('0xhash');
     expect(result.accessPolicyTxHash).toBeUndefined();
-    expect(mockInstance.accessPolicy.prepareConfigureDeposit).not.toHaveBeenCalled();
+    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).not.toHaveBeenCalled();
     expect(signer.sendTransaction).not.toHaveBeenCalled();
     expect(result.order.state).toBe('awaiting-buyer');
   });
@@ -793,7 +800,7 @@ describe('cashout()', () => {
       { signer: eoaSigner },
     );
 
-    expect(mockInstance.accessPolicy.prepareConfigureDeposit).not.toHaveBeenCalled();
+    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).not.toHaveBeenCalled();
     expect(mockInstance.getDisputeProtectionReadiness).not.toHaveBeenCalled();
     expect(mockInstance.setDisputeProtectionEnabled.prepare).not.toHaveBeenCalled();
     expect(eoaSigner.sendTransaction).not.toHaveBeenCalled();
@@ -832,15 +839,14 @@ describe('cashout()', () => {
       expect(
         mockInstance.publicClient.waitForTransactionReceipt.mock.invocationCallOrder[0],
       ).toBeLessThan(vi.mocked(eoaSigner.sendTransaction).mock.invocationCallOrder[0]!);
-      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
-        escrow: ESCROW,
-        depositId: 5n,
-        paymentMethod: getPaymentMethodsCatalog(8453, 'staging')[platform]!.paymentMethodHash,
-        enabled: true,
-        groupIds: CASH_ACCESS_GROUP_IDS.staging,
-        takers: [],
-        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
-      });
+      expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).toHaveBeenCalledWith(
+        {
+          escrow: ESCROW,
+          depositId: 5n,
+          paymentMethod: getPaymentMethodsCatalog(8453, 'staging')[platform]!.paymentMethodHash,
+          txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
+        },
+      );
       expect(eoaSigner.sendTransaction).toHaveBeenCalledWith({
         account: eoaSigner.account,
         chain: eoaSigner.chain,
@@ -897,11 +903,15 @@ describe('cashout()', () => {
     );
 
     const catalog = getPaymentMethodsCatalog(8453, 'staging');
-    expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenNthCalledWith(
+    expect(
+      mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit,
+    ).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ paymentMethod: catalog['venmo']!.paymentMethodHash }),
     );
-    expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenNthCalledWith(
+    expect(
+      mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit,
+    ).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ paymentMethod: catalog['paypal']!.paymentMethodHash }),
     );
@@ -1030,7 +1040,7 @@ describe('cashout()', () => {
         ),
       }),
     );
-    expect(mockInstance.accessPolicy.prepareConfigureDeposit).not.toHaveBeenCalled();
+    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).not.toHaveBeenCalled();
   });
 
   it('does not invite duplicate Base cashouts when submission returns no hash', async () => {
@@ -2339,13 +2349,10 @@ describe('prepareAccessPolicy()', () => {
   it('prepares the method-scoped Peer Pay policy for an externally created cash-out', () => {
     const prepared = client().prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
 
-    expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
+    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).toHaveBeenCalledWith({
       escrow: ESCROW,
       depositId: 5n,
       paymentMethod: VENMO_PAYMENT_METHOD,
-      enabled: true,
-      groupIds: CASH_ACCESS_GROUP_IDS.staging,
-      takers: [],
       txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
     });
     expect(prepared).toEqual({
@@ -2356,13 +2363,39 @@ describe('prepareAccessPolicy()', () => {
     });
   });
 
+  it('falls back to the legacy configurable policy API before the SDK upgrade lands', () => {
+    const modernPreparer = mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit;
+    Reflect.deleteProperty(mockInstance.accessPolicy, 'prepareConfigurePeerPayMerchantDeposit');
+
+    try {
+      client().prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
+
+      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
+        escrow: ESCROW,
+        depositId: 5n,
+        paymentMethod: VENMO_PAYMENT_METHOD,
+        enabled: true,
+        groupIds: CASH_ACCESS_GROUP_IDS.staging,
+        takers: [],
+        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
+      });
+    } finally {
+      mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit = modernPreparer;
+    }
+  });
+
   it.each(['production', 'preproduction'] as const)(
-    'uses the production group registry for %s',
+    'delegates the fixed Peer Pay merchant policy to the SDK for %s',
     (environment) => {
       createCashClient({ environment }).prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
 
-      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith(
-        expect.objectContaining({ groupIds: CASH_ACCESS_GROUP_IDS.production }),
+      expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).toHaveBeenCalledWith(
+        {
+          escrow: ESCROW,
+          depositId: 5n,
+          paymentMethod: VENMO_PAYMENT_METHOD,
+          txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
+        },
       );
     },
   );
