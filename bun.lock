@@ -6,7 +6,7 @@
       "name": "@zkp2p/cash",
       "dependencies": {
         "@relayprotocol/relay-sdk": "^7.0.1",
-        "@zkp2p/sdk": "0.12.2-rc.3",
+        "@zkp2p/sdk": "0.12.2-rc.4",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -323,9 +323,9 @@
 
     "@zkp2p/indexer-schema": ["@zkp2p/indexer-schema@0.22.0-rc.3", "", {}, "sha512-3PAry2F3tlTi0dFjjaRx2BOvX87SP6JszLK6dlxo0pgB0fV9CF3JB7Q58jy4iwXe75CmTESTvqwnvkCzL/vPBQ=="],
 
-    "@zkp2p/sdk": ["@zkp2p/sdk@0.12.2-rc.3", "", { "dependencies": { "@zkp2p/contracts-v2": "0.4.1-rc.9", "@zkp2p/indexer-schema": "0.22.0-rc.3", "@zkp2p/zkp2p-attestation": "3.0.1", "ethers": "^6.0.0", "ox": "^0.11.1" }, "peerDependencies": { "react": ">=16.8.0", "viem": "^2.37.3" }, "optionalPeers": ["react"] }, "sha512-RE3h7wLMTo1l5ciaGr6iIXAH/E3nNMKH1a96s5auohPCaO9ke460XNUeRmQ+ZDGL5Ay6COmjTh1yGJUujUAA8A=="],
+    "@zkp2p/sdk": ["@zkp2p/sdk@0.12.2-rc.4", "", { "dependencies": { "@zkp2p/contracts-v2": "0.4.1-rc.9", "@zkp2p/indexer-schema": "0.22.0-rc.3", "@zkp2p/zkp2p-attestation": "3.1.0", "ethers": "^6.0.0", "ox": "^0.11.1" }, "peerDependencies": { "react": ">=16.8.0", "viem": "^2.37.3" }, "optionalPeers": ["react"] }, "sha512-4IZVECH1lymupQa0N/UmOi7TD0heKPq6y6ze/OqHtrmkYVdqJAlrpke+aUayGYQMO1Jg0vANTlxPC4sxKhgADQ=="],
 
-    "@zkp2p/zkp2p-attestation": ["@zkp2p/zkp2p-attestation@3.0.1", "", { "dependencies": { "@peculiar/x509": "^1.14.0", "ethers": "^6.13.4" }, "bin": { "zkp2p-attestation-verify": "dist/cli/verify.js" } }, "sha512-f81RMhjA7UYy6Pp5t8fF5DOlBrDrZ/l4LKOW+sGRrYreF5G90+8X8Dtgx3yuh1pDICMJ5ybBVcj2pmV+LV9Dfw=="],
+    "@zkp2p/zkp2p-attestation": ["@zkp2p/zkp2p-attestation@3.1.0", "", { "dependencies": { "@peculiar/x509": "^1.14.0", "ethers": "^6.13.4" }, "bin": { "zkp2p-attestation-verify": "dist/cli/verify.js" } }, "sha512-VBjqpUrUGQGZcjVbLGALzg26z341hOun74cnBlGnAdsm9QQwm1+wAncCuIRRlszg9RcHlGaRmQKPN+mnVAY0NQ=="],
 
     "abitype": ["abitype@1.2.3", "", { "peerDependencies": { "typescript": ">=5.0.4", "zod": "^3.22.0 || ^4.0.0" }, "optionalPeers": ["typescript", "zod"] }, "sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg=="],
 
