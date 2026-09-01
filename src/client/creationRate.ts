@@ -2,6 +2,7 @@ import type { Address, PublicClient } from 'viem';
 
 const CHAINLINK_FEED_REGISTRY = '0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf';
 const CNY_DENOMINATION = '0x000000000000000000000000000000000000009c';
+const INR_DENOMINATION = '0x0000000000000000000000000000000000000164';
 const USD_DENOMINATION = '0x0000000000000000000000000000000000000348';
 
 const FEED_REGISTRY_ABI = [
@@ -49,9 +50,24 @@ export type CreationRateReader = (
   currency: string,
 ) => Promise<CreationRateSnapshot>;
 
-/** The one Cash corridor whose fresh market rate is fixed when the deposit is created. */
+/** Cash corridors whose fresh market rate is fixed when the deposit is created. */
 export function isCreationRateCorridor(platform: string, currency: string): boolean {
-  return platform.toLowerCase() === 'alipay' && currency.toUpperCase() === 'CNY';
+  const normalizedPlatform = platform.toLowerCase();
+  const normalizedCurrency = currency.toUpperCase();
+  return (
+    (normalizedPlatform === 'alipay' && normalizedCurrency === 'CNY') ||
+    (normalizedPlatform === 'upi' && normalizedCurrency === 'INR')
+  );
+}
+
+function getCreationRateDenomination(platform: string, currency: string): Address {
+  if (platform.toLowerCase() === 'alipay' && currency.toUpperCase() === 'CNY') {
+    return CNY_DENOMINATION as Address;
+  }
+  if (platform.toLowerCase() === 'upi' && currency.toUpperCase() === 'INR') {
+    return INR_DENOMINATION as Address;
+  }
+  throw new Error(`No creation-time rate source for ${platform}/${currency}`);
 }
 
 function divideRoundUp(numerator: bigint, denominator: bigint): bigint {
@@ -63,11 +79,16 @@ function divideRoundUp(numerator: bigint, denominator: bigint): bigint {
  * to CNY per USDC. The returned integer is rounded up so the on-chain maker
  * floor is never weaker than the observed market rate.
  */
-export async function readAlipayCnyCreationRate(
+export async function readCashCreationRate(
   publicClient: PublicClient,
+  platform: string,
+  currency: string,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): Promise<CreationRateSnapshot> {
-  const args = [CNY_DENOMINATION as Address, USD_DENOMINATION as Address] as const;
+  const args = [
+    getCreationRateDenomination(platform, currency),
+    USD_DENOMINATION as Address,
+  ] as const;
   const [decimals, round] = await Promise.all([
     publicClient.readContract({
       address: CHAINLINK_FEED_REGISTRY,
@@ -104,4 +125,12 @@ export async function readAlipayCnyCreationRate(
   }
 
   return { rate1e18, rate, updatedAt };
+}
+
+/** Backward-compatible Alipay/CNY reader. */
+export async function readAlipayCnyCreationRate(
+  publicClient: PublicClient,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<CreationRateSnapshot> {
+  return readCashCreationRate(publicClient, 'alipay', 'CNY', nowSeconds);
 }

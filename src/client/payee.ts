@@ -29,6 +29,8 @@ export function normalizeCashPayee(platform: string, payee: CashPayeeInput): Cur
       return { offchainId: normalizePaypalHandle(trimmed) };
     case 'zelle':
       return { offchainId: trimmed.toLowerCase() };
+    case 'upi':
+      return { offchainId: trimmed.toLowerCase() };
     default:
       return { offchainId: trimmed };
   }

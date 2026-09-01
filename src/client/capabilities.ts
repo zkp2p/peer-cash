@@ -2,18 +2,25 @@
  * Discovery - sync, static. Platforms × currencies × pricing semantics ×
  * amount bounds × payee format hints, all derivable without a network call.
  */
-import { getPaymentMethodsCatalog, getCurrencyCodeFromHash } from '@zkp2p/sdk';
+import { getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
 import { isCreationRateCorridor } from './creationRate';
 import type { CashSourceCapabilities } from './relay';
 import type { NearIntentsSourceCapabilities } from './nearIntents';
+import {
+  getCashPaymentMethodsCatalog,
+  type CashCatalogFeatures,
+} from '../engine/paymentMethodCatalog';
 
 /** Hard floor: below one cent a deposit is dust and can never fill. */
 export const MIN_CASHOUT_AMOUNT = 10_000n; // $0.01
 /** Recommended floor: sub-1-USDC deposits force min==max fills and starve matching. */
 export const RECOMMENDED_MIN_CASHOUT_AMOUNT = 1_000_000n; // 1 USDC
+
+/** Opt-in product surfaces that are not yet available on production contracts. */
+export type CashFeatureFlags = CashCatalogFeatures;
 
 /**
  * Payee handle format hints per platform, for input UX and agent validation.
@@ -32,6 +39,7 @@ const PAYEE_HINTS: Record<string, string> = {
   luxon: 'Luxon Pay ID or account email',
   n26: 'MoneyBeam email or phone number',
   alipay: 'Email address linked to your Alipay account',
+  upi: 'Any valid UPI ID from any bank (e.g. seller@bank)',
 };
 
 /**
@@ -102,8 +110,11 @@ export interface CashCapabilities {
   pricing: { kind: 'oracle-market-rate'; spreadBps: 0 };
 }
 
-export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
-  const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
+export function buildCapabilities(
+  environment: RuntimeEnv,
+  features: CashFeatureFlags = {},
+): CashCapabilities {
+  const catalog = getCashPaymentMethodsCatalog(environment, features);
 
   const platforms: CashPlatformCapability[] = Object.entries(catalog)
     .map(([platform, entry]) => {
@@ -135,7 +146,11 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
         requiresAtomicAccessPolicy: false,
       };
     })
-    .filter((p) => p.currencies.length > 0)
+    .filter(
+      (p) =>
+        p.currencies.length > 0 &&
+        (p.platform !== 'upi' || (environment === 'staging' && features.upi === true)),
+    )
     .sort((a, b) => a.platform.localeCompare(b.platform));
 
   const currencies = [...new Set(platforms.flatMap((p) => p.currencies))].sort();

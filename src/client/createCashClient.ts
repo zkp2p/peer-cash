@@ -23,13 +23,7 @@ import {
   type WalletClient,
 } from 'viem';
 import { base, mainnet } from 'viem/chains';
-import {
-  Zkp2pClient,
-  getPaymentMethodsCatalog,
-  resolvePaymentMethodHashFromCatalog,
-  appendAttributionToCalldata,
-  createCompositeDepositId,
-} from '@zkp2p/sdk';
+import { Zkp2pClient, appendAttributionToCalldata, createCompositeDepositId } from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction, RuntimeEnv, TxOverrides } from '../sdk-types';
 import {
   BASE_CHAIN_ID,
@@ -50,7 +44,12 @@ import {
   platformRequiresIdentityAttestation,
   MIN_CASHOUT_AMOUNT,
   type CashCapabilities,
+  type CashFeatureFlags,
 } from './capabilities';
+import {
+  getCashPaymentMethodsCatalog,
+  resolveCashPaymentMethodHash,
+} from '../engine/paymentMethodCatalog';
 import {
   readEstimate,
   type CashEstimate,
@@ -92,7 +91,7 @@ import {
   type NearIntentsStatus,
   type NearIntentsStatusInput,
 } from './nearIntents';
-import { isCreationRateCorridor, readAlipayCnyCreationRate } from './creationRate';
+import { isCreationRateCorridor, readCashCreationRate } from './creationRate';
 import { createCashAttributionReader } from './attribution';
 import { isCashPayoutSet } from './classify';
 
@@ -137,6 +136,8 @@ const ERC20_ALLOWANCE_ABI = parseAbi([
 export interface CashClientOptions {
   /** `'production' | 'preproduction' | 'staging'` - selects contracts, curator, and indexer. */
   environment: RuntimeEnv;
+  /** Fail-closed opt-ins for corridors that are not deployed to production. */
+  features?: CashFeatureFlags;
   /** viem transport for RPC reads; defaults to the public Base RPC. */
   transport?: Transport;
   /** Convenience alternative to `transport`. */
@@ -488,13 +489,14 @@ function isKnownPreBroadcastFailure(mapped: CashError): boolean {
 function cashoutAccessPolicyPaymentMethods(
   depositInput: CashDepositInput,
   environment: RuntimeEnv,
+  features?: CashFeatureFlags,
 ): Hex[] {
-  const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
+  const catalog = getCashPaymentMethodsCatalog(environment, features);
   return [
     ...new Set(
       depositInput.payouts
         .filter((payout) => CASH_RESTRICTED_PLATFORMS.has(payout.processorName.toLowerCase()))
-        .map((payout) => resolvePaymentMethodHashFromCatalog(payout.processorName, catalog)),
+        .map((payout) => resolveCashPaymentMethodHash(payout.processorName, catalog)),
     ),
   ];
 }
@@ -628,7 +630,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (legs.length === 0) {
       throw errors.invalidPayoutPlatforms('at least one payout leg is required');
     }
-    const capabilities = buildCapabilities(environment);
+    const capabilities = buildCapabilities(environment, options.features);
     const seenPlatforms = new Set<string>();
     const payouts = legs.map((leg): CashDepositInput['payouts'][number] => {
       const platform = capabilities.platforms.find(
@@ -710,11 +712,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
             throw new Error(`No creation-time rate reader for ${platform}/${currency}`);
           }
           try {
-            return await readAlipayCnyCreationRate(creationRateClient);
+            return await readCashCreationRate(creationRateClient, platform, currency);
           } catch (err) {
             throw errors.oracleReadFailed(currency, err);
           }
         },
+        options.features,
       );
     } catch (err) {
       if (isCashError(err)) throw err;
@@ -775,7 +778,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     const payouts = derivePayouts(
       deposit.paymentMethods ?? [],
       deposit.currencies ?? [],
-      getPaymentMethodsCatalog(BASE_CHAIN_ID, environment),
+      getCashPaymentMethodsCatalog(environment, options.features),
     );
     let attributedToCash = false;
     if (!isCashPayoutSet(payouts)) {
@@ -880,7 +883,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     includeRelaySources?: true;
     includeNearIntentsSources?: true;
   }): CashCapabilities | Promise<CashCapabilities> {
-    const baseCapabilities = buildCapabilities(environment);
+    const baseCapabilities = buildCapabilities(environment, options.features);
     if (!capabilityOptions?.includeRelaySources && !capabilityOptions?.includeNearIntentsSources) {
       return baseCapabilities;
     }
@@ -1108,7 +1111,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
     source?: CashoutResult['source'],
   ): Promise<Hash[]> {
     const groupIds = CASH_ACCESS_GROUP_IDS[environment];
-    const paymentMethods = cashoutAccessPolicyPaymentMethods(depositInput, environment);
+    const paymentMethods = cashoutAccessPolicyPaymentMethods(
+      depositInput,
+      environment,
+      options.features,
+    );
     const hashes: Hash[] = [];
 
     for (const paymentMethod of paymentMethods) {
@@ -1482,6 +1489,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const accessPolicyPaymentMethods = cashoutAccessPolicyPaymentMethods(
         depositInput,
         environment,
+        options.features,
       );
 
       return {
@@ -1560,7 +1568,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       } catch (err) {
         throw errors.indexerUnavailable('orders', err);
       }
-      const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
+      const catalog = getCashPaymentMethodsCatalog(environment, options.features);
 
       let attributedCashDeposits = new Set<string>();
       const fixedRateCandidates = deposits.filter((deposit) => {

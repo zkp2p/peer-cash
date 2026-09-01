@@ -70,6 +70,10 @@ deposit-level integration share instead of applying maker L1/L2.
 - **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
   platform at registration - the account must exist. The rest (Zelle, Chime,
   etc.) are format-checked only. Match handles to the `payeeHint`.
+- **UPI is staging-only and opt-in.** Construct the client with
+  `features: { upi: true }`. Any valid UPI ID from any bank can receive; there
+  is no seller bank login, extension, identity attestation, or prior
+  registration flow. Buyers currently prove from HDFC Bank through Gmail.
 
 ## The loop
 

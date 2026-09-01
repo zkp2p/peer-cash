@@ -9,6 +9,7 @@ describe('normalizeCashPayee', () => {
     ['n26', ' user @ example.com ', 'user@example.com'],
     ['paypal', ' https://www.paypal.me/@SellerTag?locale=en ', 'sellertag'],
     ['zelle', ' Alice@Example.COM ', 'alice@example.com'],
+    ['upi', ' Seller.Name@OKHDFC ', 'seller.name@okhdfc'],
   ])('normalizes %s raw input', (platform, input, offchainId) => {
     expect(normalizeCashPayee(platform, input)).toEqual({ offchainId });
   });

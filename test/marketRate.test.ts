@@ -123,6 +123,45 @@ describe('prepareCashDepositParams', () => {
     });
   });
 
+  it('builds staging UPI/INR without seller registration or an identity attestation', async () => {
+    const client = mockClient();
+    const creationRate = {
+      rate1e18: 83_333_333_333_333_333_333n,
+      rate: 83.333333,
+      updatedAt: 2_000_000_000,
+    };
+    const reader = vi.fn(async () => creationRate);
+
+    const params = await prepareCashDepositParams(
+      client,
+      {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'upi',
+            currency: 'INR',
+            payeeData: { offchainId: 'seller@bank' },
+          },
+        ],
+      },
+      undefined,
+      reader,
+      { upi: true },
+    );
+
+    expect(reader).toHaveBeenCalledWith('upi', 'INR');
+    expect(params.paymentMethodsOverride).toEqual([
+      '0xe99a5081226cbbff9440a63da5caa04fa30f210c12c4dd9976132ac075054cd9',
+    ]);
+    expect(params.conversionRates).toEqual([
+      [{ currency: 'INR', conversionRate: creationRate.rate1e18.toString() }],
+    ]);
+    expect(client.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: ['upi'],
+      payeeData: [{ offchainId: 'seller@bank' }],
+    });
+  });
+
   it.each([
     ['staging', '0x3355bb8CEFA54509d244384CFA7f2A71fdb1FDD6'],
     ['production', '0x83671606454fA72ba1e2831E18C5090D25629414'],
