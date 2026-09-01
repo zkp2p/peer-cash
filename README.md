@@ -13,7 +13,7 @@ the protocol contracts, a buyer pays them fiat and proves the payment, and the
 SDK gives the integrator a small set of typed verbs plus readable order state.
 No hosted widget, no provider custody, no quote engine to maintain.
 
-**[npm](https://www.npmjs.com/package/@zkp2p/cash)** · **[Lifecycle and recovery](docs/lifecycle-and-recovery.md)** · **[Agent integration manual](AGENTS.md)**
+**[npm](https://www.npmjs.com/package/@zkp2p/cash)** · **[Lifecycle and recovery](docs/lifecycle-and-recovery.md)** · **[Partner integrations](docs/partner-integrations.md)** · **[Agent integration manual](AGENTS.md)**
 
 ## Install
 

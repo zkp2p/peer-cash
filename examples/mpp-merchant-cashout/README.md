@@ -17,6 +17,9 @@ This example moved here from [wevm/mppx#798](https://github.com/wevm/mppx/pull/7
 after the MPP maintainers asked vendor-specific examples to live in the
 vendor's own repository.
 
+For the production state and custody checklist around this example, see the
+[partner integration patterns](../../docs/partner-integrations.md).
+
 ## Setup
 
 From a clone of `zkp2p/peer-cash`:
