@@ -39,6 +39,25 @@ describe('buildCapabilities', () => {
     expect(venmo?.currencies).toContain('USD');
   });
 
+  it('keeps staging UPI fail-closed unless explicitly enabled', () => {
+    expect(buildCapabilities('production', { upi: true }).platforms).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
+    );
+    expect(buildCapabilities('staging').platforms).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
+    );
+    expect(buildCapabilities('staging', { upi: true }).platforms).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          platform: 'upi',
+          currencies: ['INR'],
+          payeeHint: 'Any valid UPI ID from any bank (e.g. seller@bank)',
+          requiresIdentityAttestation: false,
+        }),
+      ]),
+    );
+  });
+
   it('presents generic Zelle as one platform', () => {
     const caps = buildCapabilities('production');
     const zelle = caps.platforms.filter((platform) => platform.platform.startsWith('zelle'));

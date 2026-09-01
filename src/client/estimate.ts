@@ -3,8 +3,8 @@
  * idempotent, cacheable.
  *
  * Existing corridors read the same Chainlink feed the protocol uses when an
- * intent is signaled. Alipay/CNY reads Chainlink's Ethereum feed and the SDK
- * fixes that fresh snapshot as the maker floor when it prepares the deposit.
+ * intent is signaled. Creation-rate corridors read Chainlink's Ethereum feed
+ * and fix that fresh snapshot as the maker floor when preparing the deposit.
  */
 import type { Address, PublicClient } from 'viem';
 import type { Zkp2pClient } from '@zkp2p/sdk';
@@ -12,7 +12,7 @@ import { CHAINLINK_ORACLE_FEEDS } from '@zkp2p/sdk';
 import type { CurrencyType } from '../sdk-types';
 import { USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
-import { readAlipayCnyCreationRate } from './creationRate';
+import { isCreationRateCorridor, readCashCreationRate } from './creationRate';
 import { errors } from './errors';
 import { MIN_CASHOUT_AMOUNT } from './capabilities';
 import { readFillEta, type CashFillEta } from './fillEta';
@@ -121,9 +121,10 @@ export async function readEstimate(
   } = {},
 ): Promise<CashEstimate> {
   const { currency } = input;
+  const creationRatePlatform =
+    input.platform ?? (currency === 'CNY' ? 'alipay' : currency === 'INR' ? 'upi' : undefined);
   const usesCreationRate =
-    currency === 'CNY' &&
-    (input.platform === undefined || input.platform.toLowerCase() === 'alipay');
+    creationRatePlatform !== undefined && isCreationRateCorridor(creationRatePlatform, currency);
   if (!isMarketRateSupported(currency) && !usesCreationRate) {
     throw errors.oracleUnsupportedCurrency(currency);
   }
@@ -155,7 +156,12 @@ export async function readEstimate(
   if (usesCreationRate) {
     if (!context.creationRateClient) throw errors.oracleUnsupportedCurrency(currency);
     try {
-      const snapshot = await readAlipayCnyCreationRate(context.creationRateClient, asOf);
+      const snapshot = await readCashCreationRate(
+        context.creationRateClient,
+        creationRatePlatform!,
+        currency,
+        asOf,
+      );
       rate = snapshot.rate;
       oracleUpdatedAt = snapshot.updatedAt;
     } catch (err) {

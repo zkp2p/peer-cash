@@ -4,6 +4,7 @@ import {
   CREATION_RATE_MAX_STALENESS_SECONDS,
   isCreationRateCorridor,
   readAlipayCnyCreationRate,
+  readCashCreationRate,
 } from '../src/client/creationRate';
 
 function clientFor(round: readonly [bigint, bigint, bigint, bigint, bigint]): PublicClient {
@@ -14,11 +15,26 @@ function clientFor(round: readonly [bigint, bigint, bigint, bigint, bigint]): Pu
   } as unknown as PublicClient;
 }
 
-describe('Alipay CNY creation rate', () => {
-  it('recognizes only the Alipay/CNY corridor', () => {
+describe('creation-time rates', () => {
+  it('recognizes Alipay/CNY and UPI/INR corridors', () => {
     expect(isCreationRateCorridor('alipay', 'CNY')).toBe(true);
     expect(isCreationRateCorridor('ALIPAY', 'cny')).toBe(true);
+    expect(isCreationRateCorridor('upi', 'INR')).toBe(true);
     expect(isCreationRateCorridor('wise', 'CNY')).toBe(false);
+  });
+
+  it('reads UPI/INR from the Chainlink INR denomination', async () => {
+    const now = 2_000_000_000;
+    const client = clientFor([1n, 1_200_000n, 0n, BigInt(now - 60), 1n]);
+    await readCashCreationRate(client, 'upi', 'INR', now);
+    expect(client.readContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: [
+          '0x0000000000000000000000000000000000000164',
+          '0x0000000000000000000000000000000000000348',
+        ],
+      }),
+    );
   });
 
   it('inverts Chainlink CNY/USD and rounds the maker floor up at 1e18', async () => {

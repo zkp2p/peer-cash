@@ -94,6 +94,25 @@ describe('readEstimate', () => {
     expect(estimate.binding).toBe('deposit-creation');
   });
 
+  it('estimates UPI/INR from the Ethereum creation-rate feed', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const creationRateClient = {
+      readContract: vi.fn(async ({ functionName }: { functionName: string }) =>
+        functionName === 'decimals' ? 8 : ([1n, 1_200_000n, 0n, BigInt(now - 60), 1n] as const),
+      ),
+    } as unknown as PublicClient;
+
+    const estimate = await readEstimate(
+      mockPublicClient(0n),
+      { amount: 1_000_000n, platform: 'upi', currency: 'INR' },
+      { creationRateClient },
+    );
+
+    expect(estimate.binding).toBe('deposit-creation');
+    expect(estimate.rate).toBeCloseTo(83.333333, 5);
+    expect(estimate.oracleUpdatedAt).toBe(now - 60);
+  });
+
   it('rejects CNY for a platform without the creation-time exception', async () => {
     await expect(
       readEstimate(mockPublicClient(0n), {

@@ -1,12 +1,6 @@
 /** Peer Cash - zero-spread deposit construction. */
 import type { Address } from 'viem';
-import {
-  currencyInfo,
-  getSpreadOracleConfig,
-  getPaymentMethodsCatalog,
-  getGatingServiceAddress,
-  resolvePaymentMethodHashFromCatalog,
-} from '@zkp2p/sdk';
+import { currencyInfo, getSpreadOracleConfig, getGatingServiceAddress } from '@zkp2p/sdk';
 import type {
   Zkp2pClient,
   CurrencyType,
@@ -27,6 +21,11 @@ import {
   ORACLE_MIN_CONVERSION_RATE_SENTINEL,
 } from './constants';
 import type { CashDepositInput, CashPayout } from './types';
+import {
+  getCashPaymentMethodsCatalog,
+  resolveCashPaymentMethodHash,
+  type CashCatalogFeatures,
+} from './paymentMethodCatalog';
 
 function payoutCurrencies(payout: CashPayout): readonly CurrencyType[] {
   if ((payout.currency === undefined) === (payout.currencies === undefined)) {
@@ -107,17 +106,18 @@ export async function prepareCashDepositParams(
   input: CashDepositInput,
   adapters?: OracleAdapterOverrides,
   creationRateReader?: CreationRateReader,
+  features?: CashCatalogFeatures,
 ): Promise<CreateDepositParamsArg> {
   const { payouts } = input;
   if (!payouts.length) throw new Error('At least one payout is required');
 
   const chainId = client.chainId;
   const runtimeEnv = client.runtimeEnv;
-  const catalog = getPaymentMethodsCatalog(chainId, runtimeEnv);
+  const catalog = getCashPaymentMethodsCatalog(runtimeEnv, features);
   const intentGatingService = getGatingServiceAddress(chainId, runtimeEnv) as Address;
   const processorNames = payouts.map((p) => p.processorName);
   const paymentMethodsOverride = processorNames.map((name) =>
-    resolvePaymentMethodHashFromCatalog(name, catalog),
+    resolveCashPaymentMethodHash(name, catalog),
   );
 
   // Validate every platform/currency pair before any network call.

@@ -94,6 +94,32 @@ for await (const order of cash.watch(depositId)) {
 }
 ```
 
+### Staging UPI cash-out
+
+UPI is an opt-in staging corridor until the payment method exists in production
+contracts. Any valid UPI ID from any bank can receive a cash-out. The seller
+does not connect a bank account, install an extension, or complete a separate
+registration flow:
+
+```ts
+const cash = createCashClient({
+  environment: 'staging',
+  features: { upi: true },
+});
+
+await cash.cashout(
+  {
+    amount: usdc(25),
+    receive: { platform: 'upi', currency: 'INR', payee: 'seller@bank' },
+  },
+  { signer },
+);
+```
+
+Buyers currently prove UPI payments from HDFC Bank through one-shot, read-only
+Gmail access. That buyer limitation does not restrict which bank issued the
+seller's UPI ID.
+
 ## Pick the right SDK
 
 Peer Cash and the general ZKP2P SDK serve different integration depths:
@@ -157,6 +183,7 @@ mixed historical deposit.
 | PayPal                | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
 | Cash App              | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
 | Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
+| UPI (staging opt-in)  | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
 | Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
 
 No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
@@ -447,6 +474,7 @@ is the default source and the only destination asset for cashout orders.
 Runnable first-party examples in [`examples/`](examples):
 
 - [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
+- [`upi-staging-cashout.ts`](examples/upi-staging-cashout.ts) - opt-in UPI/INR cash-out to any valid UPI ID on staging.
 - [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.
 - [`carpe-diem-provider-cashout`](examples/carpe-diem-provider-cashout) - cash out confirmed Carpe Diem provider DIEM revenue through the connected Base wallet.
 - [`mpp-merchant-cashout`](examples/mpp-merchant-cashout) - turn confirmed MPP merchant revenue into an unsigned Peer Cash plan while the merchant keeps custody and signing.

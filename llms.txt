@@ -38,6 +38,11 @@ Key facts:
   fillStats() separately.
 - capabilities() exposes one Zelle platform. A zelle cashout attaches only the
   generic Zelle payment method to the on-chain deposit.
+- UPI/INR is staging-only and fail-closed. Enable it with
+  `createCashClient({ environment: 'staging', features: { upi: true } })`.
+  Any valid UPI ID from any bank can receive without a seller login,
+  extension, identity attestation, or prior registration flow. Buyers
+  currently prove HDFC Bank payments through Gmail.
 - Resume any order from its depositId alone (composite escrow_onchainId).
 - One unwind verb: withdraw(depositId) - prunes expired intents automatically;
   pass amount for a partial withdrawal of the unlocked balance.

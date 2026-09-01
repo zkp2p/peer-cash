@@ -183,6 +183,12 @@ platforms outright: a previously registered handle can be reused with bare
 payee data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration is still
 needed.
 
+UPI is a staging-only opt-in until production contracts support it. Enable it
+with `features: { upi: true }` on a staging client. Accept any locally valid
+UPI ID from any bank; do not add a seller bank-login, extension, identity
+attestation, or pre-registration step. Buyers currently prove HDFC Bank UPI
+payments through Gmail.
+
 ## 4. Order management - indexer-native
 
 - A cash order IS a deposit; the chain is the database. No storage layer.
