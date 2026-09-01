@@ -103,7 +103,7 @@ select option{background:var(--c);color:var(--f)}
     <div id="error" class="warn hide"></div>
 
     <div id="details" class="hide">
-      <div class="drow"><span title="The final payout uses the live Chainlink market rate when a buyer fills your cash-out. This estimate is not a locked quote.">Market rate</span><b id="rate">…</b></div>
+      <div class="drow"><span title="The estimate shows its rate-binding point. Most corridors bind when a buyer signals; Alipay/CNY binds when the deposit is prepared.">Market rate</span><b id="rate">…</b></div>
       <div class="drow"><span title="Median time recent cash-outs on this platform and currency waited for their first fill, from the last 30 days of onchain history. Historical, not a guarantee.">Time to fill</span><b id="eta">Varies</b></div>
     </div>
 
@@ -112,7 +112,7 @@ select option{background:var(--c);color:var(--f)}
 
   <div id="success" class="hide">
     <h6>Cash-out started</h6>
-    <p class="sub">Your USDC is deposited onchain, waiting for a buyer. The buyer pays you fiat and proves the payment, and the protocol releases the USDC to them at the live oracle rate.</p>
+    <p class="sub">Your USDC is deposited onchain, waiting for a buyer. The buyer pays you fiat and proves the payment, and the protocol releases the USDC under the selected corridor's pricing terms.</p>
     <div id="orderAmount"></div>
     <div id="orderState"></div>
     <p id="orderExplain"></p>
@@ -130,7 +130,7 @@ select option{background:var(--c);color:var(--f)}
 <div class="card sect">
   <h6>The most decentralized way to offramp crypto to fiat</h6>
   <p><b>This app is a contract.</b> The markup, the styles, and the bundled @zkp2p/cash SDK are stored on Base as contract runtime bytecode, served back by an immutable ERC-5219 / ERC-4804 wrapper. No server, no IPFS, no build pipeline between you and the chain. Every other offramp is a website someone hosts. This frontend lives on the blockchain, and nothing can edit it or take it down. After <a href="https://github.com/z-fi/zFi" target="_blank" rel="noopener" style="color:inherit">zSwap by z0r0z</a>.</p>
-  <p class="q"><b>The protocol is peers, not a provider.</b> Your USDC sits in open contracts on Base until a buyer pays you fiat and proves the payment cryptographically; the contract then releases it at the live Chainlink rate with zero spread. There is no exchange or offramp company in the middle, and only you can withdraw an unmatched deposit.</p>
+  <p class="q"><b>The protocol is peers, not a provider.</b> Your USDC sits in open contracts on Base until a buyer pays you fiat and proves the payment cryptographically; the contract then releases it under zero-spread Chainlink pricing. There is no exchange or offramp company in the middle, and only you can withdraw an unmatched deposit.</p>
 </div>
 
 <div id="foot">

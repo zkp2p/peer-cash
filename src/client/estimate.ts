@@ -1,10 +1,10 @@
 /**
  * Estimate - currency + amount only. No payee, no side effects, no expiry,
- * idempotent, cacheable. "≈ at whatever the oracle says when a buyer fills."
+ * idempotent, cacheable.
  *
- * Reads the same Chainlink feed the protocol prices the deposit against, so
- * there is no external FX dependency. USD is a zero-address passthrough
- * (USDC ≈ USD). The binding rate resolves on-chain at fill time.
+ * Existing corridors read the same Chainlink feed the protocol uses when an
+ * intent is signaled. Alipay/CNY reads Chainlink's Ethereum feed and the SDK
+ * fixes that fresh snapshot as the maker floor when it prepares the deposit.
  */
 import type { Address, PublicClient } from 'viem';
 import type { Zkp2pClient } from '@zkp2p/sdk';
@@ -12,6 +12,7 @@ import { CHAINLINK_ORACLE_FEEDS } from '@zkp2p/sdk';
 import type { CurrencyType } from '../sdk-types';
 import { USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
+import { readAlipayCnyCreationRate } from './creationRate';
 import { errors } from './errors';
 import { MIN_CASHOUT_AMOUNT } from './capabilities';
 import { readFillEta, type CashFillEta } from './fillEta';
@@ -49,7 +50,7 @@ export interface EstimateInput {
   amount: bigint;
   /** Target fiat currency. */
   currency: CurrencyType;
-  /** Optional payout platform for platform-specific fill ETA sampling. */
+  /** Optional payout platform for pricing semantics and pair-specific ETA sampling. */
   platform?: string;
   /** Optional Relay EVM source asset. Omit for the current Base USDC default path. */
   source?: RelaySourceInput & {
@@ -79,8 +80,10 @@ export interface EstimateOptions {
 const DEFAULT_MAX_STALENESS_SECONDS = 86_400;
 
 export interface CashEstimate {
-  /** Always `'oracle-estimate'` - there is no committed quote in Peer Cash. */
+  /** Always `'oracle-estimate'`; inspect `binding` for when it becomes a maker floor. */
   kind: 'oracle-estimate';
+  /** When this estimate becomes the deposit's binding maker floor. */
+  binding?: 'intent-signal' | 'deposit-creation';
   currency: CurrencyType;
   /** Base USDC amount that Peer Cash would deposit after any source routing. */
   amount: bigint;
@@ -114,10 +117,14 @@ export async function readEstimate(
     etaReader?: (input: Parameters<typeof readFillEta>[1]) => Promise<CashFillEta>;
     includeEta?: boolean;
     relay?: RelayOptions;
+    creationRateClient?: PublicClient;
   } = {},
 ): Promise<CashEstimate> {
   const { currency } = input;
-  if (!isMarketRateSupported(currency)) {
+  const usesCreationRate =
+    currency === 'CNY' &&
+    (input.platform === undefined || input.platform.toLowerCase() === 'alipay');
+  if (!isMarketRateSupported(currency) && !usesCreationRate) {
     throw errors.oracleUnsupportedCurrency(currency);
   }
 
@@ -145,7 +152,16 @@ export async function readEstimate(
 
   let rate: number;
   let oracleUpdatedAt: number | undefined;
-  if (!feedConfig || feedConfig.feed.toLowerCase() === ZERO_ADDRESS) {
+  if (usesCreationRate) {
+    if (!context.creationRateClient) throw errors.oracleUnsupportedCurrency(currency);
+    try {
+      const snapshot = await readAlipayCnyCreationRate(context.creationRateClient, asOf);
+      rate = snapshot.rate;
+      oracleUpdatedAt = snapshot.updatedAt;
+    } catch (err) {
+      throw errors.oracleReadFailed(currency, err);
+    }
+  } else if (!feedConfig || feedConfig.feed.toLowerCase() === ZERO_ADDRESS) {
     // USD passthrough - USDC ≈ USD.
     rate = 1;
   } else {
@@ -177,6 +193,7 @@ export async function readEstimate(
 
   const estimate: CashEstimate = {
     kind: 'oracle-estimate',
+    binding: usesCreationRate ? 'deposit-creation' : 'intent-signal',
     currency,
     amount,
     rate,

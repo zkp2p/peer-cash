@@ -3,7 +3,7 @@
  *
  * Peer Cash is an async crypto→fiat offramp built on the maker/deposit side of
  * the protocol: the cashing-out user IS the maker. They create a deposit at the
- * live oracle/market rate (0% spread); a buyer (a standard taker) signals an
+ * zero-spread market rate; a buyer (a standard taker) signals an
  * intent, pays fiat, and proves it via the standard TEE-TLS flow, releasing the
  * user's crypto. The protocol is reused in its existing direction - no proof
  * inversion, no sell-side quote.
@@ -35,9 +35,8 @@ export const CASH_ACCESS_GROUP_IDS: Record<RuntimeEnv, readonly Hex[]> = {
 export const USDC_DECIMALS = 6;
 
 /**
- * Market rate = the live Chainlink oracle with **zero spread**. The user sets no
- * rate; selling at market is the fast-fill incentive (the deposit is the best
- * deal on the book, so buyers have reason to take it quickly).
+ * Signal-time oracle corridors use zero spread. Alipay/CNY instead fixes a
+ * fresh creation-time snapshot because Base has no CNY oracle adapter.
  */
 export const MARKET_SPREAD_BPS = 0;
 

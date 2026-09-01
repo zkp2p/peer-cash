@@ -28,6 +28,7 @@ export interface MethodCurrencyLike {
   rateSource?: string | null;
   oracleRate?: string | number | bigint | null;
   lastOracleUpdatedAt?: string | number | null;
+  minConversionRate?: string | number | bigint | null;
 }
 
 const ORACLE_KINDS = new Set(['oracle_chainlink', 'oracle_pyth']);
@@ -37,6 +38,7 @@ function toPricing(tuple: MethodCurrencyLike | undefined): CashPayoutPricing {
 
   const spreadBps = tuple.spreadBps != null ? Number(tuple.spreadBps) : undefined;
   const oracleRate = toBigIntOrUndefined(tuple.oracleRate);
+  const fixedRate = toBigIntOrUndefined(tuple.minConversionRate);
   const lastOracleUpdatedAt =
     tuple.lastOracleUpdatedAt != null ? Number(tuple.lastOracleUpdatedAt) : undefined;
 
@@ -51,6 +53,9 @@ function toPricing(tuple: MethodCurrencyLike | undefined): CashPayoutPricing {
       ? { lastOracleUpdatedAt }
       : {}),
     marketRate: spreadBps === 0 && tuple.kind != null && ORACLE_KINDS.has(tuple.kind),
+    ...(fixedRate !== undefined && fixedRate > 0n && tuple.kind == null
+      ? { fixedAtCreation: true, fixedRate: rateToNumber(fixedRate) }
+      : {}),
   };
 }
 

@@ -38,6 +38,7 @@ export { deriveBuyerProfile } from './buyerProfile';
 
 export {
   isMarketRateSupported,
+  isCashCorridorSupported,
   buildMarketRateCurrencyOverride,
   buildIntentAmountRange,
   prepareCashDepositParams,

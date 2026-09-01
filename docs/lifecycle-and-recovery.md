@@ -6,8 +6,10 @@ fills and ETA work, how unwinding works, and why every order survives a crash.
 ## The model: you are the maker
 
 A Peer Cash order is a **deposit** in the ZKP2P protocol. When you
-`cashout()`, Base USDC becomes protocol-held funds priced at the live Chainlink
-oracle rate with zero spread. A buyer (a standard protocol taker) _signals an
+`cashout()`, Base USDC becomes protocol-held funds priced from Chainlink with
+zero spread. Existing corridors bind the on-chain oracle at intent signal;
+Alipay/CNY fixes a fresh Ethereum Chainlink snapshot as the maker floor during
+deposit preparation. A buyer (a standard protocol taker) _signals an
 intent_ against your deposit, pays you fiat offchain (Venmo, Revolut, Wise,
 ...), and proves the payment via TEE-TLS. The protocol then releases your USDC
 to them.
@@ -186,9 +188,10 @@ then read that pair from `fillStats()` without coupling the two loading states.
 
 - **Buyer arrival time is market-driven.** A deposit at market rate should
   fill fast, but the ETA is only a recent historical sample.
-- **The binding rate resolves at fill time.** `estimate()` reads the same
-  Chainlink feed the escrow will read, but between estimate and fill the
-  market moves. `kind: 'oracle-estimate'` is the API telling you this.
+- **The binding point is explicit.** `estimate().binding` is `intent-signal`
+  for existing on-chain oracle corridors. Alipay/CNY returns
+  `deposit-creation`: its fresh Ethereum Chainlink snapshot becomes the
+  on-chain maker floor when the deposit is prepared.
 - **The label is display-ready.** Use `eta.label` in simple UIs; use
   `eta.seconds` only if you need your own formatting.
 
@@ -198,7 +201,7 @@ UI built on this SDK is a bug in that UI.
 ## Managing a live order
 
 - **Top up** - `topUp(depositId, amount)` adds USDC to a live order: same
-  payee, same market-rate pricing, no new registration. Closed orders reject
+  payee, same pricing configuration, no new registration. Closed orders reject
   with `ORDER_NOT_ACTIVE`; start a new `cashout()` instead.
 - **Partial withdrawal** - `withdraw(depositId, { amount })` pulls part of
   the _unlocked_ balance back out. A live buyer intent does not block it
@@ -233,17 +236,20 @@ divides by 100. The signal-time `fiatOwed` derives from `amount × rate` at
 same ceil-to-cent math, and the decode is verified against live production
 receipts.
 
-Orders also carry their `payouts` legs reconstructed from the chain -
-platform, currency, payee hash, and a pricing proof (`spreadBps: 0`,
-`kind: 'oracle_chainlink'`, `marketRate: true`): the zero-spread claim is a
-queryable fact, not marketing copy. An order created with several payout
-platforms (`receive` as an array of legs) surfaces one entry per
-platform-currency pair, every one of them at the zero-spread oracle rate.
+Orders also carry their `payouts` legs reconstructed from the chain - platform,
+currency, payee hash, and indexed pricing evidence. Existing corridors expose
+`spreadBps: 0`, an oracle `kind`, and `marketRate: true`; Alipay/CNY exposes
+`fixedAtCreation: true` and its `fixedRate`. An order created with several
+payout platforms (`receive` as an array of legs) surfaces one entry per
+platform-currency pair.
 
 Reconstruction is fail-closed: every payment method on the indexed deposit
-must resolve through the active SDK catalog, and the result must be exactly
-one zero-spread oracle payout. `orders()` excludes unsupported or mixed rows;
-`order()` returns `ORDER_NOT_FOUND` rather than partially reclassifying them.
+must resolve through the active SDK catalog. Oracle-priced rows retain the
+historical structural classification. Fixed Alipay/CNY rows must also carry the
+indexed `peer-cash` ERC-8021 attribution so unrelated Advanced Sell deposits
+cannot be mistaken for Cash orders. `orders()` excludes unsupported or mixed
+rows; `order()` returns `ORDER_NOT_FOUND` rather than partially reclassifying
+them.
 
 ## Who is this buyer?
 
@@ -322,15 +328,15 @@ explicit override.
 
 | Code                                    | Retryable | What happened / what to do                                                                                                                   |
 | --------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Currency has no Chainlink feed. Pick from `capabilities()`.                                                                                  |
-| `ORACLE_READ_FAILED`                    | yes       | The live Chainlink read failed. Retry through a healthy Base RPC; do not present a cached value as live.                                     |
+| `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Platform/currency corridor is unavailable. Pick a pair from `capabilities()`.                                                                |
+| `ORACLE_READ_FAILED`                    | yes       | A Chainlink read failed. Retry through the configured Base or creation-rate Ethereum RPC; do not present a cached value as fresh.            |
 | `UNSUPPORTED_PLATFORM`                  | no        | Platform is absent from this environment's catalog. Pick from `capabilities()`.                                                              |
 | `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | The platform does not support that currency. Use its `capabilities()` currencies.                                                            |
 | `AMOUNT_BELOW_MINIMUM`                  | no        | Amount is below the $0.01 hard floor. The recommended minimum is 1 USDC.                                                                     |
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Min/max is non-positive, inverted, or exceeds the deposit. Correct the range.                                                                |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | The currency set is empty or contains duplicates. Pass a non-empty unique set from `capabilities()`.                                         |
 | `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal payee needs an attestation from Peer web and its TEE browser extension; an existing registration can be reused.            |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal/Alipay payee needs an attestation from Peer web and its TEE browser extension; an existing registration can be reused.     |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
 | `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code. Current SDK flows never emit it.                                                                              |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |

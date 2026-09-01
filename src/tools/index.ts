@@ -93,7 +93,7 @@ const builtInCashTools = [
   {
     name: 'cash_capabilities',
     description:
-      'Discover what Peer Cash can do: payout platforms, oracle-priced currencies per platform, Base USDC destination, default Base USDC source, payee handle hints, and amount bounds. Opt into live Relay EVM or NEAR Intents source discovery.',
+      'Discover what Peer Cash can do: payout platforms, currencies and rate-binding semantics per platform, Base USDC destination, default Base USDC source, payee handle hints, and amount bounds. Opt into live Relay EVM or NEAR Intents source discovery.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -227,7 +227,7 @@ const builtInCashTools = [
   {
     name: 'cash_estimate',
     description:
-      'Estimate fiat received at the live oracle market rate and include a simple recent-fill ETA. Without source, amount is Base USDC. With source, the SDK first quotes source->Base USDC through Relay SDK, then estimates the cashout.',
+      'Estimate fiat received at the corridor market rate, including whether it binds at intent signal or deposit creation, plus a simple recent-fill ETA. Without source, amount is Base USDC. With source, the SDK first quotes source->Base USDC through Relay SDK, then estimates the cashout.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -287,7 +287,7 @@ const builtInCashTools = [
         amount: bigintString,
         receive: {
           description:
-            'Where the fiat should arrive: one payout leg, or an array of legs to offer several platforms (each platform at most once; every leg fills at the live oracle market rate)',
+            'Where the fiat should arrive: one payout leg, or an array of legs to offer several platforms (each platform at most once; consult cash_capabilities for each corridor binding point)',
           oneOf: [
             receiveLeg,
             {
@@ -410,7 +410,7 @@ export const cashToolManifest = {
   name: '@zkp2p/cash',
   version: packageJson.version,
   description:
-    'Peer Cash - offramp-only: route Relay EVM or NEAR Intents external-deposit source assets to Base USDC, then cash out to fiat at the live oracle market rate (0% spread). Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
+    'Peer Cash - offramp-only: route Relay EVM or NEAR Intents external-deposit source assets to Base USDC, then cash out to fiat at a zero-spread Chainlink market rate. Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 

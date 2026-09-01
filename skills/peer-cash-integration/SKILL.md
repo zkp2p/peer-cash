@@ -1,13 +1,13 @@
 ---
 name: peer-cash-integration
-description: Integrate Peer Cash (@zkp2p/cash) into any codebase - React app, Node service, or agent runtime. Covers the maker-inversion mental model, oracle-at-fill pricing, the verbs, indexer-native order tracking, the failure playbook, and the maker-side staging verification that proves the integration works. Use when adding crypto-to-fiat cash-out to a product or wiring the cash tools into an agent host.
+description: Integrate Peer Cash (@zkp2p/cash) into any codebase - React app, Node service, or agent runtime. Covers the maker-inversion mental model, corridor pricing and binding, the verbs, indexer-native order tracking, the failure playbook, and the maker-side staging verification that proves the integration works. Use when adding crypto-to-fiat cash-out to a product or wiring the cash tools into an agent host.
 ---
 
 # Peer Cash integration
 
 Onboard this codebase to `@zkp2p/cash`: an offramp-only SDK that routes Relay
 EVM assets or NEAR Intents 1Click external deposits into Base USDC, then cashes
-out Base USDC to fiat at the live Chainlink market rate (0% spread), with
+out Base USDC to fiat at a zero-spread Chainlink market rate, with
 protocol-held funds and no custodial off-ramp provider.
 
 ## 1. Mental model (read before writing code)
@@ -28,10 +28,12 @@ protocol-held funds and no custodial off-ramp provider.
   send once with the origin wallet, optionally register that existing hash,
   poll status to `SUCCESS`, reconcile Base evidence, then cash out Base-only.
   Browser integrations use a same-origin proxy so the 1Click JWT stays server-side.
-- **Oracle-at-fill pricing. There is no quote.** The deposit carries
-  `oracleRateConfig { spreadBps: 0 }`; the binding rate is whatever the
-  Chainlink feed says when a buyer fills. `estimate()` is deliberately named
-  - anything in your UI or agent output implying a locked rate is a bug.
+- **Pricing has an explicit binding point.** Existing corridors carry
+  `oracleRateConfig { spreadBps: 0 }`; the binding rate is the Chainlink rate
+  when a buyer signals. Alipay/CNY is the exception: because Base has no CNY
+  oracle adapter, the SDK reads Chainlink CNY/USD on Ethereum and fixes that
+  fresh snapshot as the maker floor during deposit preparation. Read
+  `estimate().binding` and `capabilities().platforms[].pricing`.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
 - **Restricted intent signaling.** If any payout leg uses Venmo or PayPal, a

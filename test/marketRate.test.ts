@@ -84,6 +84,45 @@ describe('prepareCashDepositParams', () => {
     expect(client.registerPayeeDetails).toHaveBeenCalledOnce();
   });
 
+  it('builds Alipay/CNY with a fixed creation-time floor and no Base oracle config', async () => {
+    const client = mockClient();
+    const creationRate = {
+      rate1e18: 6_724_400_000_000_000_000n,
+      rate: 6.7244,
+      updatedAt: 2_000_000_000,
+    };
+    const reader = vi.fn(async () => creationRate);
+
+    const params = await prepareCashDepositParams(
+      client,
+      {
+        amount: 5_000_000n,
+        payouts: [
+          {
+            processorName: 'alipay',
+            currency: 'CNY',
+            payeeData: { offchainId: 'seller@example.com' },
+          },
+        ],
+      },
+      undefined,
+      reader,
+    );
+
+    expect(reader).toHaveBeenCalledWith('alipay', 'CNY');
+    expect(params.conversionRates).toEqual([
+      [{ currency: 'CNY', conversionRate: creationRate.rate1e18.toString() }],
+    ]);
+    expect(params.currenciesOverride?.[0]?.[0]).toMatchObject({
+      minConversionRate: creationRate.rate1e18,
+    });
+    expect(params.currenciesOverride?.[0]?.[0]).not.toHaveProperty('oracleRateConfig');
+    expect(client.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: ['alipay'],
+      payeeData: [{ offchainId: 'seller@example.com' }],
+    });
+  });
+
   it.each([
     ['staging', '0x3355bb8CEFA54509d244384CFA7f2A71fdb1FDD6'],
     ['production', '0x83671606454fA72ba1e2831E18C5090D25629414'],

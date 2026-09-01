@@ -1,9 +1,11 @@
 # @zkp2p/cash
 
 Route Relay-supported EVM assets or NEAR Intents 1Click external deposits into
-Base USDC, then cash out to fiat on Venmo, Revolut, Wise, Zelle, and more at the
-live Chainlink market rate, with zero spread and no centralized off-ramp
-provider.
+Base USDC, then cash out to fiat on Venmo, Revolut, Wise, Alipay, Zelle, and
+more at a zero-spread Chainlink market rate with no centralized off-ramp
+provider. Existing corridors bind the live oracle when a buyer signals;
+Alipay/CNY fixes a fresh Ethereum Chainlink snapshot when the SDK prepares the
+deposit.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. The cashing-out user is the maker: their USDC becomes a deposit in
@@ -64,7 +66,8 @@ const fastFill = await cash.cashout(
 );
 
 // One order can also offer several platforms (each at most once). The buyer
-// picks the leg they can pay; every leg fills at the live oracle market rate.
+// picks the leg they can pay. Inspect capabilities().platforms[].pricing for
+// the exact rate-binding semantics of each corridor.
 const widestReach = await cash.cashout(
   {
     amount: usdc(1000),
@@ -76,6 +79,15 @@ const widestReach = await cash.cashout(
   { signer },
 );
 
+// Alipay/CNY is the explicit creation-time exception. New Alipay payees need
+// the identity attestation prepared by first-party Peer web.
+const alipayEstimate = await cash.estimate({
+  amount: usdc(1000),
+  platform: 'alipay',
+  currency: 'CNY',
+});
+// alipayEstimate.binding === 'deposit-creation'
+
 for await (const order of cash.watch(depositId)) {
   console.log(order.state, order.explain());
   if (order.state === 'delivered') break;
@@ -86,10 +98,10 @@ for await (const order of cash.watch(depositId)) {
 
 Peer Cash and the general ZKP2P SDK serve different integration depths:
 
-| Package       | Use it when                                       | Boundary                                                                                                                                                                                  |
-| ------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is the live Chainlink rate at fill with zero spread, and the SDK owns the resumable order lifecycle.    |
-| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
+| Package       | Use it when                                       | Boundary                                                                                                                                                                                                           |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is zero-spread Chainlink (signal-time by default; creation-time for Alipay/CNY), and the SDK owns the resumable order lifecycle. |
+| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices.                          |
 
 Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
 cannot express custom spreads, buyer-side proof flows, vaults, disputes, or
@@ -107,7 +119,7 @@ arbitrary protocol operations.
 | `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
 | `quoteNearIntentsSource(input)`                                | Signed 1Click quote with an origin-chain deposit address and optional memo                                                      |
 | `submitNearIntentsDeposit(input)` / `nearIntentsStatus(input)` | Optionally register an origin tx, then track 1Click delivery/refund evidence                                                    |
-| `estimate({ amount, currency }, { includeEta? })`              | Base USDC oracle estimate; optionally skip the historical ETA for progressive rendering                                         |
+| `estimate({ amount, currency, platform? }, { includeEta? })`   | Base USDC market-rate estimate with an explicit `binding`; optionally skip historical ETA                                       |
 | `cashout(input, { signer })`                                   | Creates the order with any viem wallet; restricted methods then attach the Peer Pay merchant policy                             |
 | `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then iterate `accessPolicyPaymentMethods` for follow-ups                         |
 | `prepareAccessPolicy(depositId, paymentMethod)`                | Prepare one post-deposit, method-scoped Peer Pay merchant policy transaction                                                    |
@@ -334,11 +346,15 @@ awaiting-buyer ──────────► matched ───────�
    returned ◄─────────────────┘
 ```
 
-- **You are the maker.** Your deposit is priced by the live Chainlink oracle
-  with `spreadBps: 0`, making it the best price a rational maker can offer.
-- **There is no quote.** The binding rate resolves at the oracle when a buyer
-  fills. `estimate()` says "approximately"; nothing in this API pretends to
-  lock a price.
+- **You are the maker.** Pricing is zero-spread. Existing corridors resolve
+  from the on-chain Chainlink oracle when a buyer signals an intent.
+- **Alipay/CNY binds earlier.** Base has no CNY oracle adapter, so the SDK reads
+  Chainlink CNY/USD on Ethereum, rejects stale or invalid data, and fixes the
+  resulting CNY-per-USDC maker floor when it prepares the deposit. A buyer may
+  signal at that floor or a better rate for the maker.
+- **Read `binding`.** `estimate().binding` is `intent-signal` by default and
+  `deposit-creation` for Alipay/CNY. An estimate remains approximate until its
+  stated binding point.
 - **ETA is historical.** `estimate().eta` is just `{ seconds, label }`, backed
   by the same rolling 30-day, intent-attributed pair sampler as `fillStats()`,
   measured from deposit creation to the first fulfilled fill through the pair.
