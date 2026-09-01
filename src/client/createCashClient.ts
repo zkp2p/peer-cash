@@ -11,6 +11,7 @@
  */
 import {
   createWalletClient,
+  createPublicClient,
   encodeFunctionData,
   http,
   parseAbi,
@@ -21,7 +22,7 @@ import {
   type Transport,
   type WalletClient,
 } from 'viem';
-import { base } from 'viem/chains';
+import { base, mainnet } from 'viem/chains';
 import {
   Zkp2pClient,
   getPaymentMethodsCatalog,
@@ -37,18 +38,13 @@ import {
   CASH_ORDER_STATUSES,
   CASH_RESTRICTED_PLATFORMS,
 } from '../engine/constants';
-import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
+import { isCashCorridorSupported, prepareCashDepositParams } from '../engine/marketRate';
 import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
 import { derivePayouts } from '../engine/payouts';
 import { deriveBuyerProfile } from '../engine/buyerProfile';
 import { toBigIntOrUndefined } from '../internal/convert';
 import { parseCompositeDepositId, resolveCashDepositId } from '../engine/resolveDeposit';
-import type {
-  CashBuyerProfile,
-  CashDepositInput,
-  CashOrder,
-  CashPayoutInfo,
-} from '../engine/types';
+import type { CashBuyerProfile, CashDepositInput, CashOrder } from '../engine/types';
 import {
   buildCapabilities,
   platformRequiresIdentityAttestation,
@@ -96,8 +92,12 @@ import {
   type NearIntentsStatus,
   type NearIntentsStatusInput,
 } from './nearIntents';
+import { isCreationRateCorridor, readAlipayCnyCreationRate } from './creationRate';
+import { createCashAttributionReader } from './attribution';
+import { isCashPayoutSet } from './classify';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
+const DEFAULT_ETHEREUM_RPC_URL = 'https://ethereum-rpc.publicnode.com';
 const FILL_STATS_CACHE_MS = 15 * 60 * 1000;
 
 /**
@@ -143,10 +143,16 @@ export interface CashClientOptions {
   rpcUrl?: string;
   /** Indexer URL override. */
   indexerUrl?: string;
+  /** Optional indexer API key. */
+  indexerApiKey?: string;
   /** Curator (ZKP2P API) URL override. */
   curatorUrl?: string;
   /** Optional ZKP2P API key. */
   apiKey?: string;
+  /** Ethereum transport used only to snapshot Alipay/CNY's creation-time rate. */
+  creationRateTransport?: Transport;
+  /** Convenience alternative to `creationRateTransport`. */
+  creationRateRpcUrl?: string;
   /** Relay API configuration for source assets outside Base USDC. */
   relay?: RelayOptions;
   /** NEAR Intents 1Click configuration for externally funded source routes. */
@@ -205,7 +211,8 @@ export interface CashoutInput {
   /**
    * Where the fiat should arrive. One leg, or an array of legs to offer the
    * buyer several payout platforms (each platform at most once). One method
-   * may offer multiple currencies; every leg fills at the live oracle rate.
+   * may offer multiple currencies. Inspect `capabilities().platforms[].pricing`
+   * for whether a corridor binds at intent signal or deposit preparation.
    */
   receive: CashReceiveLeg | readonly [CashReceiveLeg, ...CashReceiveLeg[]];
   /** Per-order min/max override (USDC base units). */
@@ -530,6 +537,17 @@ function depositOrderOptions(deposit: DepositAggregatesWithQuality): DeriveCashO
 export function createCashClient(options: CashClientOptions): CashClient {
   const { environment } = options;
   const transport = options.transport ?? http(options.rpcUrl ?? DEFAULT_RPC_URL);
+  const creationRateTransport =
+    options.creationRateTransport ?? http(options.creationRateRpcUrl ?? DEFAULT_ETHEREUM_RPC_URL);
+  const creationRateClient = createPublicClient({
+    chain: mainnet,
+    transport: creationRateTransport,
+  });
+  const readCashAttribution = createCashAttributionReader({
+    environment,
+    ...(options.indexerUrl ? { indexerUrl: options.indexerUrl } : {}),
+    ...(options.indexerApiKey ? { indexerApiKey: options.indexerApiKey } : {}),
+  });
 
   // ERC-8021: 'peer-cash' first, then the one financially meaningful referral
   // marker, then analytics codes. The SDK appends the Base builder code last.
@@ -554,6 +572,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       rpcTransport: transport,
       ...(options.rpcUrl ? { rpcUrl: options.rpcUrl } : {}),
       ...(options.indexerUrl ? { indexerUrl: options.indexerUrl } : {}),
+      ...(options.indexerApiKey ? { indexerApiKey: options.indexerApiKey } : {}),
       ...((options.curatorUrl ?? DEFAULT_CURATOR_URLS[environment])
         ? { baseApiUrl: options.curatorUrl ?? DEFAULT_CURATOR_URLS[environment] }
         : {}),
@@ -636,7 +655,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         throw errors.invalidPayoutCurrencies(leg.platform, 'currencies must be unique');
       }
       for (const currency of currencies) {
-        if (!isMarketRateSupported(currency)) {
+        if (!isCashCorridorSupported(leg.platform, currency)) {
           throw errors.oracleUnsupportedCurrency(currency);
         }
         if (!platform.currencies.includes(currency)) {
@@ -673,21 +692,33 @@ export function createCashClient(options: CashClientOptions): CashClient {
     };
   }
 
-  function isCashPayoutSet(payouts: readonly CashPayoutInfo[]): boolean {
-    // The product invariant, verifiable from indexed data alone: every payout
-    // leg (one or several platforms) is priced by an oracle at zero spread.
-    return (
-      payouts.length > 0 &&
-      payouts.every((payout) => payout.pricing.marketRate && payout.pricing.spreadBps === 0)
-    );
+  function hasCreationRateCorridor(input: CashDepositInput): boolean {
+    return input.payouts.some((payout) => {
+      const currencies = payout.currencies ?? (payout.currency ? [payout.currency] : []);
+      return currencies.some((currency) => isCreationRateCorridor(payout.processorName, currency));
+    });
   }
 
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
     try {
-      return await prepareCashDepositParams(client, depositInput);
+      return await prepareCashDepositParams(
+        client,
+        depositInput,
+        undefined,
+        async (platform, currency) => {
+          if (!isCreationRateCorridor(platform, currency)) {
+            throw new Error(`No creation-time rate reader for ${platform}/${currency}`);
+          }
+          try {
+            return await readAlipayCnyCreationRate(creationRateClient);
+          } catch (err) {
+            throw errors.oracleReadFailed(currency, err);
+          }
+        },
+      );
     } catch (err) {
       if (isCashError(err)) throw err;
-      // The curator rejects Wise/PayPal payees that lack a signed attestation.
+      // The curator rejects Wise/PayPal/Alipay payees that lack a signed attestation.
       const message = err instanceof Error ? err.message : String(err);
       if (/identityAttestation is required|identity attestation/i.test(message)) {
         const platforms = depositInput.payouts.map((payout) => payout.processorName);
@@ -746,7 +777,17 @@ export function createCashClient(options: CashClientOptions): CashClient {
       deposit.currencies ?? [],
       getPaymentMethodsCatalog(BASE_CHAIN_ID, environment),
     );
-    if (!isCashPayoutSet(payouts)) throw errors.orderNotFound(compositeId);
+    let attributedToCash = false;
+    if (!isCashPayoutSet(payouts)) {
+      try {
+        attributedToCash = (await readCashAttribution([compositeId])).has(
+          compositeId.toLowerCase(),
+        );
+      } catch (err) {
+        throw errors.indexerUnavailable('cash attribution', err);
+      }
+    }
+    if (!isCashPayoutSet(payouts, attributedToCash)) throw errors.orderNotFound(compositeId);
 
     return deriveCashOrder(compositeId, deposit.intents ?? [], {
       ...depositOrderOptions(deposit),
@@ -1172,6 +1213,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           ? { includeEta: estimateOptions.includeEta }
           : {}),
         etaReader: async (etaInput) => fillEtaFromSample(await getFillStatsSample(), etaInput),
+        creationRateClient,
         ...(options.relay ? { relay: options.relay } : {}),
       });
     },
@@ -1215,7 +1257,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         }
         const cashoutAmount = relayQuote.outputAmount;
         const depositInput = validateDepositInput(cashoutAmount, input, payoutInput);
-        const params = await buildDepositParams(client, depositInput);
+        let params = await buildDepositParams(client, depositInput);
 
         // Spender must be the escrow createDeposit will target - the default can
         // point at the legacy escrow while deposits go to EscrowV2.
@@ -1251,6 +1293,17 @@ export function createCashClient(options: CashClientOptions): CashClient {
             routedSource,
             mapChainError('resolve same-chain Relay nonce', err),
           );
+        }
+
+        // Relay can take long enough that a preflight snapshot no longer
+        // represents deposit creation. Refresh fixed-at-creation corridors
+        // after Base funds arrive and preserve source-route recovery context.
+        if (hasCreationRateCorridor(depositInput)) {
+          try {
+            params = await buildDepositParams(client, depositInput);
+          } catch (err) {
+            throw errors.sourceRouteCompletedCashoutFailed(routedSource, err);
+          }
         }
         const attributedParams = { ...params, txOverrides: attribution };
         // Submit the deposit; one retry for the replica-lag case the allowance
@@ -1509,6 +1562,27 @@ export function createCashClient(options: CashClientOptions): CashClient {
       }
       const catalog = getPaymentMethodsCatalog(BASE_CHAIN_ID, environment);
 
+      let attributedCashDeposits = new Set<string>();
+      const fixedRateCandidates = deposits.filter((deposit) => {
+        const payouts = derivePayouts(
+          deposit.paymentMethods ?? [],
+          deposit.currencies ?? [],
+          catalog,
+        );
+        return (
+          !isCashPayoutSet(payouts) && payouts.some((payout) => payout.pricing.fixedAtCreation)
+        );
+      });
+      if (fixedRateCandidates.length > 0) {
+        try {
+          attributedCashDeposits = await readCashAttribution(
+            fixedRateCandidates.map((deposit) => deposit.id),
+          );
+        } catch (err) {
+          throw errors.indexerUnavailable('cash attribution', err);
+        }
+      }
+
       const derived = deposits
         .flatMap((deposit) => {
           if (deposit.token.toLowerCase() !== BASE_USDC_ADDRESS.toLowerCase()) return [];
@@ -1517,10 +1591,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
             deposit.currencies ?? [],
             catalog,
           );
-          // ERC-8021 attribution is not indexed, so the strongest on-chain
-          // identity is the product invariant: every Base-USDC payout leg at a
-          // zero-spread oracle rate. Exclude unrelated fixed-rate/vault rows.
-          if (!isCashPayoutSet(payouts)) {
+          if (!isCashPayoutSet(payouts, attributedCashDeposits.has(deposit.id.toLowerCase()))) {
             return [];
           }
           return [

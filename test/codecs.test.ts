@@ -105,6 +105,32 @@ describe('order codec', () => {
     expect(restored.explain()).toBe(order.explain());
   });
 
+  it('round-trips fixed-at-creation payout evidence', () => {
+    const fixedOrder = {
+      ...order,
+      payouts: [
+        {
+          platform: 'alipay',
+          platformHash: '0xplatform',
+          currency: 'CNY',
+          currencyHash: '0xcurrency',
+          payeeHash: '0xpayee',
+          active: true,
+          pricing: {
+            marketRate: false,
+            fixedAtCreation: true,
+            fixedRate: 6.7244,
+            rateSource: 'ESCROW_FLOOR',
+          },
+        },
+      ],
+    };
+
+    expect(orderFromJson(orderToJson(fixedOrder)).payouts?.[0]?.pricing).toEqual(
+      fixedOrder.payouts[0]?.pricing,
+    );
+  });
+
   it('schema rejects malformed bigint strings', () => {
     const bad = { ...orderToJson(order), totalAmount: '12.5' };
     expect(cashOrderJsonSchema.safeParse(bad).success).toBe(false);

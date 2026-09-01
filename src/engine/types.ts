@@ -66,9 +66,9 @@ export interface CashFill {
   prunedAt?: number;
 }
 
-/** Pricing state of one payout tuple - the zero-spread claim, verifiable from indexed data. */
+/** Pricing state of one payout tuple, reconstructed from indexed data. */
 export interface CashPayoutPricing {
-  /** Depositor-configured spread markup in basis points (0 for every cash order). */
+  /** Depositor-configured oracle spread in basis points (0 on oracle Cash corridors). */
   spreadBps?: number;
   /** Oracle kind, e.g. `'oracle_chainlink'`. */
   kind?: string;
@@ -78,8 +78,12 @@ export interface CashPayoutPricing {
   oracleRate?: number;
   /** Unix seconds of the last accepted oracle snapshot. */
   lastOracleUpdatedAt?: number;
-  /** True when the tuple is priced by an oracle at zero spread - the Peer Cash invariant. */
+  /** True when the tuple is priced by an oracle at zero spread. */
   marketRate: boolean;
+  /** True when the maker floor was fixed from a fresh rate snapshot at deposit creation. */
+  fixedAtCreation?: boolean;
+  /** Fixed maker floor in fiat units per USDC. */
+  fixedRate?: number;
 }
 
 /** One payout leg reconstructed from the chain - platform, currency, payee hash, pricing. */

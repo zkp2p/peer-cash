@@ -17,7 +17,7 @@ export interface UseEstimateOptions {
   /** Amount to convert, USDC base units. Estimate is skipped while null/0. */
   amount: bigint | null | undefined;
   currency: CurrencyType | null | undefined;
-  /** Optional payout platform for platform-specific ETA sampling. */
+  /** Optional payout platform for corridor pricing and pair-specific ETA sampling. */
   platform?: string | null | undefined;
   /** Optional Relay source. Omit for the Base USDC default path. */
   source?: EstimateInput['source'] | null | undefined;
@@ -28,9 +28,9 @@ export interface UseEstimateOptions {
 }
 
 /**
- * Live market-rate estimate for a screen-1 display. The figure is a `≈`
- * estimate; the binding rate resolves at the Chainlink oracle when a buyer
- * fills - there is no committed quote to show.
+ * Market-rate estimate for a screen-1 display. The figure is a `≈` estimate;
+ * inspect `estimate.binding` for whether it binds at intent signal or, for
+ * Alipay/CNY, deposit preparation.
  */
 export function useEstimate({
   client,

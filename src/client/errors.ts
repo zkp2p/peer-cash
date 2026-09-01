@@ -140,9 +140,9 @@ export const errors = {
   oracleUnsupportedCurrency: (currency: string) =>
     new CashError({
       code: 'ORACLE_UNSUPPORTED_CURRENCY',
-      message: `${currency} has no live Chainlink oracle feed; Peer Cash is market-rate only.`,
+      message: `${currency} is not available in this Peer Cash payout corridor.`,
       retryable: false,
-      remediation: `Pick a currency listed in capabilities() - each one is priced by a live oracle feed.`,
+      remediation: `Pick a platform and currency listed together in capabilities().`,
     }),
   oracleReadFailed: (currency: string, cause?: unknown) =>
     new CashError(
@@ -150,7 +150,7 @@ export const errors = {
         code: 'ORACLE_READ_FAILED',
         message: `The ${currency} market-rate oracle could not be read.`,
         retryable: true,
-        remediation: `Retry the estimate shortly or use another healthy Base RPC. Do not present a cached value as a live market rate.`,
+        remediation: `Retry shortly or configure a healthy RPC for this corridor. Do not present a cached value as a fresh market rate.`,
       },
       { cause },
     ),

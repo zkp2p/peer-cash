@@ -1,11 +1,12 @@
 /**
- * Discovery - sync, static. Platforms × currencies × oracle support × amount
- * bounds × payee format hints, all derivable without a network call.
+ * Discovery - sync, static. Platforms × currencies × pricing semantics ×
+ * amount bounds × payee format hints, all derivable without a network call.
  */
 import { getPaymentMethodsCatalog, getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
+import { isCreationRateCorridor } from './creationRate';
 import type { CashSourceCapabilities } from './relay';
 import type { NearIntentsSourceCapabilities } from './nearIntents';
 
@@ -30,6 +31,7 @@ const PAYEE_HINTS: Record<string, string> = {
   chime: 'ChimeSign (e.g. $andrew)',
   luxon: 'Luxon Pay ID or account email',
   n26: 'MoneyBeam email or phone number',
+  alipay: 'Email address linked to your Alipay account',
 };
 
 /**
@@ -38,18 +40,24 @@ const PAYEE_HINTS: Record<string, string> = {
  * attestation; first-party Peer web obtains it through the Peer TEE browser
  * extension. An existing registered handle can be reused with bare payee data.
  */
-const IDENTITY_ATTESTATION_PLATFORMS = new Set(['wise', 'paypal']);
+const IDENTITY_ATTESTATION_PLATFORMS = new Set(['wise', 'paypal', 'alipay']);
+
+export type CashCorridorPricing =
+  | { kind: 'oracle-at-intent-signal'; spreadBps: 0 }
+  | { kind: 'fixed-at-deposit-creation'; source: 'chainlink-ethereum'; spreadBps: 0 };
 
 /** Whether a platform's curator registration needs a signed identity attestation. */
 export function platformRequiresIdentityAttestation(platform: string): boolean {
-  return IDENTITY_ATTESTATION_PLATFORMS.has(platform);
+  return IDENTITY_ATTESTATION_PLATFORMS.has(platform.toLowerCase());
 }
 
 export interface CashPlatformCapability {
   /** Platform id, e.g. `'venmo'` - the value `receive.platform` accepts. */
   platform: string;
-  /** Market-rate (oracle-priced) currencies this platform can pay out. */
+  /** Supported currencies this platform can pay out. */
   currencies: CurrencyType[];
+  /** Pricing semantics for each advertised currency. */
+  pricing: Partial<Record<CurrencyType, CashCorridorPricing>>;
   /** Human hint for the payee handle format. */
   payeeHint: string;
   /**
@@ -84,13 +92,13 @@ export interface CashCapabilities {
     relay?: CashSourceCapabilities;
     nearIntents?: NearIntentsSourceCapabilities;
   };
-  /** Every payout corridor: platform × oracle-priced currencies. */
+  /** Every payout corridor supported by the Cash product. */
   platforms: CashPlatformCapability[];
-  /** All oracle-priced (market-rate) currencies across platforms. */
+  /** All supported currencies across platforms. */
   currencies: CurrencyType[];
   /** Amount bounds in USDC base units. */
   amount: { min: bigint; recommendedMin: bigint; max: null };
-  /** Pricing is always the live oracle at fill time - never a committed quote. */
+  /** Default pricing for corridors without a platform-level creation-time exception. */
   pricing: { kind: 'oracle-market-rate'; spreadBps: 0 };
 }
 
@@ -103,11 +111,25 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
         .map((hash) => getCurrencyCodeFromHash(hash))
         .filter(
           (code): code is CurrencyType =>
-            code != null && isMarketRateSupported(code as CurrencyType),
+            code != null &&
+            (isMarketRateSupported(code as CurrencyType) || isCreationRateCorridor(platform, code)),
         );
+      const uniqueCurrencies = [...new Set(currencies)].sort();
       return {
         platform,
-        currencies: [...new Set(currencies)].sort(),
+        currencies: uniqueCurrencies,
+        pricing: Object.fromEntries(
+          uniqueCurrencies.map((currency) => [
+            currency,
+            isCreationRateCorridor(platform, currency)
+              ? {
+                  kind: 'fixed-at-deposit-creation' as const,
+                  source: 'chainlink-ethereum' as const,
+                  spreadBps: 0 as const,
+                }
+              : { kind: 'oracle-at-intent-signal' as const, spreadBps: 0 as const },
+          ]),
+        ),
         payeeHint: PAYEE_HINTS[platform] ?? 'Your payment handle for this platform',
         requiresIdentityAttestation: IDENTITY_ATTESTATION_PLATFORMS.has(platform),
         requiresAtomicAccessPolicy: false,

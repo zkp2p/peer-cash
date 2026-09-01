@@ -42,7 +42,17 @@ export {
   MIN_CASHOUT_AMOUNT,
   RECOMMENDED_MIN_CASHOUT_AMOUNT,
 } from './client/capabilities';
-export type { CashCapabilities, CashPlatformCapability } from './client/capabilities';
+export type {
+  CashCapabilities,
+  CashCorridorPricing,
+  CashPlatformCapability,
+} from './client/capabilities';
+export {
+  CREATION_RATE_MAX_STALENESS_SECONDS,
+  isCreationRateCorridor,
+  readAlipayCnyCreationRate,
+} from './client/creationRate';
+export type { CreationRateReader, CreationRateSnapshot } from './client/creationRate';
 export type { CashEstimate, EstimateInput, EstimateOptions } from './client/estimate';
 export type {
   CashAsset,

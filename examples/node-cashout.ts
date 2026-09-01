@@ -9,7 +9,7 @@
  * set CASH_KEEP_OPEN=1 for that behavior.
  *
  * The curator validates supported handles against the live platform, so the
- * payee must be a real account. A new Wise/PayPal registration also needs the
+ * payee must be a real account. A new Wise/PayPal/Alipay registration also needs the
  * identity attestation obtained by Peer web through the Peer TEE browser
  * extension; an existing registered handle can be reused. This private-key EOA
  * works directly with every supported platform;
@@ -27,7 +27,7 @@ const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
 const signer = createWalletClient({ account, chain: base, transport: http() });
 
 // One leg here; `receive` also accepts an array of legs to offer several
-// platforms on one order (each platform at most once, all at the oracle rate).
+// platforms on one order. Read capabilities() for each corridor's binding point.
 const receive = {
   platform: process.env.CASH_PLATFORM ?? 'venmo',
   currency: (process.env.CASH_CURRENCY ?? 'USD') as CurrencyType,

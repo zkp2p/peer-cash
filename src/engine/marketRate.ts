@@ -1,12 +1,4 @@
-/**
- * Peer Cash - market-rate (0% spread) deposit construction.
- *
- * The user sells at the prevailing live Chainlink oracle rate with `spreadBps: 0`.
- * This requires EscrowV2 "override mode" (the only `createDeposit` path that can
- * attach an `oracleRateConfig`), so we build the three override arrays ourselves
- * - exactly mirroring the SDK's auto-mode (`data: '0x'`, gating service, payee
- * hash) but injecting the oracle config.
- */
+/** Peer Cash - zero-spread deposit construction. */
 import type { Address } from 'viem';
 import {
   currencyInfo,
@@ -24,6 +16,11 @@ import type {
   CreateDepositParamsArg,
 } from '../sdk-types';
 import {
+  isCreationRateCorridor,
+  type CreationRateReader,
+  type CreationRateSnapshot,
+} from '../client/creationRate';
+import {
   BASE_USDC_ADDRESS,
   CASH_RETAIN_ON_EMPTY,
   MARKET_SPREAD_BPS,
@@ -39,15 +36,23 @@ function payoutCurrencies(payout: CashPayout): readonly CurrencyType[] {
 }
 
 /**
- * Whether a currency can be priced at the live market rate. Only currencies with
- * a Chainlink feed (`supportsSpreadOracle`) get oracle pricing; others would fall
- * back to a fixed rate, which Peer Cash does not offer.
+ * Whether a currency can use the signal-time on-chain market rate. Only
+ * currencies with a Chainlink feed (`supportsSpreadOracle`) qualify.
  */
 export function isMarketRateSupported(
   currency: CurrencyType,
   adapters?: OracleAdapterOverrides,
 ): boolean {
   return getSpreadOracleConfig(currency, adapters) != null;
+}
+
+/** Whether Cash can construct this exact platform/currency corridor. */
+export function isCashCorridorSupported(
+  platform: string,
+  currency: CurrencyType,
+  adapters?: OracleAdapterOverrides,
+): boolean {
+  return isMarketRateSupported(currency, adapters) || isCreationRateCorridor(platform, currency);
 }
 
 /**
@@ -89,17 +94,19 @@ export function buildIntentAmountRange(amount: bigint): { min: bigint; max: bigi
 }
 
 /**
- * Prepare the full `createDeposit` params for a market-rate cash-out.
+ * Prepare the full `createDeposit` params for a zero-spread cash-out.
  *
  * Registers payee details with the curator (no auth), resolves payment-method
  * hashes + the gating service from the catalog, and assembles the override
- * arrays with `spreadBps: 0` oracle configs. Throws if any payout currency lacks
- * a live oracle feed (Peer Cash is market-rate only).
+ * arrays with signal-time oracle configs. Alipay/CNY is the explicit exception:
+ * it fixes a fresh Chainlink Ethereum snapshot as the maker floor because Base
+ * has no CNY oracle adapter.
  */
 export async function prepareCashDepositParams(
   client: Zkp2pClient,
   input: CashDepositInput,
   adapters?: OracleAdapterOverrides,
+  creationRateReader?: CreationRateReader,
 ): Promise<CreateDepositParamsArg> {
   const { payouts } = input;
   if (!payouts.length) throw new Error('At least one payout is required');
@@ -113,7 +120,7 @@ export async function prepareCashDepositParams(
     resolvePaymentMethodHashFromCatalog(name, catalog),
   );
 
-  // Validate every platform/currency pair is supported and oracle-priceable before any network call.
+  // Validate every platform/currency pair before any network call.
   for (const payout of payouts) {
     const currencies = payoutCurrencies(payout);
     if (currencies.length === 0 || new Set(currencies).size !== currencies.length) {
@@ -125,15 +132,29 @@ export async function prepareCashDepositParams(
       ),
     );
     for (const currency of currencies) {
-      if (!isMarketRateSupported(currency, adapters)) {
+      if (!isCashCorridorSupported(payout.processorName, currency, adapters)) {
         throw new Error(
-          `${currency} has no live market-rate oracle feed; Peer Cash supports market-rate currencies only.`,
+          `${payout.processorName}/${currency} has no live oracle or supported creation-time rate.`,
         );
       }
       const currencyHash = currencyInfo[currency]?.currencyCodeHash;
       if (!currencyHash || !supportedCurrencyHashes.has(currencyHash.toLowerCase())) {
         throw new Error(`${payout.processorName} does not support ${currency}`);
       }
+    }
+  }
+
+  const creationRates = new Map<string, CreationRateSnapshot>();
+  for (const payout of payouts) {
+    for (const currency of payoutCurrencies(payout)) {
+      if (!isCreationRateCorridor(payout.processorName, currency)) continue;
+      if (!creationRateReader) {
+        throw new Error(
+          `A creation-time rate reader is required for ${payout.processorName}/${currency}`,
+        );
+      }
+      const key = `${payout.processorName.toLowerCase()}:${currency}`;
+      creationRates.set(key, await creationRateReader(payout.processorName, currency));
     }
   }
 
@@ -154,6 +175,17 @@ export async function prepareCashDepositParams(
 
   const currenciesOverride: OnchainCurrency[][] = payouts.map((payout) =>
     payoutCurrencies(payout).map((currency) => {
+      if (isCreationRateCorridor(payout.processorName, currency)) {
+        const snapshot = creationRates.get(`${payout.processorName.toLowerCase()}:${currency}`);
+        if (!snapshot || snapshot.rate1e18 <= 0n) {
+          throw new Error(
+            `Failed to build creation-time rate for ${payout.processorName}/${currency}`,
+          );
+        }
+        const code = currencyInfo[currency]?.currencyCodeHash as `0x${string}` | undefined;
+        if (!code) throw new Error(`Missing on-chain currency code for ${currency}`);
+        return { code, minConversionRate: snapshot.rate1e18 } as OnchainCurrency;
+      }
       const tuple = buildMarketRateCurrencyOverride(currency, adapters);
       if (!tuple) throw new Error(`Failed to build market-rate config for ${currency}`);
       return tuple;
@@ -165,7 +197,11 @@ export async function prepareCashDepositParams(
   const conversionRates = payouts.map((payout) =>
     payoutCurrencies(payout).map((currency) => ({
       currency,
-      conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString(),
+      conversionRate: isCreationRateCorridor(payout.processorName, currency)
+        ? creationRates
+            .get(`${payout.processorName.toLowerCase()}:${currency}`)!
+            .rate1e18.toString()
+        : ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString(),
     })),
   );
 

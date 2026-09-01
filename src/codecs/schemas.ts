@@ -299,6 +299,8 @@ export const cashPayoutPricingJsonSchema = z.object({
   oracleRate: z.number().optional(),
   lastOracleUpdatedAt: z.number().optional(),
   marketRate: z.boolean(),
+  fixedAtCreation: z.boolean().optional(),
+  fixedRate: z.number().optional(),
 });
 
 export const cashPayoutInfoJsonSchema = z.object({
@@ -344,6 +346,7 @@ export const cashOrderJsonSchema = z.object({
 
 export const cashEstimateJsonSchema = z.object({
   kind: z.literal('oracle-estimate'),
+  binding: z.enum(['intent-signal', 'deposit-creation']).optional(),
   currency: z.string(),
   amount: nonNegativeBigintString,
   rate: z.number(),
@@ -525,6 +528,19 @@ export const cashCapabilitiesJsonSchema = z.object({
       platform: z.string(),
       currencies: z.array(z.string()),
       payeeHint: z.string(),
+      pricing: z
+        .record(
+          z.string(),
+          z.union([
+            z.object({ kind: z.literal('oracle-at-intent-signal'), spreadBps: z.literal(0) }),
+            z.object({
+              kind: z.literal('fixed-at-deposit-creation'),
+              source: z.literal('chainlink-ethereum'),
+              spreadBps: z.literal(0),
+            }),
+          ]),
+        )
+        .optional(),
       requiresIdentityAttestation: z.boolean(),
       requiresAtomicAccessPolicy: z.boolean().optional(),
     }),

@@ -628,6 +628,14 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
     platforms: parsed.platforms.map((p) => ({
       ...p,
       currencies: p.currencies as CurrencyType[],
+      pricing:
+        p.pricing ??
+        Object.fromEntries(
+          p.currencies.map((currency) => [
+            currency,
+            { kind: 'oracle-at-intent-signal' as const, spreadBps: 0 as const },
+          ]),
+        ),
       requiresAtomicAccessPolicy: false,
     })),
     currencies: parsed.currencies as CurrencyType[],

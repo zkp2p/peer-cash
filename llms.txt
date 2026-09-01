@@ -2,8 +2,8 @@
 
 > Offramp-only SDK for the ZKP2P protocol: route Relay-supported EVM assets or
 > NEAR Intents 1Click external deposits to Base USDC, then cash out to fiat
-> (Venmo, Revolut, Wise, Zelle, ...)
-> at the live Chainlink oracle market rate with zero spread and no centralized
+> (Venmo, Revolut, Wise, Alipay, Zelle, ...)
+> at a zero-spread Chainlink market rate with no centralized
 > off-ramp provider. The user is the maker, a buyer pays them fiat and proves
 > the payment, and the SDK exposes readable order state.
 > Base-USDC flows are serializable through prepare paths; source-routed cashout
@@ -23,8 +23,9 @@ Key facts:
   address/memo, and deadline; send once with the origin wallet; optionally
   submit that existing hash; poll status to SUCCESS; reconcile Base evidence;
   then cash out Base-only. Use EXACT_OUTPUT when the order amount must be fixed.
-- There is NO locked fiat quote. estimate() reads the oracle; the binding rate
-  resolves at fill time. ETA is `{ seconds, label }` from the same rolling
+- estimate() reports its binding point. Existing corridors bind the on-chain
+  oracle when an intent is signaled; Alipay/CNY fixes a fresh Ethereum
+  Chainlink snapshot during deposit preparation. ETA is `{ seconds, label }` from the same rolling
   30-day, intent-attributed pair sampler as fillStats(), not a guarantee.
 - fillStats() returns raw `{ fills, medianFillSeconds? }` evidence keyed by
   `platform:currency` or a sorted set such as `revolut:EUR+GBP+USD`. Set
@@ -63,10 +64,10 @@ Key facts:
 - Fills are receipts: locked rate + fiat owed at signal; verified fiat paid,
   payment id, released USDC, and fill latency after the proof.
 - `receive` takes one payout leg or an array of legs across different
-  platforms (each platform at most once); every leg fills at the live oracle
-  market rate.
-- Orders carry their payout legs (platform, currency, payee hash) plus a
-  verifiable pricing proof (spreadBps: 0, oracle kind) from indexed data.
+  platforms (each platform at most once); read each capability's pricing entry
+  for its binding semantics.
+- Orders carry their payout legs (platform, currency, payee hash) plus indexed
+  pricing evidence for either signal-time oracle or fixed-at-creation pricing.
 - Order reads fail closed when any deposit method is absent from the active
   catalog; mixed historical deposits are never partially reclassified.
 - buyer(address) aggregates a buyer's track record (fulfilled/pruned/success
@@ -78,7 +79,7 @@ Key facts:
   `quoteNearIntentsSource()`, `submitNearIntentsDeposit()`, and
   `nearIntentsStatus()` support 1Click routes including non-EVM origins. A
   browser uses the same-origin proxy transport so the JWT stays server-side.
-- Wise and PayPal require attestation for a new payee registration. The SDK
+- Wise, PayPal, and Alipay require attestation for a new payee registration. The SDK
   accepts but does not mint it; first-party Peer web obtains it through the
   Peer TEE browser extension. A previously registered bare handle can be reused.
 - Venmo and PayPal attach a method-scoped Peer Pay merchant policy

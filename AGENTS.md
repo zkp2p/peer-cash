@@ -6,8 +6,9 @@
 
 You are integrating Peer Cash: an offramp that routes Relay-supported EVM
 assets or NEAR Intents 1Click external deposits into Base USDC, then converts
-Base USDC to fiat (Venmo, Revolut, Wise, Zelle, ...) at the live Chainlink
-market rate. The user whose USDC you
+Base USDC to fiat (Venmo, Revolut, Wise, Alipay, Zelle, ...) at a zero-spread
+Chainlink market rate. Existing corridors bind at intent signal; Alipay/CNY
+fixes a fresh Ethereum Chainlink snapshot during deposit preparation. The user whose USDC you
 manage is the **maker**; a buyer pays them fiat and proves it with TEE-TLS; the
 protocol releases the USDC. Funds are held by the protocol, and only the maker
 can withdraw an unmatched deposit.
@@ -60,7 +61,7 @@ deposit-level integration share instead of applying maker L1/L2.
 - **Cash App is non-chargebackable.** Cash App cash-outs stay public, do not
   attach a Peer Pay merchant policy, and never require dispute-protection stake.
 
-- **Wise and PayPal** carry `requiresIdentityAttestation: true`. A new curator
+- **Wise, PayPal, and Alipay** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
   (first-party Peer web obtains it through the Peer TEE browser extension).
   An already-registered handle can be reused with bare payee data. A new handle
@@ -117,7 +118,7 @@ const multiCurrency = await cash.cashout(
 );
 
 // Widest reach: several platforms on one order (each platform at most once);
-// the buyer picks the leg they can pay, every leg at the live oracle rate.
+// the buyer picks the leg they can pay. Read capability pricing per corridor.
 const multiPlatform = await cash.cashout(
   {
     amount: usdc(500),
@@ -189,9 +190,11 @@ const route = await cash.nearIntentsStatus({
 
 ## Rules that prevent wrong behavior
 
-- **Never promise a rate.** `estimate()` is `kind: 'oracle-estimate'`; the
-  binding rate resolves at the oracle when a buyer fills. Do not display or
-  log it as a locked price.
+- **Respect the declared binding point.** `estimate()` is
+  `kind: 'oracle-estimate'`. Its `binding` is `intent-signal` for existing
+  on-chain oracle corridors and `deposit-creation` for Alipay/CNY. Do not call
+  an estimate locked before that point. Once Alipay/CNY is prepared, its fresh
+  Chainlink snapshot is the on-chain maker floor.
 - **Do not invent an ETA.** Use `estimate().eta`: `{ seconds, label }` backed
   by the same rolling 30-day, intent-attributed pair sample as `fillStats()`,
   measured from deposit creation to first fill. Use `order.explain()` for live
@@ -274,7 +277,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount                       |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | Pass one or more unique currencies listed for the platform                                 |
 | `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                         |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | Use Peer web + TEE extension for new Wise/PayPal; reuse registered handles                 |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | Use Peer web + TEE extension for new Wise/PayPal/Alipay; reuse registered handles          |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
 | `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code; current SDK flows never emit it                             |
 | `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Deposit exists; inspect policy tx first, attach only if needed; never repeat the cash-out. |

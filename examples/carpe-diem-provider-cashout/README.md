@@ -9,8 +9,8 @@ Cash order. It is the provider-side continuation of Carpe Diem's existing
 2. Peer Cash obtains a fresh Relay quote for canonical DIEM on Base, swaps the
    exact DIEM input to Base USDC, then deposits Relay's guaranteed minimum USDC
    output into the cash-out order.
-3. The provider receives fiat through the selected Peer payout platform at the
-   live oracle rate when a buyer fills.
+3. The provider receives fiat through the selected Peer payout platform using
+   the binding semantics advertised by `capabilities()`.
 
 Carpe Diem remains authoritative for earned revenue and its withdrawal. Do not
 start Peer Cash from an off-chain earnings figure or an unconfirmed withdrawal.
