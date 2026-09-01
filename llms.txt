@@ -107,6 +107,8 @@ Key facts:
   prepare-path patterns, error → remediation table
 - [Lifecycle and recovery](docs/lifecycle-and-recovery.md): source routing,
   states, partial fills, ETA principle, unwind, resumability, failure table
+- [Partner integration patterns](docs/partner-integrations.md): custody choices,
+  MPP settlement separation, agent-host setup, durable production state
 - [Integration skill](skills/peer-cash-integration/SKILL.md): step-by-step
   onboarding for coding agents, with the staging verification checklist
 
