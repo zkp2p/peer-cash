@@ -108,7 +108,7 @@
   },
   "dependencies": {
     "@relayprotocol/relay-sdk": "^7.0.1",
-    "@zkp2p/sdk": "0.12.2-rc.4",
+    "@zkp2p/sdk": "0.13.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
