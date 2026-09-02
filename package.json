@@ -1,6 +1,6 @@
 {
   "name": "@zkp2p/cash",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Peer Cash - offramp-only SDK for routing Relay or NEAR Intents assets to Base USDC, then cashing out to fiat at zero-spread Chainlink market rates.",
   "license": "MIT",
   "author": "Peer (https://peer.xyz)",
