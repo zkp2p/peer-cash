@@ -334,3 +334,12 @@ wallet. Never wait on a buyer - buyer-side is out of your scope:
 
 If step 4 ever fails with funds stuck, stop and escalate - do not retry
 blindly.
+
+UPI/INR reads the live Chainlink Polygon mainnet proxy
+`0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` (chain 137), inverts
+USD per INR, and rounds the creation-time maker floor up. Configure its
+read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
+Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
+`creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
+observations older than 24 hours; market closures do not bypass freshness.
+This does not change the staging-only UPI opt-in gate.
