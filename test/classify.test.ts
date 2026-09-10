@@ -28,9 +28,25 @@ describe('Cash payout classification', () => {
     ).toBe(true);
   });
 
-  it('requires peer-cash attribution for fixed Alipay/CNY deposits', () => {
-    expect(isCashPayoutSet([payout()])).toBe(false);
-    expect(isCashPayoutSet([payout()], true)).toBe(true);
+  it.each([
+    ['alipay', 'CNY'],
+    ['upi', 'INR'],
+  ])('requires peer-cash attribution for fixed %s/%s deposits', (platform, currency) => {
+    const rows = [payout({ platform, currency })];
+    expect(isCashPayoutSet(rows)).toBe(false);
+    expect(isCashPayoutSet(rows, true)).toBe(true);
+  });
+
+  it('rejects UPI with the wrong currency or missing creation-rate evidence', () => {
+    expect(isCashPayoutSet([payout({ platform: 'upi', currency: 'CNY' })], true)).toBe(false);
+    for (const pricing of [
+      { marketRate: false, fixedRate: 95 },
+      { marketRate: false, fixedAtCreation: true, fixedRate: 0 },
+    ]) {
+      expect(isCashPayoutSet([payout({ platform: 'upi', currency: 'INR', pricing })], true)).toBe(
+        false,
+      );
+    }
   });
 
   it('does not let attribution admit another fixed corridor', () => {
