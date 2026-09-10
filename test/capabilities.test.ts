@@ -3,7 +3,7 @@ import { buildCapabilities, platformRequiresIdentityAttestation } from '../src/c
 import { isCashCorridorSupported } from '../src/engine/marketRate';
 
 describe('buildCapabilities', () => {
-  for (const env of ['production', 'staging'] as const) {
+  for (const env of ['production', 'preproduction', 'staging'] as const) {
     it(`${env}: advertises only supported Cash corridors`, () => {
       const caps = buildCapabilities(env);
 
@@ -39,24 +39,27 @@ describe('buildCapabilities', () => {
     expect(venmo?.currencies).toContain('USD');
   });
 
-  it('keeps staging UPI fail-closed unless explicitly enabled', () => {
-    expect(buildCapabilities('production', { upi: true }).platforms).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
-    );
-    expect(buildCapabilities('staging').platforms).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
-    );
-    expect(buildCapabilities('staging', { upi: true }).platforms).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          platform: 'upi',
-          currencies: ['INR'],
-          payeeHint: 'Any valid UPI ID from any bank (e.g. seller@bank)',
-          requiresIdentityAttestation: false,
-        }),
-      ]),
-    );
-  });
+  it.each(['staging', 'preproduction'] as const)(
+    'keeps %s UPI opt-in and production closed',
+    (environment) => {
+      expect(buildCapabilities('production', { upi: true }).platforms).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
+      );
+      expect(buildCapabilities(environment).platforms).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
+      );
+      expect(buildCapabilities(environment, { upi: true }).platforms).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            platform: 'upi',
+            currencies: ['INR'],
+            payeeHint: 'Any valid UPI ID from any bank (e.g. seller@bank)',
+            requiresIdentityAttestation: false,
+          }),
+        ]),
+      );
+    },
+  );
 
   it('presents generic Zelle as one platform', () => {
     const caps = buildCapabilities('production');

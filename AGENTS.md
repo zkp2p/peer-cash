@@ -8,7 +8,7 @@ You are integrating Peer Cash: an offramp that routes Relay-supported EVM
 assets or NEAR Intents 1Click external deposits into Base USDC, then converts
 Base USDC to fiat (Venmo, Revolut, Wise, Alipay, Zelle, ...) at a zero-spread
 Chainlink market rate. Existing corridors bind at intent signal; Alipay/CNY
-fixes a fresh Ethereum Chainlink snapshot during deposit preparation. The user whose USDC you
+fixes a fresh Ethereum Chainlink snapshot during deposit preparation; opt-in UPI/INR uses Polygon Chainlink. The user whose USDC you
 manage is the **maker**; a buyer pays them fiat and proves it with TEE-TLS; the
 protocol releases the USDC. Funds are held by the protocol, and only the maker
 can withdraw an unmatched deposit.
@@ -70,7 +70,7 @@ deposit-level integration share instead of applying maker L1/L2.
 - **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
   platform at registration - the account must exist. The rest (Zelle, Chime,
   etc.) are format-checked only. Match handles to the `payeeHint`.
-- **UPI is staging-only and opt-in.** Construct the client with
+- **UPI is staging/preproduction-only and opt-in.** Construct the client with
   `features: { upi: true }`. Any valid UPI ID from any bank can receive; there
   is no seller bank login, extension, identity attestation, or prior
   registration flow. Buyers currently prove from HDFC Bank through Gmail.
@@ -196,8 +196,8 @@ const route = await cash.nearIntentsStatus({
 
 - **Respect the declared binding point.** `estimate()` is
   `kind: 'oracle-estimate'`. Its `binding` is `intent-signal` for existing
-  on-chain oracle corridors and `deposit-creation` for Alipay/CNY. Do not call
-  an estimate locked before that point. Once Alipay/CNY is prepared, its fresh
+  on-chain oracle corridors and `deposit-creation` for Alipay/CNY and UPI/INR. Do not call
+  an estimate locked before that point. Once a creation-time corridor is prepared, its fresh
   Chainlink snapshot is the on-chain maker floor.
 - **Do not invent an ETA.** Use `estimate().eta`: `{ seconds, label }` backed
   by the same rolling 30-day, intent-attributed pair sample as `fillStats()`,
@@ -342,4 +342,4 @@ read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
 Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
 `creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
 observations older than 24 hours; market closures do not bypass freshness.
-This does not change the staging-only UPI opt-in gate.
+UPI remains opt-in on staging/preproduction and disabled in production.

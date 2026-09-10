@@ -4,8 +4,8 @@ Route Relay-supported EVM assets or NEAR Intents 1Click external deposits into
 Base USDC, then cash out to fiat on Venmo, Revolut, Wise, Alipay, Zelle, and
 more at a zero-spread Chainlink market rate with no centralized off-ramp
 provider. Existing corridors bind the live oracle when a buyer signals;
-Alipay/CNY fixes a fresh Ethereum Chainlink snapshot when the SDK prepares the
-deposit.
+Alipay/CNY and opt-in UPI/INR fix fresh Chainlink snapshots when the SDK prepares
+the deposit (Ethereum for CNY; Polygon for INR).
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. The cashing-out user is the maker: their USDC becomes a deposit in
@@ -94,16 +94,18 @@ for await (const order of cash.watch(depositId)) {
 }
 ```
 
-### Staging UPI cash-out
+### Staging and preproduction UPI cash-out
 
-UPI is an opt-in staging corridor until the payment method exists in production
-contracts. Any valid UPI ID from any bank can receive a cash-out. The seller
+UPI requires the canonical UPI/INR catalog from `@zkp2p/sdk` 0.14.2-rc.1
+or its approved successor; a missing catalog entry keeps the corridor disabled.
+UPI is an opt-in staging and preproduction corridor. Production remains disabled
+pending rollout review. Any valid UPI ID from any bank can receive a cash-out. The seller
 does not connect a bank account, install an extension, or complete a separate
 registration flow:
 
 ```ts
 const cash = createCashClient({
-  environment: 'staging',
+  environment: 'preproduction',
   features: { upi: true },
 });
 
@@ -120,14 +122,21 @@ Buyers currently prove UPI payments from HDFC Bank through one-shot, read-only
 Gmail access. That buyer limitation does not restrict which bank issued the
 seller's UPI ID.
 
+INR pricing uses the [Chainlink Polygon INR/USD feed](https://data.chain.link/feeds/polygon/mainnet/inr-usd),
+inverted into INR per USDC and fixed at deposit preparation. The SDK rejects
+invalid rounds and readings older than 24 hours, including market-hour gaps.
+Only oracle reads use Polygon; funds and transactions stay on Base. Override
+the Polygon reader with `upiCreationRateTransport` or `upiCreationRateRpcUrl`.
+The existing `creationRateTransport`/`creationRateRpcUrl` options remain Ethereum-only for CNY.
+
 ## Pick the right SDK
 
 Peer Cash and the general ZKP2P SDK serve different integration depths:
 
-| Package       | Use it when                                       | Boundary                                                                                                                                                                                                           |
-| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is zero-spread Chainlink (signal-time by default; creation-time for Alipay/CNY), and the SDK owns the resumable order lifecycle. |
-| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices.                          |
+| Package       | Use it when                                       | Boundary                                                                                                                                                                                                                       |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is zero-spread Chainlink (signal-time by default; creation-time for Alipay/CNY and UPI/INR), and the SDK owns the resumable order lifecycle. |
+| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices.                                      |
 
 Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
 cannot express custom spreads, buyer-side proof flows, vaults, disputes, or
@@ -177,14 +186,14 @@ mixed historical deposit.
 
 ## Payout rails and access policies
 
-| Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
-| --------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Venmo                 | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
-| PayPal                | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
-| Cash App              | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
-| Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
-| UPI (staging opt-in)  | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
-| Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
+| Payout rail                  | Access-policy behavior                                                     | New payee registration                                                                 |
+| ---------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Venmo                        | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
+| PayPal                       | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
+| Cash App                     | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
+| Wise                         | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
+| UPI (staging/preprod opt-in) | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
+| Other supported rails        | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
 
 No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
 work with any viem `WalletClient`, including a local or externally connected
@@ -380,7 +389,7 @@ awaiting-buyer ──────────► matched ───────�
   resulting CNY-per-USDC maker floor when it prepares the deposit. A buyer may
   signal at that floor or a better rate for the maker.
 - **Read `binding`.** `estimate().binding` is `intent-signal` by default and
-  `deposit-creation` for Alipay/CNY. An estimate remains approximate until its
+  `deposit-creation` for Alipay/CNY and UPI/INR. An estimate remains approximate until its
   stated binding point.
 - **ETA is historical.** `estimate().eta` is just `{ seconds, label }`, backed
   by the same rolling 30-day, intent-attributed pair sampler as `fillStats()`,
@@ -474,7 +483,7 @@ is the default source and the only destination asset for cashout orders.
 Runnable first-party examples in [`examples/`](examples):
 
 - [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
-- [`upi-staging-cashout.ts`](examples/upi-staging-cashout.ts) - opt-in UPI/INR cash-out to any valid UPI ID on staging.
+- [`upi-staging-cashout.ts`](examples/upi-staging-cashout.ts) - opt-in UPI/INR cash-out to any valid UPI ID on staging or preproduction.
 - [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.
 - [`carpe-diem-provider-cashout`](examples/carpe-diem-provider-cashout) - cash out confirmed Carpe Diem provider DIEM revenue through the connected Base wallet.
 - [`mpp-merchant-cashout`](examples/mpp-merchant-cashout) - turn confirmed MPP merchant revenue into an unsigned Peer Cash plan while the merchant keeps custody and signing.
@@ -498,12 +507,3 @@ the package, not the contributor entry point.
 ## License
 
 MIT
-
-UPI/INR reads the live Chainlink Polygon mainnet proxy
-`0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` (chain 137), inverts
-USD per INR, and rounds the creation-time maker floor up. Configure its
-read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
-Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
-`creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
-observations older than 24 hours; market closures do not bypass freshness.
-This does not change the staging-only UPI opt-in gate.
