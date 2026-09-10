@@ -82,3 +82,19 @@ bodies out of committed evidence; publish only redacted checkpoint results.
 After the exact UPI fixture is indexed, require both `cash.order(depositId)` and `cash.orders(owner)` to return it. Fixed UPI/INR creation-rate deposits must have positive fixed-rate evidence and the indexed `peer-cash` attribution marker. Do not classify unrelated Advanced Sell deposits as Cash orders. A quoteable indexer row alone is insufficient: run order lookup, partial-fill observation and withdrawal checks too. Keep the method/currency pair explicit; UPI/CNY must be rejected.
 
 Historical HDFC emails may be accepted within the deployed 14-day lookback. Bind any generated proof to the exact real intent, check the unused nullifier, and expect proportional release when the old payment is smaller than the requested fiat amount. Synthetic proof success is separate from chain settlement. Never alter the evidence or relax the window to force a match.
+
+## Small-fixture visibility and dust reconciliation
+
+The web orderbook hides deposits below USD 5 by default. Enable its low-liquidity
+filter before diagnosing an active small fixture as missing. Selector liquidity
+can include a deposit that the orderbook display hides. A verified read-only
+Express `getQuote` accepted INR 10 against a 1 USDC fixture; quoteability still
+depends on the current maker minimum, available liquidity and rate. This does
+not authorize a payment or another fixture, and a quote is not a settlement.
+
+The verified contract dust threshold is 0.1 USDC. A remaining amount below that
+threshold may be collected as protocol dust rather than refunded to the maker.
+Reconcile `DustCollected` events and actual token transfers with the successful
+receipt, buyer proceeds, fees and maker balance. Do not interpret Cash
+`returnedAmount` alone as a maker refund. Confirm the deployed threshold again
+if the contract version changes, and retain exact amounts in private receipts.
