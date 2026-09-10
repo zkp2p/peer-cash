@@ -65,12 +65,23 @@ describe('readEstimate', () => {
       ),
     } as unknown as PublicClient;
 
+    const upiCreationRateClient = mockPublicClient(0n);
     const estimate = await readEstimate(
       mockPublicClient(0n),
       { amount: 1_000_000n, platform: 'alipay', currency: 'CNY' },
-      { creationRateClient },
+      { creationRateClient, upiCreationRateClient },
     );
 
+    expect(upiCreationRateClient.readContract).not.toHaveBeenCalled();
+    expect(creationRateClient.readContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: '0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf',
+        args: [
+          '0x000000000000000000000000000000000000009c',
+          '0x0000000000000000000000000000000000000348',
+        ],
+      }),
+    );
     expect(estimate.binding).toBe('deposit-creation');
     expect(estimate.rate).toBeCloseTo(6.7244, 3);
     expect(estimate.receiveAmount).toBeCloseTo(6.7244, 3);
@@ -94,23 +105,39 @@ describe('readEstimate', () => {
     expect(estimate.binding).toBe('deposit-creation');
   });
 
-  it('estimates UPI/INR from the Ethereum creation-rate feed', async () => {
+  it('routes UPI/INR to its Polygon client without touching Ethereum or Base', async () => {
     const now = Math.floor(Date.now() / 1000);
-    const creationRateClient = {
+    const upiCreationRateClient = {
+      getChainId: vi.fn(async () => 137),
       readContract: vi.fn(async ({ functionName }: { functionName: string }) =>
-        functionName === 'decimals' ? 8 : ([1n, 1_200_000n, 0n, BigInt(now - 60), 1n] as const),
+        functionName === 'decimals' ? 8 : ([1n, 1_050_700n, 0n, BigInt(now - 60), 1n] as const),
       ),
     } as unknown as PublicClient;
-
+    const creationRateClient = mockPublicClient(0n);
+    const baseClient = mockPublicClient(0n);
     const estimate = await readEstimate(
-      mockPublicClient(0n),
+      baseClient,
       { amount: 1_000_000n, platform: 'upi', currency: 'INR' },
-      { creationRateClient },
+      { creationRateClient, upiCreationRateClient },
     );
-
     expect(estimate.binding).toBe('deposit-creation');
-    expect(estimate.rate).toBeCloseTo(83.333333, 5);
+    expect(estimate.rate).toBeCloseTo(95.174645, 5);
     expect(estimate.oracleUpdatedAt).toBe(now - 60);
+    expect(creationRateClient.readContract).not.toHaveBeenCalled();
+    expect(baseClient.readContract).not.toHaveBeenCalled();
+    expect(upiCreationRateClient.readContract).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fall back to Ethereum when the UPI creation-rate client is missing', async () => {
+    const creationRateClient = mockPublicClient(1_050_700n);
+    await expect(
+      readEstimate(
+        mockPublicClient(0n),
+        { amount: 1_000_000n, platform: 'upi', currency: 'INR' },
+        { creationRateClient },
+      ),
+    ).rejects.toThrow();
+    expect(creationRateClient.readContract).not.toHaveBeenCalled();
   });
 
   it('rejects CNY for a platform without the creation-time exception', async () => {

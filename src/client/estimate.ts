@@ -3,8 +3,8 @@
  * idempotent, cacheable.
  *
  * Existing corridors read the same Chainlink feed the protocol uses when an
- * intent is signaled. Creation-rate corridors read Chainlink's Ethereum feed
- * and fix that fresh snapshot as the maker floor when preparing the deposit.
+ * intent is signaled. Creation-rate corridors read Chainlink on Ethereum (CNY)
+ * or Polygon (INR), fixing the fresh snapshot when preparing the deposit.
  */
 import type { Address, PublicClient } from 'viem';
 import type { Zkp2pClient } from '@zkp2p/sdk';
@@ -118,6 +118,7 @@ export async function readEstimate(
     includeEta?: boolean;
     relay?: RelayOptions;
     creationRateClient?: PublicClient;
+    upiCreationRateClient?: PublicClient;
   } = {},
 ): Promise<CashEstimate> {
   const { currency } = input;
@@ -154,10 +155,14 @@ export async function readEstimate(
   let rate: number;
   let oracleUpdatedAt: number | undefined;
   if (usesCreationRate) {
-    if (!context.creationRateClient) throw errors.oracleUnsupportedCurrency(currency);
+    const rateClient =
+      creationRatePlatform!.toLowerCase() === 'upi'
+        ? context.upiCreationRateClient
+        : context.creationRateClient;
+    if (!rateClient) throw errors.oracleUnsupportedCurrency(currency);
     try {
       const snapshot = await readCashCreationRate(
-        context.creationRateClient,
+        rateClient,
         creationRatePlatform!,
         currency,
         asOf,

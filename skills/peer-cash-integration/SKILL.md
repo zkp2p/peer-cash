@@ -263,3 +263,21 @@ Prove both routes without waiting for a buyer:
 
 If withdrawal fails with funds stuck: stop, do not retry blindly, escalate to
 a human with the `depositId` and tx hashes.
+
+UPI/INR reads the live Chainlink Polygon mainnet proxy
+`0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` (chain 137), inverts
+USD per INR, and rounds the creation-time maker floor up. Configure its
+read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
+Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
+`creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
+observations older than 24 hours; market closures do not bypass freshness.
+This does not change the staging-only UPI opt-in gate.
+
+Before a funded UPI QA run, call
+`cash.estimate({ amount: 1000000n, platform: 'upi', currency: 'INR' }, { includeEta: false })`
+using the intended live Polygon RPC. Require a positive finite rate,
+`binding: 'deposit-creation'`, and `oracleUpdatedAt` no more than 86400 seconds
+old and not in the future. Record the observation time and selected chain,
+then stop before funding if the read fails. Unit-test fixtures prove routing,
+not live availability. The authoritative feed listing is
+https://data.chain.link/feeds/polygon/mainnet/inr-usd.

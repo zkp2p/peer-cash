@@ -22,7 +22,7 @@ import {
   type Transport,
   type WalletClient,
 } from 'viem';
-import { base, mainnet } from 'viem/chains';
+import { base, mainnet, polygon } from 'viem/chains';
 import { Zkp2pClient, appendAttributionToCalldata, createCompositeDepositId } from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction, RuntimeEnv, TxOverrides } from '../sdk-types';
 import {
@@ -154,6 +154,10 @@ export interface CashClientOptions {
   creationRateTransport?: Transport;
   /** Convenience alternative to `creationRateTransport`. */
   creationRateRpcUrl?: string;
+  /** Polygon transport used only to snapshot UPI/INR's creation-time rate. */
+  upiCreationRateTransport?: Transport;
+  /** Convenience alternative to `upiCreationRateTransport`; requires Polygon mainnet. */
+  upiCreationRateRpcUrl?: string;
   /** Relay API configuration for source assets outside Base USDC. */
   relay?: RelayOptions;
   /** NEAR Intents 1Click configuration for externally funded source routes. */
@@ -545,6 +549,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
     chain: mainnet,
     transport: creationRateTransport,
   });
+  const upiCreationRateClient = createPublicClient({
+    chain: polygon,
+    transport: options.upiCreationRateTransport ?? http(options.upiCreationRateRpcUrl),
+  });
   const readCashAttribution = createCashAttributionReader({
     environment,
     ...(options.indexerUrl ? { indexerUrl: options.indexerUrl } : {}),
@@ -712,7 +720,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
             throw new Error(`No creation-time rate reader for ${platform}/${currency}`);
           }
           try {
-            return await readCashCreationRate(creationRateClient, platform, currency);
+            return await readCashCreationRate(
+              platform.toLowerCase() === 'upi' ? upiCreationRateClient : creationRateClient,
+              platform,
+              currency,
+            );
           } catch (err) {
             throw errors.oracleReadFailed(currency, err);
           }
@@ -1244,6 +1256,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           : {}),
         etaReader: async (etaInput) => fillEtaFromSample(await getFillStatsSample(), etaInput),
         creationRateClient,
+        upiCreationRateClient,
         ...(options.relay ? { relay: options.relay } : {}),
       });
     },

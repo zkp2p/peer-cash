@@ -1,9 +1,14 @@
-import type { Address, PublicClient } from 'viem';
+import { parseAbi, type Address, type PublicClient } from 'viem';
 
 const CHAINLINK_FEED_REGISTRY = '0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf';
 const CNY_DENOMINATION = '0x000000000000000000000000000000000000009c';
-const INR_DENOMINATION = '0x0000000000000000000000000000000000000164';
 const USD_DENOMINATION = '0x0000000000000000000000000000000000000348';
+// https://data.chain.link/feeds/polygon/mainnet/inr-usd
+const POLYGON_INR_USD_FEED = '0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60';
+const DIRECT_FEED_ABI = parseAbi([
+  'function decimals() view returns (uint8)',
+  'function latestRoundData() view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)',
+]);
 
 const FEED_REGISTRY_ABI = [
   {
@@ -64,9 +69,6 @@ function getCreationRateDenomination(platform: string, currency: string): Addres
   if (platform.toLowerCase() === 'alipay' && currency.toUpperCase() === 'CNY') {
     return CNY_DENOMINATION as Address;
   }
-  if (platform.toLowerCase() === 'upi' && currency.toUpperCase() === 'INR') {
-    return INR_DENOMINATION as Address;
-  }
   throw new Error(`No creation-time rate source for ${platform}/${currency}`);
 }
 
@@ -75,9 +77,9 @@ function divideRoundUp(numerator: bigint, denominator: bigint): bigint {
 }
 
 /**
- * Read CNY/USD from Chainlink's canonical Ethereum Feed Registry and convert it
- * to CNY per USDC. The returned integer is rounded up so the on-chain maker
- * floor is never weaker than the observed market rate.
+ * Read CNY/USD from Ethereum's Feed Registry or INR/USD from its direct Polygon
+ * Chainlink proxy. The caller supplies the corridor's read client. Invert into
+ * fiat per USDC and round up so the maker floor preserves the observed rate.
  */
 export async function readCashCreationRate(
   publicClient: PublicClient,
@@ -85,43 +87,65 @@ export async function readCashCreationRate(
   currency: string,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): Promise<CreationRateSnapshot> {
-  const args = [
-    getCreationRateDenomination(platform, currency),
-    USD_DENOMINATION as Address,
-  ] as const;
-  const [decimals, round] = await Promise.all([
-    publicClient.readContract({
-      address: CHAINLINK_FEED_REGISTRY,
-      abi: FEED_REGISTRY_ABI,
-      functionName: 'decimals',
-      args,
-    }),
-    publicClient.readContract({
-      address: CHAINLINK_FEED_REGISTRY,
-      abi: FEED_REGISTRY_ABI,
-      functionName: 'latestRoundData',
-      args,
-    }),
-  ]);
+  const isUpi = platform.toLowerCase() === 'upi' && currency.toUpperCase() === 'INR';
+  const pair = `${currency.toUpperCase()}/USD`;
+  let decimals: number;
+  let round: readonly [bigint, bigint, bigint, bigint, bigint];
+  if (isUpi) {
+    if ((await publicClient.getChainId()) !== 137) {
+      throw new Error('Chainlink INR/USD requires Polygon mainnet (137)');
+    }
+    [decimals, round] = await Promise.all([
+      publicClient.readContract({
+        address: POLYGON_INR_USD_FEED,
+        abi: DIRECT_FEED_ABI,
+        functionName: 'decimals',
+      }),
+      publicClient.readContract({
+        address: POLYGON_INR_USD_FEED,
+        abi: DIRECT_FEED_ABI,
+        functionName: 'latestRoundData',
+      }),
+    ]);
+  } else {
+    const args = [
+      getCreationRateDenomination(platform, currency),
+      USD_DENOMINATION as Address,
+    ] as const;
+    [decimals, round] = await Promise.all([
+      publicClient.readContract({
+        address: CHAINLINK_FEED_REGISTRY,
+        abi: FEED_REGISTRY_ABI,
+        functionName: 'decimals',
+        args,
+      }),
+      publicClient.readContract({
+        address: CHAINLINK_FEED_REGISTRY,
+        abi: FEED_REGISTRY_ABI,
+        functionName: 'latestRoundData',
+        args,
+      }),
+    ]);
+  }
 
   const [roundId, answer, , updatedAtRaw, answeredInRound] = round;
   if (answer <= 0n || updatedAtRaw <= 0n || answeredInRound < roundId) {
-    throw new Error('Chainlink CNY/USD returned an invalid round');
+    throw new Error(`Chainlink ${pair} returned an invalid round`);
   }
 
   const updatedAt = Number(updatedAtRaw);
   if (!Number.isSafeInteger(updatedAt) || updatedAt > nowSeconds) {
-    throw new Error('Chainlink CNY/USD returned an invalid timestamp');
+    throw new Error(`Chainlink ${pair} returned an invalid timestamp`);
   }
   if (nowSeconds - updatedAt > CREATION_RATE_MAX_STALENESS_SECONDS) {
-    throw new Error('Chainlink CNY/USD rate is stale');
+    throw new Error(`Chainlink ${pair} rate is stale`);
   }
 
-  // The feed is USD per CNY. Invert it into CNY per USD/USDC at 1e18 precision.
+  // Both feeds are USD per fiat unit. Invert into fiat per USD/USDC at 1e18.
   const rate1e18 = divideRoundUp(10n ** (BigInt(decimals) + 18n), answer);
   const rate = Number(rate1e18) / 1e18;
   if (!Number.isFinite(rate) || rate <= 0) {
-    throw new Error('Chainlink CNY/USD produced an invalid creation rate');
+    throw new Error(`Chainlink ${pair} produced an invalid creation rate`);
   }
 
   return { rate1e18, rate, updatedAt };

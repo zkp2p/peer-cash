@@ -1,3 +1,4 @@
+// UPI pricing reads Polygon mainnet; configure upiCreationRateRpcUrl for a dedicated provider.
 import { createCashClient, usdc } from '@zkp2p/cash';
 import type { WalletClient } from 'viem';
 
