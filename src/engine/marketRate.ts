@@ -97,9 +97,8 @@ export function buildIntentAmountRange(amount: bigint): { min: bigint; max: bigi
  *
  * Registers payee details with the curator (no auth), resolves payment-method
  * hashes + the gating service from the catalog, and assembles the override
- * arrays with signal-time oracle configs. Alipay/CNY is the explicit exception:
- * it fixes a fresh Chainlink Ethereum snapshot as the maker floor because Base
- * has no CNY oracle adapter.
+ * arrays with signal-time oracle configs. Alipay/CNY and UPI/INR instead fix
+ * fresh Chainlink snapshots from Ethereum and Polygon as their maker floors.
  */
 export async function prepareCashDepositParams(
   client: Zkp2pClient,

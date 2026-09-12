@@ -123,44 +123,75 @@ describe('prepareCashDepositParams', () => {
     });
   });
 
-  it('builds staging UPI/INR without seller registration or an identity attestation', async () => {
-    const client = mockClient();
-    const creationRate = {
-      rate1e18: 83_333_333_333_333_333_333n,
-      rate: 83.333333,
-      updatedAt: 2_000_000_000,
-    };
-    const reader = vi.fn(async () => creationRate);
+  it.each(['staging', 'preproduction'] as const)(
+    'builds %s UPI/INR without an identity attestation',
+    async (runtimeEnv) => {
+      const client = { ...mockClient(), runtimeEnv } as Zkp2pClient;
+      const creationRate = {
+        rate1e18: 83_333_333_333_333_333_333n,
+        rate: 83.333333,
+        updatedAt: 2_000_000_000,
+      };
+      const reader = vi.fn(async () => creationRate);
 
-    const params = await prepareCashDepositParams(
-      client,
-      {
-        amount: 5_000_000n,
-        payouts: [
+      const params = await prepareCashDepositParams(
+        client,
+        {
+          amount: 5_000_000n,
+          payouts: [
+            {
+              processorName: 'upi',
+              currency: 'INR',
+              payeeData: { offchainId: 'seller@bank' },
+            },
+          ],
+        },
+        undefined,
+        reader,
+        { upi: true },
+      );
+
+      expect(reader).toHaveBeenCalledWith('upi', 'INR');
+      expect(params.paymentMethodsOverride).toEqual([
+        '0xe99a5081226cbbff9440a63da5caa04fa30f210c12c4dd9976132ac075054cd9',
+      ]);
+      expect(params.conversionRates).toEqual([
+        [{ currency: 'INR', conversionRate: creationRate.rate1e18.toString() }],
+      ]);
+      expect(client.registerPayeeDetails).toHaveBeenCalledWith({
+        processorNames: ['upi'],
+        payeeData: [{ offchainId: 'seller@bank' }],
+      });
+    },
+  );
+
+  it.each([
+    ['production', true],
+    ['preproduction', false],
+    ['staging', false],
+  ] as const)(
+    'rejects disabled %s UPI before rate reads or registration (opt-in %s)',
+    async (runtimeEnv, upi) => {
+      const client = { ...mockClient(), runtimeEnv } as Zkp2pClient;
+      const reader = vi.fn();
+      await expect(
+        prepareCashDepositParams(
+          client,
           {
-            processorName: 'upi',
-            currency: 'INR',
-            payeeData: { offchainId: 'seller@bank' },
+            amount: 1_000_000n,
+            payouts: [
+              { processorName: 'upi', currency: 'INR', payeeData: { offchainId: 'seller@bank' } },
+            ],
           },
-        ],
-      },
-      undefined,
-      reader,
-      { upi: true },
-    );
-
-    expect(reader).toHaveBeenCalledWith('upi', 'INR');
-    expect(params.paymentMethodsOverride).toEqual([
-      '0xe99a5081226cbbff9440a63da5caa04fa30f210c12c4dd9976132ac075054cd9',
-    ]);
-    expect(params.conversionRates).toEqual([
-      [{ currency: 'INR', conversionRate: creationRate.rate1e18.toString() }],
-    ]);
-    expect(client.registerPayeeDetails).toHaveBeenCalledWith({
-      processorNames: ['upi'],
-      payeeData: [{ offchainId: 'seller@bank' }],
-    });
-  });
+          undefined,
+          reader,
+          { upi },
+        ),
+      ).rejects.toThrow('UPI is not enabled in this environment catalog');
+      expect(reader).not.toHaveBeenCalled();
+      expect(client.registerPayeeDetails).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ['staging', '0x3355bb8CEFA54509d244384CFA7f2A71fdb1FDD6'],

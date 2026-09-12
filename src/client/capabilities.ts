@@ -146,11 +146,7 @@ export function buildCapabilities(
         requiresAtomicAccessPolicy: false,
       };
     })
-    .filter(
-      (p) =>
-        p.currencies.length > 0 &&
-        (p.platform !== 'upi' || (environment === 'staging' && features.upi === true)),
-    )
+    .filter((p) => p.currencies.length > 0)
     .sort((a, b) => a.platform.localeCompare(b.platform));
 
   const currencies = [...new Set(platforms.flatMap((p) => p.currencies))].sort();
