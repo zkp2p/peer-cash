@@ -25,7 +25,7 @@ Key facts:
   then cash out Base-only. Use EXACT_OUTPUT when the order amount must be fixed.
 - estimate() reports its binding point. Existing corridors bind the on-chain
   oracle when an intent is signaled; Alipay/CNY fixes a fresh Ethereum
-  Chainlink snapshot during deposit preparation. ETA is `{ seconds, label }` from the same rolling
+  Chainlink snapshot during deposit preparation; UPI/INR uses a fresh Polygon Chainlink snapshot. ETA is `{ seconds, label }` from the same rolling
   30-day, intent-attributed pair sampler as fillStats(), not a guarantee.
 - fillStats() returns raw `{ fills, medianFillSeconds? }` evidence keyed by
   `platform:currency` or a sorted set such as `revolut:EUR+GBP+USD`. Set
@@ -38,11 +38,11 @@ Key facts:
   fillStats() separately.
 - capabilities() exposes one Zelle platform. A zelle cashout attaches only the
   generic Zelle payment method to the on-chain deposit.
-- UPI/INR is staging-only and fail-closed. Enable it with
-  `createCashClient({ environment: 'staging', features: { upi: true } })`.
+- UPI/INR is staging/preproduction-only and fail-closed. Enable it with
+  `createCashClient({ environment: 'preproduction', features: { upi: true } })`.
   Any valid UPI ID from any bank can receive without a seller login,
   extension, identity attestation, or prior registration flow. Buyers
-  currently prove HDFC Bank payments through Gmail.
+  pay and verify through Amazon Pay using standard UPI.
 - Resume any order from its depositId alone (composite escrow_onchainId).
 - One unwind verb: withdraw(depositId) - prunes expired intents automatically;
   pass amount for a partial withdrawal of the unlocked balance.
@@ -136,4 +136,4 @@ read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
 Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
 `creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
 observations older than 24 hours; market closures do not bypass freshness.
-This does not change the staging-only UPI opt-in gate.
+UPI remains opt-in on staging/preproduction and disabled in production.

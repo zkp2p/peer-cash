@@ -32,7 +32,7 @@ protocol-held funds and no custodial off-ramp provider.
   `oracleRateConfig { spreadBps: 0 }`; the binding rate is the Chainlink rate
   when a buyer signals. Alipay/CNY is the exception: because Base has no CNY
   oracle adapter, the SDK reads Chainlink CNY/USD on Ethereum and fixes that
-  fresh snapshot as the maker floor during deposit preparation. Read
+  fresh snapshot as the maker floor during deposit preparation. UPI/INR does the same using the direct Polygon INR/USD feed, rejecting wrong-chain, stale and invalid data. Read
   `estimate().binding` and `capabilities().platforms[].pricing`.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
@@ -183,11 +183,11 @@ platforms outright: a previously registered handle can be reused with bare
 payee data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration is still
 needed.
 
-UPI is a staging-only opt-in until production contracts support it. Enable it
-with `features: { upi: true }` on a staging client. Accept any locally valid
+UPI is a staging/preproduction-only opt-in while production rollout awaits review. Enable it
+with `features: { upi: true }` on a staging or preproduction client. Accept any locally valid
 UPI ID from any bank; do not add a seller bank-login, extension, identity
-attestation, or pre-registration step. Buyers currently prove HDFC Bank UPI
-payments through Gmail.
+attestation, or pre-registration step. Buyers pay and verify through Amazon Pay using standard UPI; UPI Lite and
+merchant payments are unsupported.
 
 ## 4. Order management - indexer-native
 
@@ -264,6 +264,8 @@ Prove both routes without waiting for a buyer:
 If withdrawal fails with funds stuck: stop, do not retry blindly, escalate to
 a human with the `depositId` and tx hashes.
 
+## UPI oracle checks
+
 UPI/INR reads the live Chainlink Polygon mainnet proxy
 `0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` (chain 137), inverts
 USD per INR, and rounds the creation-time maker floor up. Configure its
@@ -271,7 +273,7 @@ read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
 Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
 `creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
 observations older than 24 hours; market closures do not bypass freshness.
-This does not change the staging-only UPI opt-in gate.
+UPI remains opt-in on staging/preproduction and disabled in production.
 
 Before a funded UPI QA run, call
 `cash.estimate({ amount: 1000000n, platform: 'upi', currency: 'INR' }, { includeEta: false })`
