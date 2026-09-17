@@ -59,13 +59,12 @@ Inspect `disputeProtectionRequiresStake` before buyer QA so stake admission is
 not mistaken for a payment-proof failure.
 
 Buyer QA belongs to the client and attestation repositories. Amazon Pay is the
-sole client flow: no HDFC/Gmail selector or fallback copy. Pay with standard UPI
+sole buyer proof flow. Pay with standard UPI
 to a person, then verify from the same Amazon account. Exclude UPI Lite, merchant
 payments and incoming transactions. Keep session evidence encrypted. A real
 intent requires the exact payment identity, allowed payment-time window, and an
 unused payment nullifier. Report maker deposit, buyer signal, evidence proof,
-and settlement as separate checkpoints. Backend HDFC support is retained until
-a separately authorized retirement; do not remove its server routes here.
+and settlement as separate checkpoints.
 
 After buyer intents are cancelled or otherwise terminal, call the supported
 `withdraw` path and verify the receipt and returned order state. If a transaction
