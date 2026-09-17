@@ -9,18 +9,12 @@ import { isMarketRateSupported } from '../engine/marketRate';
 import { isCreationRateCorridor } from './creationRate';
 import type { CashSourceCapabilities } from './relay';
 import type { NearIntentsSourceCapabilities } from './nearIntents';
-import {
-  getCashPaymentMethodsCatalog,
-  type CashCatalogFeatures,
-} from '../engine/paymentMethodCatalog';
+import { getCashPaymentMethodsCatalog } from '../engine/paymentMethodCatalog';
 
 /** Hard floor: below one cent a deposit is dust and can never fill. */
 export const MIN_CASHOUT_AMOUNT = 10_000n; // $0.01
 /** Recommended floor: sub-1-USDC deposits force min==max fills and starve matching. */
 export const RECOMMENDED_MIN_CASHOUT_AMOUNT = 1_000_000n; // 1 USDC
-
-/** Opt-in product surfaces that are not yet available on production contracts. */
-export type CashFeatureFlags = CashCatalogFeatures;
 
 /**
  * Payee handle format hints per platform, for input UX and agent validation.
@@ -110,11 +104,8 @@ export interface CashCapabilities {
   pricing: { kind: 'oracle-market-rate'; spreadBps: 0 };
 }
 
-export function buildCapabilities(
-  environment: RuntimeEnv,
-  features: CashFeatureFlags = {},
-): CashCapabilities {
-  const catalog = getCashPaymentMethodsCatalog(environment, features);
+export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
+  const catalog = getCashPaymentMethodsCatalog(environment);
 
   const platforms: CashPlatformCapability[] = Object.entries(catalog)
     .map(([platform, entry]) => {

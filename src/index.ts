@@ -45,7 +45,6 @@ export {
 export type {
   CashCapabilities,
   CashCorridorPricing,
-  CashFeatureFlags,
   CashPlatformCapability,
 } from './client/capabilities';
 export {

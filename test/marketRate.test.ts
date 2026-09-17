@@ -123,7 +123,7 @@ describe('prepareCashDepositParams', () => {
     });
   });
 
-  it.each(['staging', 'preproduction'] as const)(
+  it.each(['production', 'staging', 'preproduction'] as const)(
     'builds %s UPI/INR without an identity attestation',
     async (runtimeEnv) => {
       const client = { ...mockClient(), runtimeEnv } as Zkp2pClient;
@@ -148,7 +148,6 @@ describe('prepareCashDepositParams', () => {
         },
         undefined,
         reader,
-        { upi: true },
       );
 
       expect(reader).toHaveBeenCalledWith('upi', 'INR');
@@ -162,34 +161,6 @@ describe('prepareCashDepositParams', () => {
         processorNames: ['upi'],
         payeeData: [{ offchainId: 'seller@bank' }],
       });
-    },
-  );
-
-  it.each([
-    ['production', true],
-    ['preproduction', false],
-    ['staging', false],
-  ] as const)(
-    'rejects disabled %s UPI before rate reads or registration (opt-in %s)',
-    async (runtimeEnv, upi) => {
-      const client = { ...mockClient(), runtimeEnv } as Zkp2pClient;
-      const reader = vi.fn();
-      await expect(
-        prepareCashDepositParams(
-          client,
-          {
-            amount: 1_000_000n,
-            payouts: [
-              { processorName: 'upi', currency: 'INR', payeeData: { offchainId: 'seller@bank' } },
-            ],
-          },
-          undefined,
-          reader,
-          { upi },
-        ),
-      ).rejects.toThrow('UPI is not enabled in this environment catalog');
-      expect(reader).not.toHaveBeenCalled();
-      expect(client.registerPayeeDetails).not.toHaveBeenCalled();
     },
   );
 

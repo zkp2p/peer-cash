@@ -39,16 +39,10 @@ describe('buildCapabilities', () => {
     expect(venmo?.currencies).toContain('USD');
   });
 
-  it.each(['staging', 'preproduction'] as const)(
-    'keeps %s UPI opt-in and production closed',
+  it.each(['production', 'preproduction', 'staging'] as const)(
+    'includes UPI without feature flags in %s',
     (environment) => {
-      expect(buildCapabilities('production', { upi: true }).platforms).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
-      );
-      expect(buildCapabilities(environment).platforms).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ platform: 'upi' })]),
-      );
-      expect(buildCapabilities(environment, { upi: true }).platforms).toEqual(
+      expect(buildCapabilities(environment).platforms).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             platform: 'upi',
