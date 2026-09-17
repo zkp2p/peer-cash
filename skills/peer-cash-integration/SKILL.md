@@ -186,8 +186,8 @@ needed.
 UPI is a staging/preproduction-only opt-in while production rollout awaits review. Enable it
 with `features: { upi: true }` on a staging or preproduction client. Accept any locally valid
 UPI ID from any bank; do not add a seller bank-login, extension, identity
-attestation, or pre-registration step. Buyers currently prove HDFC Bank UPI
-payments through Gmail.
+attestation, or pre-registration step. Buyers pay and verify through Amazon Pay using standard UPI; UPI Lite and
+merchant payments are unsupported.
 
 ## 4. Order management - indexer-native
 

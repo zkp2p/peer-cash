@@ -118,9 +118,9 @@ await cash.cashout(
 );
 ```
 
-Buyers currently prove UPI payments from HDFC Bank through one-shot, read-only
-Gmail access. That buyer limitation does not restrict which bank issued the
-seller's UPI ID.
+Buyers pay and verify through Amazon Pay using standard UPI. UPI Lite and
+merchant payments are unsupported. The seller may receive at a valid UPI ID
+from any bank.
 
 INR pricing uses the [Chainlink Polygon INR/USD feed](https://data.chain.link/feeds/polygon/mainnet/inr-usd),
 inverted into INR per USDC and fixed at deposit preparation. The SDK rejects

@@ -1,9 +1,9 @@
 ---
-name: hdfc-upi-preprod-qa
-description: Verify the Cash SDK HDFC email UPI corridor on preproduction, including catalog gates, a small maker deposit, indexing, and cleanup.
+name: upi-preprod-qa
+description: Verify the Cash SDK Amazon Pay UPI corridor on preproduction, including catalog gates, a small maker deposit, indexing, and cleanup.
 ---
 
-# HDFC UPI preproduction QA
+# UPI preproduction QA
 
 Use the exact published Cash candidate and record its SDK/contracts versions.
 Require `createCashClient({ environment: 'preproduction', features: { upi: true } })`
@@ -62,26 +62,26 @@ exactly one matching tuple, Base USDC, a positive matching conversion rate,
 Inspect `disputeProtectionRequiresStake` before buyer QA so stake admission is
 not mistaken for a payment-proof failure.
 
-Buyer QA belongs to the client and attestation repositories: HDFC debit email
-selected through Gmail, encrypted raw evidence, no WhatsApp route. Historical
-email checks against synthetic intents do not demonstrate settlement. A real
+Buyer QA belongs to the client and attestation repositories. Amazon Pay is the
+sole client flow: no HDFC/Gmail selector or fallback copy. Pay with standard UPI
+to a person, then verify from the same Amazon account. Exclude UPI Lite, merchant
+payments and incoming transactions. Keep session evidence encrypted. A real
 intent requires the exact payment identity, allowed payment-time window, and an
 unused payment nullifier. Report maker deposit, buyer signal, evidence proof,
-and settlement as separate checkpoints.
+and settlement as separate checkpoints. Backend HDFC support is retained until
+a separately authorized retirement; do not remove its server routes here.
 
 After buyer intents are cancelled or otherwise terminal, call the supported
 `withdraw` path and verify the receipt and returned order state. If a transaction
 has an unknown result, inspect its receipt and existing deposit before retrying.
 Stop further spending on an unexplained balance or identity mismatch.
 
-Run `bun run ci` for SDK changes. Keep private VPA, raw email, keys, and request
+Run `bun run ci` for SDK changes. Keep private VPA, cookies, raw receipts, keys, and request
 bodies out of committed evidence; publish only redacted checkpoint results.
 
 ## Live order reconstruction regression
 
 After the exact UPI fixture is indexed, require both `cash.order(depositId)` and `cash.orders(owner)` to return it. Fixed UPI/INR creation-rate deposits must have positive fixed-rate evidence and the indexed `peer-cash` attribution marker. Do not classify unrelated Advanced Sell deposits as Cash orders. A quoteable indexer row alone is insufficient: run order lookup, partial-fill observation and withdrawal checks too. Keep the method/currency pair explicit; UPI/CNY must be rejected.
-
-Historical HDFC emails may be accepted within the deployed 14-day lookback. Bind any generated proof to the exact real intent, check the unused nullifier, and expect proportional release when the old payment is smaller than the requested fiat amount. Synthetic proof success is separate from chain settlement. Never alter the evidence or relax the window to force a match.
 
 ## Small-fixture visibility and dust reconciliation
 

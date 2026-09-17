@@ -73,7 +73,7 @@ deposit-level integration share instead of applying maker L1/L2.
 - **UPI is staging/preproduction-only and opt-in.** Construct the client with
   `features: { upi: true }`. Any valid UPI ID from any bank can receive; there
   is no seller bank login, extension, identity attestation, or prior
-  registration flow. Buyers currently prove from HDFC Bank through Gmail.
+  registration flow. Buyers pay and verify through Amazon Pay using standard UPI.
 
 ## The loop
 

@@ -42,7 +42,7 @@ Key facts:
   `createCashClient({ environment: 'preproduction', features: { upi: true } })`.
   Any valid UPI ID from any bank can receive without a seller login,
   extension, identity attestation, or prior registration flow. Buyers
-  currently prove HDFC Bank payments through Gmail.
+  pay and verify through Amazon Pay using standard UPI.
 - Resume any order from its depositId alone (composite escrow_onchainId).
 - One unwind verb: withdraw(depositId) - prunes expired intents automatically;
   pass amount for a partial withdrawal of the unlocked balance.
