@@ -44,7 +44,6 @@ import {
   platformRequiresIdentityAttestation,
   MIN_CASHOUT_AMOUNT,
   type CashCapabilities,
-  type CashFeatureFlags,
 } from './capabilities';
 import {
   getCashPaymentMethodsCatalog,
@@ -136,8 +135,7 @@ const ERC20_ALLOWANCE_ABI = parseAbi([
 export interface CashClientOptions {
   /** `'production' | 'preproduction' | 'staging'` - selects contracts, curator, and indexer. */
   environment: RuntimeEnv;
-  /** Fail-closed opt-ins for corridors that are not deployed to production. */
-  features?: CashFeatureFlags;
+
   /** viem transport for RPC reads; defaults to the public Base RPC. */
   transport?: Transport;
   /** Convenience alternative to `transport`. */
@@ -493,9 +491,8 @@ function isKnownPreBroadcastFailure(mapped: CashError): boolean {
 function cashoutAccessPolicyPaymentMethods(
   depositInput: CashDepositInput,
   environment: RuntimeEnv,
-  features?: CashFeatureFlags,
 ): Hex[] {
-  const catalog = getCashPaymentMethodsCatalog(environment, features);
+  const catalog = getCashPaymentMethodsCatalog(environment);
   return [
     ...new Set(
       depositInput.payouts
@@ -638,7 +635,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     if (legs.length === 0) {
       throw errors.invalidPayoutPlatforms('at least one payout leg is required');
     }
-    const capabilities = buildCapabilities(environment, options.features);
+    const capabilities = buildCapabilities(environment);
     const seenPlatforms = new Set<string>();
     const payouts = legs.map((leg): CashDepositInput['payouts'][number] => {
       const platform = capabilities.platforms.find(
@@ -729,7 +726,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
             throw errors.oracleReadFailed(currency, err);
           }
         },
-        options.features,
       );
     } catch (err) {
       if (isCashError(err)) throw err;
@@ -790,7 +786,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     const payouts = derivePayouts(
       deposit.paymentMethods ?? [],
       deposit.currencies ?? [],
-      getCashPaymentMethodsCatalog(environment, options.features),
+      getCashPaymentMethodsCatalog(environment),
     );
     let attributedToCash = false;
     if (!isCashPayoutSet(payouts)) {
@@ -895,7 +891,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     includeRelaySources?: true;
     includeNearIntentsSources?: true;
   }): CashCapabilities | Promise<CashCapabilities> {
-    const baseCapabilities = buildCapabilities(environment, options.features);
+    const baseCapabilities = buildCapabilities(environment);
     if (!capabilityOptions?.includeRelaySources && !capabilityOptions?.includeNearIntentsSources) {
       return baseCapabilities;
     }
@@ -1146,11 +1142,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
     source?: CashoutResult['source'],
   ): Promise<Hash[]> {
     const groupIds = CASH_ACCESS_GROUP_IDS[environment];
-    const paymentMethods = cashoutAccessPolicyPaymentMethods(
-      depositInput,
-      environment,
-      options.features,
-    );
+    const paymentMethods = cashoutAccessPolicyPaymentMethods(depositInput, environment);
     const hashes: Hash[] = [];
 
     for (const paymentMethod of paymentMethods) {
@@ -1525,7 +1517,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const accessPolicyPaymentMethods = cashoutAccessPolicyPaymentMethods(
         depositInput,
         environment,
-        options.features,
       );
 
       return {
@@ -1604,7 +1595,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       } catch (err) {
         throw errors.indexerUnavailable('orders', err);
       }
-      const catalog = getCashPaymentMethodsCatalog(environment, options.features);
+      const catalog = getCashPaymentMethodsCatalog(environment);
 
       let attributedCashDeposits = new Set<string>();
       const fixedRateCandidates = deposits.filter((deposit) => {

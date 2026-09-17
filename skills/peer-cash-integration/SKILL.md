@@ -183,8 +183,7 @@ platforms outright: a previously registered handle can be reused with bare
 payee data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration is still
 needed.
 
-UPI is a staging/preproduction-only opt-in while production rollout awaits review. Enable it
-with `features: { upi: true }` on a staging or preproduction client. Accept any locally valid
+UPI is available on production, preproduction, and staging clients without feature flags. Accept any locally valid
 UPI ID from any bank; do not add a seller bank-login, extension, identity
 attestation, or pre-registration step. Buyers pay and verify through Amazon Pay using standard UPI; UPI Lite and
 merchant payments are unsupported.
@@ -273,7 +272,7 @@ read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
 Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
 `creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
 observations older than 24 hours; market closures do not bypass freshness.
-UPI remains opt-in on staging/preproduction and disabled in production.
+UPI is available in production, preproduction, and staging without a feature flag.
 
 Before a funded UPI QA run, call
 `cash.estimate({ amount: 1000000n, platform: 'upi', currency: 'INR' }, { includeEta: false })`

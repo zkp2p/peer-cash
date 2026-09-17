@@ -21,11 +21,7 @@ import {
   ORACLE_MIN_CONVERSION_RATE_SENTINEL,
 } from './constants';
 import type { CashDepositInput, CashPayout } from './types';
-import {
-  getCashPaymentMethodsCatalog,
-  resolveCashPaymentMethodHash,
-  type CashCatalogFeatures,
-} from './paymentMethodCatalog';
+import { getCashPaymentMethodsCatalog, resolveCashPaymentMethodHash } from './paymentMethodCatalog';
 
 function payoutCurrencies(payout: CashPayout): readonly CurrencyType[] {
   if ((payout.currency === undefined) === (payout.currencies === undefined)) {
@@ -105,14 +101,13 @@ export async function prepareCashDepositParams(
   input: CashDepositInput,
   adapters?: OracleAdapterOverrides,
   creationRateReader?: CreationRateReader,
-  features?: CashCatalogFeatures,
 ): Promise<CreateDepositParamsArg> {
   const { payouts } = input;
   if (!payouts.length) throw new Error('At least one payout is required');
 
   const chainId = client.chainId;
   const runtimeEnv = client.runtimeEnv;
-  const catalog = getCashPaymentMethodsCatalog(runtimeEnv, features);
+  const catalog = getCashPaymentMethodsCatalog(runtimeEnv);
   const intentGatingService = getGatingServiceAddress(chainId, runtimeEnv) as Address;
   const processorNames = payouts.map((p) => p.processorName);
   const paymentMethodsOverride = processorNames.map((name) =>

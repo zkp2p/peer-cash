@@ -4,7 +4,7 @@ Route Relay-supported EVM assets or NEAR Intents 1Click external deposits into
 Base USDC, then cash out to fiat on Venmo, Revolut, Wise, Alipay, Zelle, and
 more at a zero-spread Chainlink market rate with no centralized off-ramp
 provider. Existing corridors bind the live oracle when a buyer signals;
-Alipay/CNY and opt-in UPI/INR fix fresh Chainlink snapshots when the SDK prepares
+Alipay/CNY and UPI/INR fix fresh Chainlink snapshots when the SDK prepares
 the deposit (Ethereum for CNY; Polygon for INR).
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
@@ -98,15 +98,13 @@ for await (const order of cash.watch(depositId)) {
 
 UPI requires the canonical UPI/INR catalog from `@zkp2p/sdk` 0.14.2-rc.1
 or its approved successor; a missing catalog entry keeps the corridor disabled.
-UPI is an opt-in staging and preproduction corridor. Production remains disabled
-pending rollout review. Any valid UPI ID from any bank can receive a cash-out. The seller
+UPI is available in every environment without an opt-in. Any valid UPI ID from any bank can receive a cash-out. The seller
 does not connect a bank account, install an extension, or complete a separate
 registration flow:
 
 ```ts
 const cash = createCashClient({
   environment: 'preproduction',
-  features: { upi: true },
 });
 
 await cash.cashout(
@@ -186,14 +184,14 @@ mixed historical deposit.
 
 ## Payout rails and access policies
 
-| Payout rail                  | Access-policy behavior                                                     | New payee registration                                                                 |
-| ---------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Venmo                        | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
-| PayPal                       | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
-| Cash App                     | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
-| Wise                         | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
-| UPI (staging/preprod opt-in) | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
-| Other supported rails        | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
+| Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
+| --------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Venmo                 | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
+| PayPal                | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
+| Cash App              | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
+| Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
+| UPI                   | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
+| Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
 
 No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
 work with any viem `WalletClient`, including a local or externally connected
@@ -483,7 +481,7 @@ is the default source and the only destination asset for cashout orders.
 Runnable first-party examples in [`examples/`](examples):
 
 - [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
-- [`upi-staging-cashout.ts`](examples/upi-staging-cashout.ts) - opt-in UPI/INR cash-out to any valid UPI ID on staging or preproduction.
+- [`upi-staging-cashout.ts`](examples/upi-staging-cashout.ts) - UPI/INR cash-out to any valid UPI ID on staging or preproduction.
 - [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.
 - [`carpe-diem-provider-cashout`](examples/carpe-diem-provider-cashout) - cash out confirmed Carpe Diem provider DIEM revenue through the connected Base wallet.
 - [`mpp-merchant-cashout`](examples/mpp-merchant-cashout) - turn confirmed MPP merchant revenue into an unsigned Peer Cash plan while the merchant keeps custody and signing.

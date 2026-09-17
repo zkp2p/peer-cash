@@ -6,9 +6,8 @@ description: Verify the Cash SDK Amazon Pay UPI corridor on preproduction, inclu
 # UPI preproduction QA
 
 Use the exact published Cash candidate and record its SDK/contracts versions.
-Require `createCashClient({ environment: 'preproduction', features: { upi: true } })`
-to advertise UPI/INR. Without the flag, and in production even with the flag,
-UPI must be absent and unsigned preparation must reject before registration or rate reads.
+Require `createCashClient({ environment: 'preproduction' })` to advertise UPI/INR.
+UPI is available without feature flags in every environment.
 The canonical contracts catalog must contain the live UPI method and INR currency;
 never invent a catalog entry when the package or registry omits one.
 
@@ -19,13 +18,10 @@ any transaction:
 import { createCashClient } from '@zkp2p/cash';
 
 for (const environment of ['staging', 'preproduction', 'production'] as const) {
-  for (const upi of [false, true]) {
-    const client = createCashClient({ environment, features: { upi } });
-    const method = client.capabilities().platforms.find((item) => item.platform === 'upi');
-    const expected = upi && environment !== 'production';
-    if (Boolean(method?.currencies.includes('INR')) !== expected) {
-      throw new Error(`Unexpected UPI catalog for ${environment}, flag=${upi}`);
-    }
+  const client = createCashClient({ environment });
+  const method = client.capabilities().platforms.find((item) => item.platform === 'upi');
+  if (!method?.currencies.includes('INR')) {
+    throw new Error(`Missing UPI catalog for ${environment}`);
   }
 }
 ```

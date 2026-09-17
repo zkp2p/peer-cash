@@ -9,7 +9,6 @@ export async function cashOutToUpi(
 ) {
   const cash = createCashClient({
     environment,
-    features: { upi: true },
   });
 
   const upi = cash.capabilities().platforms.find(({ platform }) => platform === 'upi');
