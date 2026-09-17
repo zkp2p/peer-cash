@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Peer Cash Demo: the express sell flow stored entirely onchain on Base, after zSwap by z0r0z",
   "dependencies": {
-    "@zkp2p/cash": "0.4.10",
+    "@zkp2p/cash": "0.5.3",
     "esbuild": "0.28.2",
     "solc": "0.8.36",
     "viem": "2.55.18"
