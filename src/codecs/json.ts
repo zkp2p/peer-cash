@@ -3,6 +3,7 @@
  * as decimal strings; `parse*` validates with the zod schema and re-attaches
  * derived behavior (`order.explain()`).
  */
+import type { VenmoGmailConnectResult } from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
@@ -30,6 +31,7 @@ import type {
 } from '../client/nearIntents';
 import { CashError, type CashErrorRecovery, type CashErrorShape } from '../client/errors';
 import type {
+  PreparedVenmoGmailConnect,
   CashPreparedStep,
   CashoutResult,
   PrepareResult,
@@ -37,6 +39,10 @@ import type {
   WithdrawResult,
 } from '../client/createCashClient';
 import {
+  preparedVenmoGmailConnectJsonSchema,
+  venmoGmailConnectResultJsonSchema,
+  type PreparedVenmoGmailConnectJson,
+  type VenmoGmailConnectResultJson,
   cashCapabilitiesJsonSchema,
   cashEstimateJsonSchema,
   cashFillStatsJsonSchema,
@@ -746,4 +752,29 @@ export function cashErrorFromJson(json: unknown): CashError {
     remediation: parsed.remediation,
     ...(recovery ? { recovery } : {}),
   });
+}
+
+export function preparedVenmoGmailConnectToJson(
+  value: PreparedVenmoGmailConnect,
+): PreparedVenmoGmailConnectJson {
+  return preparedVenmoGmailConnectJsonSchema.parse(value);
+}
+
+export function preparedVenmoGmailConnectFromJson(json: unknown): PreparedVenmoGmailConnect {
+  const parsed = preparedVenmoGmailConnectJsonSchema.parse(json);
+  return {
+    ...parsed,
+    payeeDetails: parsed.payeeDetails as PreparedVenmoGmailConnect['payeeDetails'],
+  };
+}
+
+export function venmoGmailConnectResultToJson(
+  value: VenmoGmailConnectResult,
+): VenmoGmailConnectResultJson {
+  return venmoGmailConnectResultJsonSchema.parse(value);
+}
+
+export function venmoGmailConnectResultFromJson(json: unknown): VenmoGmailConnectResult {
+  const parsed = venmoGmailConnectResultJsonSchema.parse(json);
+  return { payeeDetails: parsed.payeeDetails as VenmoGmailConnectResult['payeeDetails'] };
 }

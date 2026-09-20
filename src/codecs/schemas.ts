@@ -710,3 +710,12 @@ export type RelayStatusJson = z.infer<typeof relayStatusJsonSchema>;
 export type RelayExecutionResultJson = z.infer<typeof relayExecutionResultJsonSchema>;
 export type CashErrorRecoveryJson = z.infer<typeof cashErrorRecoveryJsonSchema>;
 export type CashErrorJson = z.infer<typeof cashErrorJsonSchema>;
+
+export const venmoGmailConnectResultJsonSchema = z.object({
+  payeeDetails: z.string().regex(/^0x[0-9a-f]{64}$/i),
+});
+export const preparedVenmoGmailConnectJsonSchema = venmoGmailConnectResultJsonSchema.extend({
+  url: z.url(),
+});
+export type VenmoGmailConnectResultJson = z.infer<typeof venmoGmailConnectResultJsonSchema>;
+export type PreparedVenmoGmailConnectJson = z.infer<typeof preparedVenmoGmailConnectJsonSchema>;
