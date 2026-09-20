@@ -23,7 +23,14 @@ import {
   type WalletClient,
 } from 'viem';
 import { base, mainnet, polygon } from 'viem/chains';
-import { Zkp2pClient, appendAttributionToCalldata, createCompositeDepositId } from '@zkp2p/sdk';
+import {
+  Zkp2pClient,
+  appendAttributionToCalldata,
+  createCompositeDepositId,
+  getVenmoGmailConnectUrl,
+  openVenmoGmailConnect,
+  type VenmoGmailConnectResult,
+} from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction, RuntimeEnv, TxOverrides } from '../sdk-types';
 import {
   BASE_CHAIN_ID,
@@ -125,6 +132,17 @@ const DEFAULT_CURATOR_URLS: Partial<Record<RuntimeEnv, string>> = {
   preproduction: 'https://api-preprod.zkp2p.xyz',
   staging: 'https://api-staging.zkp2p.xyz',
 };
+const DEFAULT_PEER_ORIGINS: Record<RuntimeEnv, string> = {
+  production: 'https://app.peer.xyz',
+  preproduction: 'https://ramp-preprod.peer.xyz',
+  staging: 'https://ramp-staging.peer.xyz',
+};
+
+export interface PreparedVenmoGmailConnect {
+  payeeDetails: Hash;
+  url: string;
+}
+
 const ERC20_APPROVE_ABI = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
 ]);
@@ -146,6 +164,8 @@ export interface CashClientOptions {
   indexerApiKey?: string;
   /** Curator (ZKP2P API) URL override. */
   curatorUrl?: string;
+  /** Peer web origin override for optional Venmo receipt linking. Defaults by environment. */
+  peerOrigin?: string;
   /** Optional ZKP2P API key. */
   apiKey?: string;
   /** Ethereum transport used only to snapshot Alipay/CNY's creation-time rate. */
@@ -333,6 +353,12 @@ export interface OrdersOptions {
 }
 
 export interface CashClient {
+  /** Optional: register the Venmo handle before enabling a separate link button. No deposit. */
+  prepareVenmoGmailConnect(payee: string): Promise<PreparedVenmoGmailConnect>;
+  /** Optional, browser-only: call directly from a click handler with the prepared payee hash. */
+  openVenmoGmailConnect(payeeDetails: Hash): Promise<VenmoGmailConnectResult>;
+  /** True only for an active Google receipt credential; errors reject instead of reporting unlinked. */
+  isVenmoGmailConnected(payeeDetails: Hash): Promise<boolean>;
   /** 0 - Discovery: sync, static. */
   capabilities(): CashCapabilities;
   /** 0b - Discovery with live Relay-supported EVM source chains/tokens. */
@@ -1190,6 +1216,34 @@ export function createCashClient(options: CashClientOptions): CashClient {
   }
 
   return {
+    async prepareVenmoGmailConnect(payee: string): Promise<PreparedVenmoGmailConnect> {
+      const { hashedOnchainIds } = await readClient.registerPayeeDetails({
+        processorNames: ['venmo'],
+        payeeData: [normalizeCashPayee('venmo', payee)],
+      });
+      const payeeDetails = hashedOnchainIds[0] as Hash;
+      const url = getVenmoGmailConnectUrl({
+        payeeDetails,
+        peerOrigin: options.peerOrigin ?? DEFAULT_PEER_ORIGINS[environment],
+      });
+      return { payeeDetails, url };
+    },
+
+    openVenmoGmailConnect(payeeDetails: Hash): Promise<VenmoGmailConnectResult> {
+      return openVenmoGmailConnect({
+        payeeDetails,
+        peerOrigin: options.peerOrigin ?? DEFAULT_PEER_ORIGINS[environment],
+      });
+    },
+
+    async isVenmoGmailConnected(payeeDetails: Hash): Promise<boolean> {
+      const { responseObject } = await readClient.getSellerCredentialStatus({
+        processorName: 'venmo',
+        payeeDetails,
+      });
+      return responseObject.status === 'active' && responseObject.credentialType === 'google_oauth';
+    },
+
     capabilities,
 
     async sourceCapabilities(): Promise<CashSourceCapabilities> {

@@ -12,6 +12,17 @@
 
 Key facts:
 
+- Optional Venmo receipt linking: prepareVenmoGmailConnect(handle) registers
+  the selected handle and returns { payeeDetails, url }. From a separate click,
+  openVenmoGmailConnect(payeeDetails) opens the environment's hosted flow.
+  isVenmoGmailConnected(payeeDetails) checks for an active Google credential;
+  lookup errors reject. Cashout and prepare never call or require these steps.
+  Mobile may open a tab; check status on return or ambiguous popup closure.
+  Google-hosted school/custom domains are supported; actual receipt failures
+  use VenmoGmailConnectError.code, including venmo_google_oauth_receipt_not_found.
+  Partner apps receive neither emails nor Google tokens. Re-prepare when the
+  handle changes; persist payee hash with environment and user account.
+
 - The cashing-out user is the MAKER: their USDC becomes a protocol-held order;
   a buyer pays fiat and proves it with TEE-TLS; the protocol releases the USDC.
 - Destination is always Base USDC. Relay sources come from live SDK metadata;

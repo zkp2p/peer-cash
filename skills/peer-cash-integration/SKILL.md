@@ -282,3 +282,20 @@ old and not in the future. Record the observation time and selected chain,
 then stop before funding if the read fails. Unit-test fixtures prove routing,
 not live availability. The authoritative feed listing is
 https://data.chain.link/feeds/polygon/mainnet/inr-usd.
+
+## Optional Venmo receipt linking
+
+Offer this separately; `cashout()` and `prepare()` never require or invoke it.
+Run `cash.prepareVenmoGmailConnect(handle)` when the user selects Venmo, then
+call `cash.openVenmoGmailConnect(link.payeeDetails)` directly from a separate
+button click. Re-prepare when the selected handle changes. Use
+`cash.isVenmoGmailConnected(link.payeeDetails)` after returning from a mobile
+tab or an ambiguous closure; service errors reject, and only an active Google
+credential counts as connected. Persist the hash with its environment and user.
+
+The hosted flow accepts Google-hosted school/custom domains and verifies actual
+Venmo receipts. `VenmoGmailConnectError` retains codes such as
+`venmo_google_oauth_receipt_not_found`, `popup_blocked`, `connection_closed`,
+and `connection_timeout`; it is separate from `CashError`. No emails or Google
+tokens reach the partner. `link.url` supports redirect/native hosts, which
+must check status on return. See the README and `examples/venmo-link.ts`.

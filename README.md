@@ -144,6 +144,9 @@ arbitrary protocol operations.
 
 | Verb                                                           | What it does                                                                                                                    |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `prepareVenmoGmailConnect(payee)`                              | Optional Venmo handle registration; returns the payee hash and hosted URL                                                       |
+| `openVenmoGmailConnect(payeeDetails)`                          | Optional browser popup/tab; call directly from a click                                                                          |
+| `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Google receipt credential exists                                                                         |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
 | `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
 | `capabilities({ includeNearIntentsSources: true })`            | Async discovery: adds live NEAR Intents 1Click source assets                                                                    |
@@ -181,6 +184,60 @@ Order reads fail closed against the same active catalog. If any method on an
 indexed deposit is unsupported, `orders()` excludes the whole deposit and
 `order()` returns `ORDER_NOT_FOUND`; Peer Cash never partially reclassifies a
 mixed historical deposit.
+
+## Optional Venmo receipt linking
+
+Partners such as Tailgate can offer **Link Venmo** separately from cash-out.
+`cashout()` and `prepare()` never open Gmail, check receipt credentials, or
+require this step. Skipping or cancelling linking leaves cash-out available.
+
+```ts
+import { createCashClient, VenmoGmailConnectError } from '@zkp2p/cash';
+
+const cash = createCashClient({ environment: 'production' });
+// Run when the user selects their Venmo account, before enabling Link Venmo.
+const link = await cash.prepareVenmoGmailConnect('@yourhandle');
+
+// Call directly from the button click, with no async work before this call.
+linkButton.onclick = () => {
+  cash.openVenmoGmailConnect(link.payeeDetails).catch((error: unknown) => {
+    if (error instanceof VenmoGmailConnectError) {
+      console.log(error.code, error.message);
+    }
+  });
+};
+
+// After completion, returning from a tab, or an ambiguous popup closure:
+const connected = await cash.isVenmoGmailConnected(link.payeeDetails);
+```
+
+The handle is registered with the environment's Curator and its authoritative
+payee hash goes to the hosted link. Re-prepare if the selected handle changes.
+Persist the hash with the environment and user account for later status checks.
+`link.url` also works as a normal link for redirect or native-browser hosts;
+those hosts must check status after the user returns.
+
+Production uses `app.peer.xyz`, preproduction `ramp-preprod.peer.xyz`, and
+staging `ramp-staging.peer.xyz`. `peerOrigin` and `curatorUrl` allow explicit
+overrides. Browser helpers require no React, extension, wallet, or signer.
+Preparation and status reads also work on the server.
+
+Desktop opens a popup; mobile requests a new browser tab (including Safari).
+The browser controls presentation and may sever the opener connection. In that
+case check status rather than assuming `connection_closed` or
+`connection_timeout` means verification failed. Status is true only for an
+active `google_oauth` credential; lookup failures reject.
+
+Gmail and Google-hosted school/custom-domain inboxes are accepted. The hosted
+flow verifies actual receipts; there is no email-domain precheck. A missing
+receipt reports `venmo_google_oauth_receipt_not_found` through
+`VenmoGmailConnectError.code`. Cancellation, popup blocking, and other hosted
+errors retain their codes. This error class is separate from `CashError`;
+registration and status service errors also reject. Emails and Google tokens
+never pass through the partner app or Cash SDK.
+
+See [the browser example](examples/venmo-link.ts). JSON codecs are exported for
+`PreparedVenmoGmailConnect` and `VenmoGmailConnectResult`.
 
 ## Payout rails and access policies
 
