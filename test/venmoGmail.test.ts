@@ -63,6 +63,22 @@ describe('optional Venmo receipt linking', () => {
     },
   );
 
+  it('shares branding between prepared URLs and the synchronous popup', async () => {
+    const appearance = { logoUrl: 'https://partner.example/logo.png', buttonColor: '#6246EA' };
+    const popup = { width: 500, height: 620 };
+    const cash = createCashClient({ environment: 'production', venmoGmail: { appearance, popup } });
+    const link = await cash.prepareVenmoGmailConnect('alice');
+    expect(new URL(link.url).searchParams.get('appearance')).toBe(JSON.stringify(appearance));
+    const result = cash.openVenmoGmailConnect(link.payeeDetails);
+    expect(mocks.open).toHaveBeenCalledWith({
+      payeeDetails,
+      peerOrigin: 'https://app.peer.xyz',
+      appearance,
+      popup,
+    });
+    await expect(result).resolves.toEqual({ payeeDetails });
+  });
+
   it('retains explicit service overrides', async () => {
     const cash = createCashClient({
       environment: 'staging',

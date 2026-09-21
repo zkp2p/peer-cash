@@ -4,15 +4,22 @@ import {
   type PreparedVenmoGmailConnect,
 } from '@zkp2p/cash';
 
+const cash = createCashClient({
+  environment: 'production',
+  // Optional: omit venmoGmail for Peer branding and the default popup size.
+  venmoGmail: {
+    appearance: { buttonColor: '#6246EA', buttonTextColor: '#FFFFFF' },
+    popup: { width: 500, height: 620 },
+  },
+});
+
 /** Optional onboarding: call with the selected handle before enabling the link button. */
 export async function prepareVenmoLink(handle: string) {
-  const cash = createCashClient({ environment: 'production' });
   return cash.prepareVenmoGmailConnect(handle);
 }
 
 /** Bind this to a click. Keep registration/other awaits outside the handler. */
 export function linkVenmo(link: PreparedVenmoGmailConnect) {
-  const cash = createCashClient({ environment: 'production' });
   return cash.openVenmoGmailConnect(link.payeeDetails).catch((error: unknown) => {
     if (error instanceof VenmoGmailConnectError) {
       // Render error.message. For an ambiguous closure/timeout, offer a status refresh.
@@ -25,7 +32,6 @@ export function linkVenmo(link: PreparedVenmoGmailConnect) {
 
 /** Also call when returning from a mobile tab or redirect opened with link.url. */
 export function checkVenmoLink(link: PreparedVenmoGmailConnect) {
-  const cash = createCashClient({ environment: 'production' });
   return cash.isVenmoGmailConnected(link.payeeDetails);
 }
 

@@ -22,6 +22,9 @@ Key facts:
   use VenmoGmailConnectError.code, including venmo_google_oauth_receipt_not_found.
   Partner apps receive neither emails nor Google tokens. Re-prepare when the
   handle changes; persist payee hash with environment and user account.
+  Optional createCashClient({ venmoGmail: { appearance, popup } }) shares branding
+  between the prepared URL and popup. Defaults use Peer branding; desktop popup
+  dimensions do not control mobile tab sizing. See the README customization example.
 
 - The cashing-out user is the MAKER: their USDC becomes a protocol-held order;
   a buyer pays fiat and proves it with TEE-TLS; the protocol releases the USDC.
