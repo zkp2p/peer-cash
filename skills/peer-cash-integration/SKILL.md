@@ -293,15 +293,15 @@ button click. Re-prepare when the selected handle changes. Use
 tab or an ambiguous closure; service errors reject, and only an active Google
 credential counts as connected. Persist the hash with its environment and user.
 
-The hosted flow accepts Google-hosted school/custom domains and verifies actual
-Venmo receipts. `VenmoGmailConnectError` retains codes such as
-`venmo_google_oauth_receipt_not_found`, `popup_blocked`, `connection_closed`,
-and `connection_timeout`; it is separate from `CashError`. No emails or Google
-tokens reach the partner. `link.url` supports redirect/native hosts, which
-must check status on return. See the README and `examples/venmo-link.ts`.
+For native apps, use `prepareVenmoGmailConnect(handle, { returnUrl })` and
+open `link.url` with Expo's `openAuthSessionAsync(link.url, returnUrl)`.
+Register the scheme in your app binary; no registration with Peer is needed.
+Peer appends no data to the callback. Omitted/empty callbacks attempt closure;
+tabs that block it keep the success page. Always re-check status on return.
 
-Configure optional `venmoGmail: { appearance, popup }` on `createCashClient()`
-to share partner branding between the prepared URL and popup. Omit it for Peer
-branding; omit `appearance.logoUrl` to keep the Peer logo beside Venmo. Popup
-width/height apply to desktop; mobile browsers control tab sizing. See the
-README's "Customize the hosted popup" section for the configuration example.
+The hosted flow verifies actual Venmo receipts, including Google-hosted custom
+inboxes. `VenmoGmailConnectError` is separate from `CashError`; no emails or
+Google tokens reach the partner. Configure `venmoGmail: { appearance, popup }`
+for branding and desktop dimensions; omission keeps Peer defaults.
+See the README for error codes, native callbacks, package-free URLs, and
+customization, plus `examples/venmo-link.ts`.

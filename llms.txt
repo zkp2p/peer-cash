@@ -17,7 +17,11 @@ Key facts:
   openVenmoGmailConnect(payeeDetails) opens the environment's hosted flow.
   isVenmoGmailConnected(payeeDetails) checks for an active Google credential;
   lookup errors reject. Cashout and prepare never call or require these steps.
-  Mobile may open a tab; check status on return or ambiguous popup closure.
+  Native hosts use prepareVenmoGmailConnect(handle, { returnUrl }) and open
+  link.url with Expo openAuthSessionAsync(link.url, returnUrl). Register the
+  app scheme in the binary; Peer needs no callback registration and appends
+  no data. Omitted/empty callbacks attempt closure; blocked tabs keep the
+  success page. Always check status on return or ambiguous popup closure.
   Google-hosted school/custom domains are supported; actual receipt failures
   use VenmoGmailConnectError.code, including venmo_google_oauth_receipt_not_found.
   Partner apps receive neither emails nor Google tokens. Re-prepare when the
