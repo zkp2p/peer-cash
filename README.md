@@ -144,7 +144,7 @@ arbitrary protocol operations.
 
 | Verb                                                           | What it does                                                                                                                    |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `prepareVenmoGmailConnect(payee)`                              | Optional Venmo handle registration; returns the payee hash and hosted URL                                                       |
+| `prepareVenmoGmailConnect(payee, { returnUrl }?)`              | Optional Venmo handle registration; returns the payee hash and hosted URL, with an optional app callback                        |
 | `openVenmoGmailConnect(payeeDetails)`                          | Optional browser popup/tab; call directly from a click                                                                          |
 | `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Google receipt credential exists                                                                         |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
@@ -238,6 +238,46 @@ never pass through the partner app or Cash SDK.
 
 See [the browser example](examples/venmo-link.ts). JSON codecs are exported for
 `PreparedVenmoGmailConnect` and `VenmoGmailConnectResult`.
+
+### Return to an Expo / React Native app
+
+Cash `0.6.2` supports an optional callback on the prepared URL. The popup
+helper is browser-only; native apps open the URL using their system browser
+session:
+
+```ts
+import { createCashClient } from '@zkp2p/cash';
+import * as WebBrowser from 'expo-web-browser';
+
+const cash = createCashClient({ environment: 'production' });
+const returnUrl = 'partner-app://venmo-linked';
+const link = await cash.prepareVenmoGmailConnect('@yourhandle', { returnUrl });
+await WebBrowser.openAuthSessionAsync(link.url, returnUrl);
+const connected = await cash.isVenmoGmailConnected(link.payeeDetails);
+```
+
+Register the callback scheme in your app binary and test on iOS and Android;
+see [Expo's callback requirements](https://docs.expo.dev/versions/latest/sdk/webbrowser/#webbrowseropenauthsessionasyncurl-redirecturl-options).
+Peer requires no callback registration or deployment configuration. After
+verification, the hosted page navigates to `returnUrl` unchanged: no Google
+credentials, email, account hash, or status are appended. Errors remain on
+the page with a manual return button. Always re-check connection status on
+return or dismissal; a browser return alone is not proof of linking.
+
+Preparation and status checks can stay on your backend. If it already has
+`payeeDetails`, your app needs no Cash package:
+
+```ts
+const connectUrl = new URL('https://app.peer.xyz/connect/venmo');
+connectUrl.searchParams.set('returnUrl', returnUrl);
+connectUrl.hash = payeeDetails;
+await WebBrowser.openAuthSessionAsync(connectUrl.toString(), returnUrl);
+// Re-check seller-credential/status through your backend.
+```
+
+Without a callback, or with an empty one, the hosted page attempts to close
+after verification. Script-opened desktop popups can close; mobile tabs that
+block closure retain the success page for manual dismissal.
 
 ### Customize the hosted popup
 

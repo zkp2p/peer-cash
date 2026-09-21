@@ -360,8 +360,11 @@ export interface OrdersOptions {
 }
 
 export interface CashClient {
-  /** Optional: register the Venmo handle before enabling a separate link button. No deposit. */
-  prepareVenmoGmailConnect(payee: string): Promise<PreparedVenmoGmailConnect>;
+  /** Register a Venmo handle and prepare a hosted URL, optionally returning to a native app. No deposit. */
+  prepareVenmoGmailConnect(
+    payee: string,
+    options?: { returnUrl?: string },
+  ): Promise<PreparedVenmoGmailConnect>;
   /** Optional, browser-only: call directly from a click handler with the prepared payee hash. */
   openVenmoGmailConnect(payeeDetails: Hash): Promise<VenmoGmailConnectResult>;
   /** True only for an active Google receipt credential; errors reject instead of reporting unlinked. */
@@ -1223,7 +1226,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
   }
 
   return {
-    async prepareVenmoGmailConnect(payee: string): Promise<PreparedVenmoGmailConnect> {
+    async prepareVenmoGmailConnect(
+      payee: string,
+      connectOptions?: { returnUrl?: string },
+    ): Promise<PreparedVenmoGmailConnect> {
       const { hashedOnchainIds } = await readClient.registerPayeeDetails({
         processorNames: ['venmo'],
         payeeData: [normalizeCashPayee('venmo', payee)],
@@ -1231,6 +1237,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const payeeDetails = hashedOnchainIds[0] as Hash;
       const url = getVenmoGmailConnectUrl({
         ...options.venmoGmail,
+        ...connectOptions,
         payeeDetails,
         peerOrigin: options.peerOrigin ?? DEFAULT_PEER_ORIGINS[environment],
       });

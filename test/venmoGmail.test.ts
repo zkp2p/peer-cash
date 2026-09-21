@@ -92,6 +92,45 @@ describe('optional Venmo receipt linking', () => {
     expect(mocks.open).toHaveBeenCalledWith({ payeeDetails, peerOrigin: 'http://localhost:3010' });
   });
 
+  it.each([
+    'partner-app://venmo-linked?session=one%2Ftwo&label=hello%20world#receipt',
+    'https://partner.example/venmo-linked?session=one%2Ftwo',
+    '',
+  ])('prepares a native return URL without changing popup behavior: %s', async (returnUrl) => {
+    const cash = createCashClient({ environment: 'staging' });
+    const link = await cash.prepareVenmoGmailConnect('alice', { returnUrl });
+    const query = returnUrl ? `?${new URLSearchParams({ returnUrl })}` : '';
+    expect(link).toEqual({
+      payeeDetails,
+      url: `https://ramp-staging.peer.xyz/connect/venmo${query}#${payeeDetails}`,
+    });
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(mocks.getSellerCredentialStatus).not.toHaveBeenCalled();
+    expect(
+      preparedVenmoGmailConnectFromJson(
+        JSON.parse(JSON.stringify(preparedVenmoGmailConnectToJson(link))),
+      ),
+    ).toEqual(link);
+    await cash.openVenmoGmailConnect(link.payeeDetails);
+    expect(mocks.open).toHaveBeenCalledWith({
+      payeeDetails,
+      peerOrigin: 'https://ramp-staging.peer.xyz',
+    });
+  });
+
+  it('retains branding with a per-link app callback', async () => {
+    const appearance = { buttonColor: '#6246EA' };
+    const cash = createCashClient({ environment: 'production', venmoGmail: { appearance } });
+    const link = await cash.prepareVenmoGmailConnect('alice', {
+      returnUrl: 'partner-app://venmo-linked',
+    });
+    const url = new URL(link.url);
+    expect(url.searchParams.get('returnUrl')).toBe('partner-app://venmo-linked');
+    expect(url.searchParams.get('appearance')).toBe(JSON.stringify(appearance));
+    const withoutCallback = await cash.prepareVenmoGmailConnect('alice');
+    expect(new URL(withoutCallback.url).searchParams.has('returnUrl')).toBe(false);
+  });
+
   it('does not produce a link when registration fails', async () => {
     const error = new Error('Venmo account not found');
     mocks.registerPayeeDetails.mockRejectedValueOnce(error);

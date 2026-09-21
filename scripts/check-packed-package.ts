@@ -130,13 +130,15 @@ import {
 
 const rootExport: typeof createCashClient = createCashClient;
 const rootType = null as CashClient | null;
+const prepareNativeLink = (cash: CashClient) =>
+  cash.prepareVenmoGmailConnect('@handle', { returnUrl: 'partner-app://venmo-linked' });
 const reactExport: typeof useCashout = useCashout;
 const reactType = null as UseCashoutOptions | null;
 const customName: CashToolName = 'merchant_custom_tool';
 const builtInName: BuiltInCashToolName = 'cash_fill_stats';
 const mutableRegistry: CashToolDefinition[] = cashTools;
 
-void [rootExport, rootType, reactExport, reactType, customName, builtInName, mutableRegistry];
+void [rootExport, rootType, prepareNativeLink, reactExport, reactType, customName, builtInName, mutableRegistry];
 `;
   writeFileSync(join(temporaryRoot, 'consumer-modern.ts'), consumerSource);
   writeFileSync(join(classicRoot, 'consumer-classic.ts'), consumerSource);

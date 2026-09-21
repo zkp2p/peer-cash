@@ -18,6 +18,11 @@ export async function prepareVenmoLink(handle: string) {
   return cash.prepareVenmoGmailConnect(handle);
 }
 
+/** Native: open link.url with expo-web-browser's openAuthSessionAsync(url, returnUrl). */
+export async function prepareNativeVenmoLink(handle: string, returnUrl: string) {
+  return cash.prepareVenmoGmailConnect(handle, { returnUrl });
+}
+
 /** Bind this to a click. Keep registration/other awaits outside the handler. */
 export function linkVenmo(link: PreparedVenmoGmailConnect) {
   return cash.openVenmoGmailConnect(link.payeeDetails).catch((error: unknown) => {
