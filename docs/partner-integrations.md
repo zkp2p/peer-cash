@@ -156,3 +156,9 @@ Venmo receipts. `VenmoGmailConnectError` retains codes such as
 and `connection_timeout`; it is separate from `CashError`. No emails or Google
 tokens reach the partner. `link.url` supports redirect/native hosts, which
 must check status on return. See the README and `examples/venmo-link.ts`.
+
+Configure optional `venmoGmail: { appearance, popup }` on `createCashClient()`
+to share partner branding between the prepared URL and popup. Omit it for Peer
+branding; omit `appearance.logoUrl` to keep the Peer logo beside Venmo. Popup
+width/height apply to desktop; mobile browsers control tab sizing. See the
+README's "Customize the hosted popup" section for the configuration example.

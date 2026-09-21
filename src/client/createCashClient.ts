@@ -30,6 +30,8 @@ import {
   getVenmoGmailConnectUrl,
   openVenmoGmailConnect,
   type VenmoGmailConnectResult,
+  type VenmoGmailAppearance,
+  type VenmoGmailPopupOptions,
 } from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction, RuntimeEnv, TxOverrides } from '../sdk-types';
 import {
@@ -166,6 +168,11 @@ export interface CashClientOptions {
   curatorUrl?: string;
   /** Peer web origin override for optional Venmo receipt linking. Defaults by environment. */
   peerOrigin?: string;
+  /** Optional branding shared by prepared URLs and browser linking. Never affects cash-out. */
+  venmoGmail?: {
+    appearance?: VenmoGmailAppearance;
+    popup?: VenmoGmailPopupOptions;
+  };
   /** Optional ZKP2P API key. */
   apiKey?: string;
   /** Ethereum transport used only to snapshot Alipay/CNY's creation-time rate. */
@@ -1223,6 +1230,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       });
       const payeeDetails = hashedOnchainIds[0] as Hash;
       const url = getVenmoGmailConnectUrl({
+        ...options.venmoGmail,
         payeeDetails,
         peerOrigin: options.peerOrigin ?? DEFAULT_PEER_ORIGINS[environment],
       });
@@ -1231,6 +1239,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
     openVenmoGmailConnect(payeeDetails: Hash): Promise<VenmoGmailConnectResult> {
       return openVenmoGmailConnect({
+        ...options.venmoGmail,
         payeeDetails,
         peerOrigin: options.peerOrigin ?? DEFAULT_PEER_ORIGINS[environment],
       });

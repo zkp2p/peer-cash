@@ -122,4 +122,8 @@ export type {
 
 // Optional hosted Venmo linking errors and result; no Google credentials enter Cash.
 export { VenmoGmailConnectError } from '@zkp2p/sdk';
-export type { VenmoGmailConnectResult } from '@zkp2p/sdk';
+export type {
+  VenmoGmailConnectResult,
+  VenmoGmailAppearance,
+  VenmoGmailPopupOptions,
+} from '@zkp2p/sdk';

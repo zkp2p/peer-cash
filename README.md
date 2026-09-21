@@ -239,6 +239,43 @@ never pass through the partner app or Cash SDK.
 See [the browser example](examples/venmo-link.ts). JSON codecs are exported for
 `PreparedVenmoGmailConnect` and `VenmoGmailConnectResult`.
 
+### Customize the hosted popup
+
+With `@zkp2p/cash@0.6.1`, configure branding once on the client. The same
+appearance is used by `link.url` and `openVenmoGmailConnect()`.
+
+```ts
+const cash = createCashClient({
+  environment: 'production',
+  venmoGmail: {
+    appearance: {
+      logoUrl: 'https://your-app.example/logo.png',
+      logoAlt: 'Your app',
+      backgroundColor: '#FFFFFF',
+      textColor: '#172033',
+      secondaryTextColor: '#636B7A',
+      buttonColor: '#6246EA',
+      buttonTextColor: '#FFFFFF',
+      fontFamily: 'Inter, sans-serif',
+      headingTextTransform: 'none',
+      buttonTextTransform: 'none',
+      buttonBorderRadius: 12,
+      buttonHeight: 52,
+    },
+    popup: { width: 500, height: 620 },
+  },
+});
+```
+
+Your hosted logo appears beside Venmo with three connecting dots. Without a
+partner logo, the page shows Peer beside Venmo. Colors use
+hex values and dimensions use pixels. Optional `fontUrl` accepts a hosted
+WOFF/WOFF2 font with cross-origin loading enabled. Popup dimensions apply to
+desktop; mobile browsers control the new tab's size. Styling never changes
+consent, account selection, or receipt verification.
+
+See the [full appearance options](https://www.npmjs.com/package/@zkp2p/sdk#popup-customization).
+
 ## Payout rails and access policies
 
 | Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
