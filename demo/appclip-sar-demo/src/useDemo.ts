@@ -8,10 +8,12 @@ import {
   clearSarLink,
   createReturnUrl,
   createSarLink,
+  readActiveSarAccounts,
   readSarResult,
   restoreSarLink,
   saveSarLink,
   type SarLink,
+  type ActiveSarAccount,
   type SarPlatform,
   type SarResult,
 } from './sar';
@@ -78,6 +80,8 @@ export function useDemo() {
   const [sarResult, setSarResult] = useState<SarResult | null>(null);
   const [sarBusy, setSarBusy] = useState(false);
   const [sarError, setSarError] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<ActiveSarAccount[]>([]);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
   const [cashoutBusy, setCashoutBusy] = useState(false);
   const [cashoutError, setCashoutError] = useState<string | null>(null);
   const [order, setOrder] = useState<DemoOrder | null>(null);
@@ -99,6 +103,30 @@ export function useDemo() {
       canWithdraw: false,
     } : null);
   }, [address, authenticated, ready]);
+
+  useEffect(() => {
+    if (!ready || !authenticated || !address) {
+      setAccounts([]);
+      setAccountsError(null);
+      return;
+    }
+    let cancelled = false;
+    void getAccessToken()
+      .then((token) => {
+        if (!token) throw new Error('Sign in again to check your connected accounts.');
+        return readActiveSarAccounts(CURATOR_API, token);
+      })
+      .then((next) => {
+        if (!cancelled) {
+          setAccounts(next);
+          setAccountsError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setAccountsError(errorMessage(error));
+      });
+    return () => { cancelled = true; };
+  }, [ready, authenticated, address, sarResult?.status, getAccessToken]);
 
   useEffect(() => {
     let stale = false;
@@ -295,7 +323,9 @@ export function useDemo() {
     estimateBusy,
     estimateError,
     sar: { link: link?.platform === rail ? link : null, result: link?.platform === rail ? sarResult : null,
-      busy: sarBusy, error: sarError, start: startSar, cancel: cancelSar,
+      account: accounts.find((item) => item.platform === rail &&
+        (!payee.trim() || item.offchainId.toLowerCase() === payee.trim().toLowerCase())) ?? null,
+      accountsError, busy: sarBusy, error: sarError, start: startSar, cancel: cancelSar,
       refresh: () => link && void refreshSar(link) },
     cashout: { busy: cashoutBusy, error: cashoutError, start: startCashout },
     order: { data: order, error: orderError, refresh: () => order && void refreshOrder(order.depositId, order.txHash),

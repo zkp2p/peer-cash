@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSarLink, readSarResult } from './sar';
+import { createSarLink, readActiveSarAccounts, readSarResult } from './sar';
 
 const wallet = '0x1111111111111111111111111111111111111111' as const;
 const requestId = `p${'A'.repeat(42)}`;
@@ -42,5 +42,24 @@ describe('App Clip SAR capability handoff', () => {
       state: 'S'.repeat(36), expiresAt: Date.now() + 600_000,
       url: `https://mobile.peer.xyz/clip/connect?request=${requestId}`,
     })).rejects.toThrow('does not belong');
+  });
+
+  it('reads only active, unrevoked accounts from the authenticated maker profile', async () => {
+    const fetcher = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toBe('https://api.zkp2p.xyz/v2/me');
+      expect((init.headers as Record<string, string>).Authorization).toBe('Bearer privy-token');
+      return Response.json({ success: true, responseObject: { profile: null, connectedAccounts: [
+        { platform: 'upi', offchainId: '7014748022@apl', payeeIdHash: `0x${'a'.repeat(64)}`,
+          credentialStatus: 'active', revoked: false },
+        { platform: 'paypal', offchainId: 'old-account', payeeIdHash: `0x${'b'.repeat(64)}`,
+          credentialStatus: 'inactive', revoked: false },
+        { platform: 'cashapp', offchainId: '$revoked', payeeIdHash: `0x${'c'.repeat(64)}`,
+          credentialStatus: 'active', revoked: true },
+      ] } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    expect(await readActiveSarAccounts(apiBase, 'privy-token')).toEqual([{
+      platform: 'upi', offchainId: '7014748022@apl', payeeIdHash: `0x${'a'.repeat(64)}`,
+    }]);
   });
 });

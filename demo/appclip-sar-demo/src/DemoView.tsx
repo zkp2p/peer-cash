@@ -249,11 +249,11 @@ function SarRow({ model, now }: { model: DemoModel; now: number }) {
   const link = sar.link;
   const status = sar.result?.status ?? null;
   const expired = link ? link.expiresAt <= now : false;
-  const connected = status === 'connected';
+  const connected = link ? status === 'connected' : Boolean(sar.account);
 
   let statusLabel: string;
-  if (!link) statusLabel = 'Not connected';
-  else if (connected) statusLabel = 'Connected';
+  if (connected) statusLabel = 'Connected';
+  else if (!link) statusLabel = 'Not connected';
   else if (expired) statusLabel = 'Link expired';
   else if (sar.error) statusLabel = 'Paused';
   else if (status === 'connecting') statusLabel = 'Connecting…';
@@ -280,7 +280,11 @@ function SarRow({ model, now }: { model: DemoModel; now: number }) {
         required to cash out{rail === 'upi' ? ' with UPI' : ''}.
       </p>
 
-      {!link ? (
+      {!link && connected ? (
+        <p className="sar-connected">
+          Peer can confirm payments to {sar.account?.offchainId} through your {rails[rail].title} account.
+        </p>
+      ) : !link ? (
         <div className="sar-actions">
           <button
             type="button"
@@ -293,6 +297,7 @@ function SarRow({ model, now }: { model: DemoModel; now: number }) {
             {sar.busy ? 'Creating link…' : 'Connect on iPhone'}
           </button>
           {sar.error ? <p className="alert" role="alert">{sar.error}</p> : null}
+          {sar.accountsError ? <p className="alert" role="alert">{sar.accountsError}</p> : null}
         </div>
       ) : connected ? (
         <p className="sar-connected">Peer can now confirm payments to your {rails[rail].title} account.</p>

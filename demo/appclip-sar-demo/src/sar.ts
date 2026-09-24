@@ -16,6 +16,12 @@ export interface SarResult {
   payeeIdHash?: `0x${string}`;
 }
 
+export interface ActiveSarAccount {
+  platform: SarPlatform;
+  offchainId: string;
+  payeeIdHash: `0x${string}`;
+}
+
 const REQUEST_ID = /^p[A-Za-z0-9_-]{42}$/;
 const ADDRESS = /^0x[0-9a-f]{40}$/i;
 const PAYEE_HASH = /^0x[0-9a-f]{64}$/i;
@@ -53,6 +59,34 @@ async function request(url: string, init: RequestInit): Promise<Record<string, u
   const envelope = object(await response.json());
   if (envelope.success !== true) throw new Error('The connection was not accepted.');
   return object(envelope.responseObject);
+}
+
+export async function readActiveSarAccounts(apiBase: string, accessToken: string): Promise<ActiveSarAccount[]> {
+  if (!accessToken) throw new Error('Sign in again to check your connected accounts.');
+  const base = new URL(apiBase);
+  if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) {
+    throw new Error('A secure Curator URL is required.');
+  }
+  const result = await request(new URL('/v2/me', base).toString(), {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!Array.isArray(result.connectedAccounts)) throw new Error('Invalid connected accounts response.');
+  return result.connectedAccounts.flatMap((value: unknown) => {
+    const account = object(value);
+    if (!['cashapp', 'paypal', 'upi'].includes(String(account.platform)) ||
+        typeof account.offchainId !== 'string' || !account.offchainId.trim() ||
+        typeof account.payeeIdHash !== 'string' || !PAYEE_HASH.test(account.payeeIdHash) ||
+        typeof account.revoked !== 'boolean' ||
+        !['active', 'inactive'].includes(String(account.credentialStatus))) {
+      throw new Error('Invalid connected account.');
+    }
+    return account.revoked || account.credentialStatus !== 'active' ? [] : [{
+      platform: account.platform as SarPlatform,
+      offchainId: account.offchainId,
+      payeeIdHash: account.payeeIdHash.toLowerCase() as `0x${string}`,
+    }];
+  });
 }
 
 export function createReturnUrl(location: Pick<Location, 'href'>): string {
