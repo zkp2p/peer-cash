@@ -87,6 +87,7 @@ export function useDemo() {
   const railSupported = railCapability?.currencies.includes(RAILS[rail].currency) ?? false;
 
   useEffect(() => {
+    if (!ready || (authenticated && !address)) return;
     setLink(restoreSarLink(address, window.location.origin));
     setSarResult(null);
     setSarError(null);
@@ -97,7 +98,7 @@ export function useDemo() {
       explanation: 'Reading this cash-out from the chain.',
       canWithdraw: false,
     } : null);
-  }, [address]);
+  }, [address, authenticated, ready]);
 
   useEffect(() => {
     let stale = false;
