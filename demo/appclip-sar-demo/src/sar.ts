@@ -74,8 +74,8 @@ export async function readActiveSarAccounts(apiBase: string, accessToken: string
   if (!Array.isArray(result.connectedAccounts)) throw new Error('Invalid connected accounts response.');
   return result.connectedAccounts.flatMap((value: unknown) => {
     const account = object(value);
-    if (!['cashapp', 'paypal', 'upi'].includes(String(account.platform)) ||
-        typeof account.offchainId !== 'string' || !account.offchainId.trim() ||
+    if (!['cashapp', 'paypal', 'upi'].includes(String(account.platform))) return [];
+    if (typeof account.offchainId !== 'string' || !account.offchainId.trim() ||
         typeof account.payeeIdHash !== 'string' || !PAYEE_HASH.test(account.payeeIdHash) ||
         typeof account.revoked !== 'boolean' ||
         !['active', 'inactive'].includes(String(account.credentialStatus))) {

@@ -55,6 +55,8 @@ describe('App Clip SAR capability handoff', () => {
           credentialStatus: 'inactive', revoked: false },
         { platform: 'cashapp', offchainId: '$revoked', payeeIdHash: `0x${'c'.repeat(64)}`,
           credentialStatus: 'active', revoked: true },
+        { platform: 'venmo', offchainId: '@other', payeeIdHash: `0x${'d'.repeat(64)}`,
+          credentialStatus: 'active', revoked: false },
       ] } });
     });
     vi.stubGlobal('fetch', fetcher);
