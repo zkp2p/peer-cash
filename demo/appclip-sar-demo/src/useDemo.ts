@@ -22,6 +22,8 @@ import {
 
 const CASH_ORDER_KEY = 'peer-cash-demo-order';
 const CURATOR_API = import.meta.env.VITE_CURATOR_API_URL || 'https://api.zkp2p.xyz';
+const SAR_RETURN_URL = import.meta.env.VITE_SAR_RETURN_URL;
+const sarReturnUrl = () => createReturnUrl({ href: SAR_RETURN_URL || window.location.href });
 const cash = createCashClient({ environment: 'production', referrer: 'peer-cash-appclip-demo' });
 const capabilities = cash.capabilities();
 
@@ -110,7 +112,7 @@ export function useDemo() {
 
   useEffect(() => {
     if (!ready || (authenticated && !address)) return;
-    const restoredLink = restoreSarLink(address, window.location.origin);
+    const restoredLink = restoreSarLink(address, new URL(sarReturnUrl()).origin);
     setLink(restoredLink);
     if (restoredLink) {
       setRail(restoredLink.platform);
@@ -222,7 +224,7 @@ export function useDemo() {
         ...(rail === 'paypal' ? { paypalEmail: normalizedEmail } : {}),
         callerAddress: address,
         accessToken: token,
-        returnUrl: createReturnUrl(window.location),
+        returnUrl: sarReturnUrl(),
       });
       saveSarLink(next);
       setLink(next);

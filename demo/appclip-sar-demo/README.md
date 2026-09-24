@@ -14,6 +14,14 @@ connecting an Amazon Pay account.
    production Peer App Clip so the wallet address is recognized.
 3. `bun run dev`
 
+For preprod QA, set `VITE_CURATOR_API_URL=https://api-preprod.zkp2p.xyz`.
+When running the demo on localhost, also set `VITE_SAR_RETURN_URL` to an HTTPS
+return origin allowed by preprod Curator (currently
+`https://ramp-preprod.peer.xyz/`). Privy must separately allow the local demo
+origin for sign-in. The Clip returns to that HTTPS site; keep the local demo
+open to observe its connection status. Preprod links use a `t` request prefix
+and open the preprod App Clip.
+
 Use `bun run typecheck`, `bun run test`, and `bun run build` to verify the
 example. The deployed production origin is
 `https://peer-cash-appclip-demo.vercel.app`; its Privy and Curator origin

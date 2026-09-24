@@ -24,7 +24,7 @@ export interface ActiveSarAccount {
 }
 export type SarAccountStatus = 'active' | 'inactive' | 'missing';
 
-const REQUEST_ID = /^p[A-Za-z0-9_-]{42}$/;
+const REQUEST_ID = /^[pts][A-Za-z0-9_-]{42}$/;
 const ADDRESS = /^0x[0-9a-f]{40}$/i;
 const PAYEE_HASH = /^0x[0-9a-f]{64}$/i;
 const SESSION_KEY = 'peer-cash-demo-sar-link';
@@ -42,6 +42,14 @@ function endpoint(apiBase: string): string {
     throw new Error('A secure Curator URL is required.');
   }
   return new URL('/v2/sar/connections', url).toString();
+}
+
+function environmentFor(apiBase: string): { name: string; prefix: string } {
+  const host = new URL(apiBase).hostname;
+  if (host === 'api.zkp2p.xyz') return { name: 'production', prefix: 'p' };
+  if (host === 'api-preprod.zkp2p.xyz') return { name: 'preproduction', prefix: 't' };
+  if (host === 'api-staging.zkp2p.xyz') return { name: 'staging', prefix: 's' };
+  throw new Error('Unsupported Curator environment.');
 }
 
 async function request(url: string, init: RequestInit): Promise<Record<string, unknown>> {
@@ -151,6 +159,7 @@ export async function createSarLink(input: {
   if (
     typeof result.requestId !== 'string' ||
     !REQUEST_ID.test(result.requestId) ||
+    result.requestId[0] !== environmentFor(input.apiBase).prefix ||
     typeof result.expiresAt !== 'string' ||
     !/^\d+$/.test(result.expiresAt) ||
     !Number.isSafeInteger(expiresAt) ||
@@ -177,7 +186,7 @@ export async function readSarResult(apiBase: string, link: SarLink): Promise<Sar
     headers: { Authorization: `Bearer ${link.requestId}` },
   });
   if (
-    result.environment !== 'production' ||
+    result.environment !== environmentFor(apiBase).name ||
     result.platform !== link.platform ||
     result.payeeHandle !== link.payeeHandle ||
     result.state !== link.state ||
@@ -207,7 +216,7 @@ export async function cancelSarLink(apiBase: string, link: SarLink): Promise<Sar
     headers: { Authorization: `Bearer ${link.requestId}` },
   });
   if (
-    result.environment !== 'production' ||
+    result.environment !== environmentFor(apiBase).name ||
     result.platform !== link.platform ||
     result.payeeHandle !== link.payeeHandle ||
     result.state !== link.state ||

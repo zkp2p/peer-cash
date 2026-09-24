@@ -31,6 +31,40 @@ describe('App Clip SAR capability handoff', () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it('accepts a preprod link and validates its matching status environment', async () => {
+    const preprodId = `t${'A'.repeat(42)}`;
+    const preprodApi = 'https://api-preprod.zkp2p.xyz';
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.method === 'POST') return Response.json({ success: true, responseObject: {
+        requestId: preprodId, expiresAt: String(Date.now() + 600_000),
+      } }, { status: 201 });
+      return Response.json({ success: true, responseObject: {
+        environment: 'preproduction', platform: 'upi', payeeHandle: '7014748022@apl',
+        callerAddress: wallet, state: 'S'.repeat(36), returnUrl, status: 'connected',
+        payeeIdHash: `0x${'a'.repeat(64)}`,
+      } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const link = await createSarLink({
+      apiBase: preprodApi, platform: 'upi', payeeHandle: '7014748022@apl',
+      callerAddress: wallet, accessToken: 'privy-token', returnUrl,
+    });
+    expect(link.requestId).toBe(preprodId);
+    expect(await readSarResult(preprodApi, { ...link, state: 'S'.repeat(36) })).toMatchObject({
+      status: 'connected', payeeIdHash: `0x${'a'.repeat(64)}`,
+    });
+  });
+
+  it('rejects a production link returned by preprod Curator', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, responseObject: {
+      requestId, expiresAt: String(Date.now() + 600_000),
+    } }, { status: 201 })));
+    await expect(createSarLink({
+      apiBase: 'https://api-preprod.zkp2p.xyz', platform: 'upi', payeeHandle: '7014748022@apl',
+      callerAddress: wallet, accessToken: 'privy-token', returnUrl,
+    })).rejects.toThrow('invalid connection link');
+  });
+
   it('carries the selected PayPal username and email in the scoped request body', async () => {
     const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
       expect(JSON.parse(String(init.body))).toMatchObject({
