@@ -7,3 +7,5 @@ coverage/
 !.env.example
 .DS_Store
 *.tgz
+.vercel
+.env.local
