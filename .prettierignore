@@ -3,4 +3,4 @@ coverage/
 node_modules/
 bun.lock
 examples/onchain-demo/
-examples/appclip-sar-demo/
+demo/
