@@ -275,9 +275,10 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: var(--tap);
-  padding: 0 6px;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 66px;
+  padding: 6px 4px;
   border-radius: var(--radius-sm);
   color: var(--text-2);
   font-size: 13px;
@@ -310,9 +311,9 @@ input {
 }
 
 .segment span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.1;
+  overflow-wrap: normal;
+  white-space: normal;
   max-width: 100%;
 }
 
