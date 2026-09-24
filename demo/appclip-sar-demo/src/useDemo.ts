@@ -9,6 +9,7 @@ import {
   createReturnUrl,
   createSarLink,
   readActiveSarAccounts,
+  readSarAccountStatus,
   readSarResult,
   restoreSarLink,
   saveSarLink,
@@ -16,6 +17,7 @@ import {
   type ActiveSarAccount,
   type SarPlatform,
   type SarResult,
+  type SarAccountStatus,
 } from './sar';
 
 const CASH_ORDER_KEY = 'peer-cash-demo-order';
@@ -73,6 +75,7 @@ export function useDemo() {
   const [rail, setRail] = useState<SarPlatform>('upi');
   const [amount, setAmount] = useState('');
   const [payee, setPayee] = useState('');
+  const [paypalEmail, setPaypalEmail] = useState('');
   const [estimate, setEstimate] = useState<CashEstimate | null>(null);
   const [estimateBusy, setEstimateBusy] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
@@ -82,6 +85,8 @@ export function useDemo() {
   const [sarError, setSarError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<ActiveSarAccount[]>([]);
   const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [accountStatus, setAccountStatus] = useState<{ key: string; status: SarAccountStatus } | null>(null);
+  const [accountStatusError, setAccountStatusError] = useState<{ key: string; message: string } | null>(null);
   const [cashoutBusy, setCashoutBusy] = useState(false);
   const [cashoutError, setCashoutError] = useState<string | null>(null);
   const [order, setOrder] = useState<DemoOrder | null>(null);
@@ -89,10 +94,28 @@ export function useDemo() {
 
   const railCapability = capabilities.platforms.find((item) => item.platform === rail);
   const railSupported = railCapability?.currencies.includes(RAILS[rail].currency) ?? false;
+  const normalizedPayee = payee.trim().replace(/^[@$]/, '').toLowerCase();
+  const accountKey = `${rail}:${normalizedPayee}`;
+
+  useEffect(() => {
+    if (!normalizedPayee || !authenticated) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void readSarAccountStatus(CURATOR_API, rail, normalizedPayee)
+        .then((status) => { if (!cancelled) { setAccountStatus({ key: accountKey, status }); setAccountStatusError(null); } })
+        .catch((error: unknown) => { if (!cancelled) setAccountStatusError({ key: accountKey, message: errorMessage(error) }); });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [authenticated, rail, normalizedPayee, accountKey, sarResult?.status]);
 
   useEffect(() => {
     if (!ready || (authenticated && !address)) return;
-    setLink(restoreSarLink(address, window.location.origin));
+    const restoredLink = restoreSarLink(address, window.location.origin);
+    setLink(restoredLink);
+    if (restoredLink) {
+      setRail(restoredLink.platform);
+      setPayee(restoredLink.payeeHandle);
+    }
     setSarResult(null);
     setSarError(null);
     const savedOrder = restoreOrder(address);
@@ -184,11 +207,19 @@ export function useDemo() {
     setSarBusy(true);
     setSarError(null);
     try {
+      const payeeHandle = normalizedPayee;
+      if (!payeeHandle) throw new Error(`Enter your ${RAILS[rail].label}.`);
+      const normalizedEmail = paypalEmail.trim().toLowerCase();
+      if (rail === 'paypal' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        throw new Error('Enter your PayPal account email.');
+      }
       const token = await getAccessToken();
       if (!token) throw new Error('Sign in again to connect your account.');
       const next = await createSarLink({
         apiBase: CURATOR_API,
         platform: rail,
+        payeeHandle,
+        ...(rail === 'paypal' ? { paypalEmail: normalizedEmail } : {}),
         callerAddress: address,
         accessToken: token,
         returnUrl: createReturnUrl(window.location),
@@ -319,12 +350,19 @@ export function useDemo() {
     setAmount,
     payee,
     setPayee,
+    paypalEmail,
+    setPaypalEmail,
     estimate,
     estimateBusy,
     estimateError,
-    sar: { link: link?.platform === rail ? link : null, result: link?.platform === rail ? sarResult : null,
+    sar: { link: link?.platform === rail && link.payeeHandle === normalizedPayee ? link : null,
+      result: link?.platform === rail && link.payeeHandle === normalizedPayee ? sarResult : null,
+      pending: Boolean(link && link.expiresAt > Date.now() &&
+        sarResult?.status !== 'connected' && sarResult?.status !== 'cancelled'),
       account: accounts.find((item) => item.platform === rail &&
-        (!payee.trim() || item.offchainId.toLowerCase() === payee.trim().toLowerCase())) ?? null,
+        normalizedPayee && item.offchainId.replace(/^[@$]/, '').toLowerCase() === normalizedPayee) ?? null,
+      available: accountStatus?.key === accountKey && accountStatus.status === 'active',
+      accountStatusError: accountStatusError?.key === accountKey ? accountStatusError.message : null,
       accountsError, busy: sarBusy, error: sarError, start: startSar, cancel: cancelSar,
       refresh: () => link && void refreshSar(link) },
     cashout: { busy: cashoutBusy, error: cashoutError, start: startCashout },

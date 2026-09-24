@@ -70,7 +70,7 @@ export function DemoView({ model }: { model: DemoModel }) {
 
   const signedIn = auth.ready && auth.authenticated;
   const walletReady = signedIn && Boolean(auth.address);
-  const formEnabled = walletReady && !order.data;
+  const formEnabled = walletReady && !order.data && !sar.pending;
 
   return (
     <main className="shell">
@@ -195,6 +195,26 @@ export function DemoView({ model }: { model: DemoModel }) {
               </p>
             </div>
 
+            {rail === 'paypal' ? (
+              <div className="field">
+                <label htmlFor="paypal-account-email" className="label">PayPal account email</label>
+                <input
+                  id="paypal-account-email"
+                  data-testid="paypal-email"
+                  className="input"
+                  type="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="name@example.com"
+                  value={model.paypalEmail}
+                  onChange={(event) => model.setPaypalEmail(event.target.value)}
+                  disabled={!formEnabled}
+                />
+                <p className="hint">Used to match your PayPal receipts. Enter it once here for the iPhone connection.</p>
+              </div>
+            ) : null}
+
             {/* App Clip SAR (optional) */}
             {walletReady ? <SarRow model={model} now={now} /> : null}
 
@@ -249,10 +269,10 @@ function SarRow({ model, now }: { model: DemoModel; now: number }) {
   const link = sar.link;
   const status = sar.result?.status ?? null;
   const expired = link ? link.expiresAt <= now : false;
-  const connected = link ? status === 'connected' : Boolean(sar.account);
+  const connected = link ? status === 'connected' : Boolean(sar.account || sar.available);
 
   let statusLabel: string;
-  if (connected) statusLabel = 'Connected';
+  if (connected) statusLabel = sar.account || link ? 'Connected' : 'SAR available';
   else if (!link) statusLabel = 'Not connected';
   else if (expired) statusLabel = 'Link expired';
   else if (sar.error) statusLabel = 'Paused';
@@ -282,7 +302,9 @@ function SarRow({ model, now }: { model: DemoModel; now: number }) {
 
       {!link && connected ? (
         <p className="sar-connected">
-          Peer can confirm payments to {sar.account?.offchainId} through your {rails[rail].title} account.
+          {sar.account
+            ? `Peer can confirm payments to ${sar.account.offchainId} through your ${rails[rail].title} account.`
+            : `SAR is already active for this ${rails[rail].title} account. You can cash out without reconnecting it. Management stays with the account that connected it.`}
         </p>
       ) : !link ? (
         <div className="sar-actions">
@@ -298,6 +320,7 @@ function SarRow({ model, now }: { model: DemoModel; now: number }) {
           </button>
           {sar.error ? <p className="alert" role="alert">{sar.error}</p> : null}
           {sar.accountsError ? <p className="alert" role="alert">{sar.accountsError}</p> : null}
+          {sar.accountStatusError ? <p className="alert" role="alert">{sar.accountStatusError}</p> : null}
         </div>
       ) : connected ? (
         <p className="sar-connected">Peer can now confirm payments to your {rails[rail].title} account.</p>

@@ -4,6 +4,7 @@ export type SarStatus = 'pending' | 'connecting' | 'connected' | 'cancelled';
 export interface SarLink {
   requestId: string;
   platform: SarPlatform;
+  payeeHandle: string;
   callerAddress: `0x${string}`;
   returnUrl: string;
   state: string;
@@ -21,6 +22,7 @@ export interface ActiveSarAccount {
   offchainId: string;
   payeeIdHash: `0x${string}`;
 }
+export type SarAccountStatus = 'active' | 'inactive' | 'missing';
 
 const REQUEST_ID = /^p[A-Za-z0-9_-]{42}$/;
 const ADDRESS = /^0x[0-9a-f]{40}$/i;
@@ -89,6 +91,18 @@ export async function readActiveSarAccounts(apiBase: string, accessToken: string
   });
 }
 
+export async function readSarAccountStatus(apiBase: string, platform: SarPlatform, payeeHandle: string): Promise<SarAccountStatus> {
+  const url = new URL(endpoint(apiBase));
+  url.pathname += '/account-status';
+  url.searchParams.set('platform', platform);
+  url.searchParams.set('payeeHandle', payeeHandle);
+  const result = await request(url.toString(), { method: 'GET' });
+  if (!['active', 'inactive', 'missing'].includes(String(result.status))) {
+    throw new Error('Invalid account status response.');
+  }
+  return result.status as SarAccountStatus;
+}
+
 export function createReturnUrl(location: Pick<Location, 'href'>): string {
   const url = new URL(location.href);
   if (url.protocol !== 'https:' && url.hostname !== 'localhost') {
@@ -103,6 +117,8 @@ export function createReturnUrl(location: Pick<Location, 'href'>): string {
 export async function createSarLink(input: {
   apiBase: string;
   platform: SarPlatform;
+  payeeHandle: string;
+  paypalEmail?: string;
   callerAddress: `0x${string}`;
   accessToken: string;
   returnUrl: string;
@@ -123,6 +139,8 @@ export async function createSarLink(input: {
     },
     body: JSON.stringify({
       platform: input.platform,
+      payeeHandle: input.payeeHandle,
+      ...(input.paypalEmail ? { paypalEmail: input.paypalEmail } : {}),
       callerAddress: input.callerAddress,
       returnUrl: input.returnUrl,
       state,
@@ -143,6 +161,7 @@ export async function createSarLink(input: {
   return {
     requestId: result.requestId,
     platform: input.platform,
+    payeeHandle: input.payeeHandle,
     callerAddress: input.callerAddress,
     returnUrl: input.returnUrl,
     state,
@@ -160,6 +179,7 @@ export async function readSarResult(apiBase: string, link: SarLink): Promise<Sar
   if (
     result.environment !== 'production' ||
     result.platform !== link.platform ||
+    result.payeeHandle !== link.payeeHandle ||
     result.state !== link.state ||
     result.returnUrl !== link.returnUrl ||
     typeof result.callerAddress !== 'string' ||
@@ -189,6 +209,7 @@ export async function cancelSarLink(apiBase: string, link: SarLink): Promise<Sar
   if (
     result.environment !== 'production' ||
     result.platform !== link.platform ||
+    result.payeeHandle !== link.payeeHandle ||
     result.state !== link.state ||
     result.returnUrl !== link.returnUrl ||
     typeof result.callerAddress !== 'string' ||
@@ -220,6 +241,7 @@ export function restoreSarLink(wallet: string | undefined, currentOrigin: string
       typeof link.returnUrl !== 'string' || new URL(link.returnUrl).origin !== currentOrigin ||
       typeof link.state !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(link.state) ||
       !['cashapp', 'paypal', 'upi'].includes(String(link.platform)) ||
+      typeof link.payeeHandle !== 'string' || !link.payeeHandle ||
       !Number.isSafeInteger(link.expiresAt) || Number(link.expiresAt) <= Date.now()
     ) {
       clearSarLink();
@@ -231,6 +253,7 @@ export function restoreSarLink(wallet: string | undefined, currentOrigin: string
       returnUrl: link.returnUrl,
       state: link.state,
       platform: link.platform as SarPlatform,
+      payeeHandle: link.payeeHandle,
       expiresAt: link.expiresAt as number,
       url: `https://mobile.peer.xyz/clip/connect?request=${link.requestId}`,
     };
