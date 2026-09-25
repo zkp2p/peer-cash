@@ -48,6 +48,7 @@ export function useDemo() {
       setLink(restored);
       setRail(restored.platform);
       setPayee(restored.payeeHandle);
+      setPaypalEmail(restored.paypalEmail ?? '');
     }
   }, []);
 

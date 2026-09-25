@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSarLink, readSarAccountStatus, readSarResult } from './sar';
+import { createSarLink, readSarAccountStatus, readSarResult, restoreSarLink, saveSarLink } from './sar';
 
 const requestId = `p${'A'.repeat(42)}`;
 const apiBase = 'https://api.zkp2p.xyz';
@@ -71,10 +71,31 @@ describe('wallet-free App Clip SAR handoff', () => {
       } }, { status: 201 });
     });
     vi.stubGlobal('fetch', fetcher);
-    await createSarLink({
+    const link = await createSarLink({
       apiBase, platform: 'paypal', payeeHandle: 'rzl195', paypalEmail: 'seller@example.com', returnUrl,
     });
     expect(fetcher).toHaveBeenCalledOnce();
+    const data = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => data.set(key, value),
+      removeItem: (key: string) => data.delete(key),
+    });
+    saveSarLink(link);
+    expect(restoreSarLink(apiBase, new URL(returnUrl).origin)).toEqual(link);
+  });
+
+  it('rejects a PayPal result with a different receipt email', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, responseObject: {
+      platform: 'paypal', payeeHandle: 'rzl195', paypalEmail: 'another@example.com',
+      environment: 'production', state: 'S'.repeat(36), returnUrl, status: 'connected',
+      payeeIdHash: `0x${'a'.repeat(64)}`,
+    } })));
+    await expect(readSarResult(apiBase, {
+      requestId, platform: 'paypal', payeeHandle: 'rzl195', paypalEmail: 'seller@example.com',
+      returnUrl, state: 'S'.repeat(36), expiresAt: Date.now() + 600_000,
+      url: `https://mobile.peer.xyz/clip/connect?request=${requestId}`,
+    })).rejects.toThrow('does not belong');
   });
 
   it('reads account-level availability without authentication', async () => {

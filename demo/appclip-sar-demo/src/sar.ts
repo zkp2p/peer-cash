@@ -5,6 +5,7 @@ export interface SarLink {
   requestId: string;
   platform: SarPlatform;
   payeeHandle: string;
+  paypalEmail?: string;
   returnUrl: string;
   state: string;
   expiresAt: number;
@@ -129,6 +130,7 @@ export async function createSarLink(input: {
     requestId: result.requestId,
     platform: input.platform,
     payeeHandle: input.payeeHandle,
+    ...(input.platform === 'paypal' ? { paypalEmail: input.paypalEmail } : {}),
     returnUrl: input.returnUrl,
     state,
     expiresAt,
@@ -146,6 +148,7 @@ export async function readSarResult(apiBase: string, link: SarLink): Promise<Sar
     result.environment !== environmentFor(apiBase).name ||
     result.platform !== link.platform ||
     result.payeeHandle !== link.payeeHandle ||
+    (link.platform === 'paypal' && result.paypalEmail !== link.paypalEmail) ||
     result.state !== link.state ||
     result.returnUrl !== link.returnUrl ||
     !['pending', 'connecting', 'connected', 'cancelled'].includes(String(result.status))
@@ -203,6 +206,8 @@ export function restoreSarLink(apiBase: string, currentOrigin: string): SarLink 
       typeof link.state !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(link.state) ||
       !['cashapp', 'paypal', 'upi'].includes(String(link.platform)) ||
       typeof link.payeeHandle !== 'string' || !link.payeeHandle ||
+      (link.platform === 'paypal' && (typeof link.paypalEmail !== 'string' ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(link.paypalEmail))) ||
       !Number.isSafeInteger(link.expiresAt) || Number(link.expiresAt) <= Date.now()
     ) {
       clearSarLink();
@@ -214,6 +219,7 @@ export function restoreSarLink(apiBase: string, currentOrigin: string): SarLink 
       state: link.state,
       platform: link.platform as SarPlatform,
       payeeHandle: link.payeeHandle,
+      ...(link.platform === 'paypal' ? { paypalEmail: link.paypalEmail as string } : {}),
       expiresAt: link.expiresAt as number,
       url: `https://mobile.peer.xyz/clip/connect?request=${link.requestId}`,
     };
