@@ -19,12 +19,18 @@ local demo open to observe its connection status. Preprod links use a `t`
 request prefix and open the preprod App Clip.
 
 Choose a payout platform, enter its account identifier and choose **Connect on
-iPhone**. Curator creates a rate-limited, 15-minute demo capability. Scan the QR
+iPhone**. The page uses Curator's real integrator checkout API to create a
+rate-limited, 15-minute connection link. Scan the QR
 code or open the link on an iPhone, confirm the selected account in the App Clip,
 and sign in to the provider there. The page polls Curator for the result. A
 provider credential is stored only after the App Clip verifies the provider
 account; the visitor never enters a Peer wallet or Privy account. The demo can
 start another connection after completion.
+
+Only this page is a demo. Curator's `POST /v2/sar/connections/checkout` and its
+returned App Clip URL are intended for approved integrators connecting seller
+accounts during their checkout. See Curator's `docs/appclip-sar-connections.md`
+for the request, callback, and account-verification contract.
 
 Use `bun run typecheck`, `bun run test`, and `bun run build` to verify the
 example. The production origin is `https://peer-cash-appclip-demo.vercel.app`;
