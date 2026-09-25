@@ -4,7 +4,7 @@ export type SarStatus = 'pending' | 'connecting' | 'connected' | 'cancelled';
 export interface SarLink {
   requestId: string;
   platform: SarPlatform;
-  callerAddress: `0x${string}`;
+  payeeHandle: string;
   returnUrl: string;
   state: string;
   expiresAt: number;
@@ -16,14 +16,9 @@ export interface SarResult {
   payeeIdHash?: `0x${string}`;
 }
 
-export interface ActiveSarAccount {
-  platform: SarPlatform;
-  offchainId: string;
-  payeeIdHash: `0x${string}`;
-}
+export type SarAccountStatus = 'active' | 'inactive';
 
-const REQUEST_ID = /^p[A-Za-z0-9_-]{42}$/;
-const ADDRESS = /^0x[0-9a-f]{40}$/i;
+const REQUEST_ID = /^[pts][A-Za-z0-9_-]{42}$/;
 const PAYEE_HASH = /^0x[0-9a-f]{64}$/i;
 const SESSION_KEY = 'peer-cash-demo-sar-link';
 
@@ -42,6 +37,14 @@ function endpoint(apiBase: string): string {
   return new URL('/v2/sar/connections', url).toString();
 }
 
+function environmentFor(apiBase: string): { name: string; prefix: string } {
+  const host = new URL(apiBase).hostname;
+  if (host === 'api.zkp2p.xyz') return { name: 'production', prefix: 'p' };
+  if (host === 'api-preprod.zkp2p.xyz') return { name: 'preproduction', prefix: 't' };
+  if (host === 'api-staging.zkp2p.xyz') return { name: 'staging', prefix: 's' };
+  throw new Error('Unsupported Curator environment.');
+}
+
 async function request(url: string, init: RequestInit): Promise<Record<string, unknown>> {
   const response = await fetch(url, {
     ...init,
@@ -53,7 +56,7 @@ async function request(url: string, init: RequestInit): Promise<Record<string, u
     if (response.status === 403) throw new Error('This account connection is unavailable right now.');
     if (response.status === 410) throw new Error('This link expired. Create a new one.');
     if (response.status === 409) throw new Error('This connection is still being processed. Check status.');
-    if (response.status === 401) throw new Error('Sign in again to connect your account.');
+    if (response.status === 429) throw new Error('Too many links. Wait a minute and try again.');
     throw new Error('Could not confirm this connection. Check status or try again.');
   }
   const envelope = object(await response.json());
@@ -61,32 +64,16 @@ async function request(url: string, init: RequestInit): Promise<Record<string, u
   return object(envelope.responseObject);
 }
 
-export async function readActiveSarAccounts(apiBase: string, accessToken: string): Promise<ActiveSarAccount[]> {
-  if (!accessToken) throw new Error('Sign in again to check your connected accounts.');
-  const base = new URL(apiBase);
-  if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) {
-    throw new Error('A secure Curator URL is required.');
+export async function readSarAccountStatus(apiBase: string, platform: SarPlatform, payeeHandle: string): Promise<SarAccountStatus> {
+  const url = new URL(endpoint(apiBase));
+  url.pathname += '/account-status';
+  url.searchParams.set('platform', platform);
+  url.searchParams.set('payeeHandle', payeeHandle);
+  const result = await request(url.toString(), { method: 'GET' });
+  if (!['active', 'inactive'].includes(String(result.status))) {
+    throw new Error('Invalid account status response.');
   }
-  const result = await request(new URL('/v2/me', base).toString(), {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!Array.isArray(result.connectedAccounts)) throw new Error('Invalid connected accounts response.');
-  return result.connectedAccounts.flatMap((value: unknown) => {
-    const account = object(value);
-    if (!['cashapp', 'paypal', 'upi'].includes(String(account.platform))) return [];
-    if (typeof account.offchainId !== 'string' || !account.offchainId.trim() ||
-        typeof account.payeeIdHash !== 'string' || !PAYEE_HASH.test(account.payeeIdHash) ||
-        typeof account.revoked !== 'boolean' ||
-        !['active', 'inactive'].includes(String(account.credentialStatus))) {
-      throw new Error('Invalid connected account.');
-    }
-    return account.revoked || account.credentialStatus !== 'active' ? [] : [{
-      platform: account.platform as SarPlatform,
-      offchainId: account.offchainId,
-      payeeIdHash: account.payeeIdHash.toLowerCase() as `0x${string}`,
-    }];
-  });
+  return result.status as SarAccountStatus;
 }
 
 export function createReturnUrl(location: Pick<Location, 'href'>): string {
@@ -103,27 +90,24 @@ export function createReturnUrl(location: Pick<Location, 'href'>): string {
 export async function createSarLink(input: {
   apiBase: string;
   platform: SarPlatform;
-  callerAddress: `0x${string}`;
-  accessToken: string;
+  payeeHandle: string;
+  paypalEmail?: string;
   returnUrl: string;
 }): Promise<SarLink> {
-  if (!ADDRESS.test(input.callerAddress) || !input.accessToken) {
-    throw new Error('Sign in and choose a wallet first.');
-  }
   const callback = new URL(input.returnUrl);
   if (callback.protocol !== 'https:' || callback.username || callback.password || callback.hash) {
     throw new Error('The return address must be HTTPS.');
   }
   const state = crypto.randomUUID();
-  const result = await request(endpoint(input.apiBase), {
+  const demoEndpoint = new URL(endpoint(input.apiBase));
+  demoEndpoint.pathname += '/demo';
+  const result = await request(demoEndpoint.toString(), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${input.accessToken}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       platform: input.platform,
-      callerAddress: input.callerAddress,
+      payeeHandle: input.payeeHandle,
+      ...(input.paypalEmail ? { paypalEmail: input.paypalEmail } : {}),
       returnUrl: input.returnUrl,
       state,
       currencies: [input.platform === 'upi' ? 'INR' : 'USD'],
@@ -133,6 +117,7 @@ export async function createSarLink(input: {
   if (
     typeof result.requestId !== 'string' ||
     !REQUEST_ID.test(result.requestId) ||
+    result.requestId[0] !== environmentFor(input.apiBase).prefix ||
     typeof result.expiresAt !== 'string' ||
     !/^\d+$/.test(result.expiresAt) ||
     !Number.isSafeInteger(expiresAt) ||
@@ -143,7 +128,7 @@ export async function createSarLink(input: {
   return {
     requestId: result.requestId,
     platform: input.platform,
-    callerAddress: input.callerAddress,
+    payeeHandle: input.payeeHandle,
     returnUrl: input.returnUrl,
     state,
     expiresAt,
@@ -158,12 +143,11 @@ export async function readSarResult(apiBase: string, link: SarLink): Promise<Sar
     headers: { Authorization: `Bearer ${link.requestId}` },
   });
   if (
-    result.environment !== 'production' ||
+    result.environment !== environmentFor(apiBase).name ||
     result.platform !== link.platform ||
+    result.payeeHandle !== link.payeeHandle ||
     result.state !== link.state ||
     result.returnUrl !== link.returnUrl ||
-    typeof result.callerAddress !== 'string' ||
-    result.callerAddress.toLowerCase() !== link.callerAddress.toLowerCase() ||
     !['pending', 'connecting', 'connected', 'cancelled'].includes(String(result.status))
   ) {
     throw new Error('The connection does not belong to this account.');
@@ -187,12 +171,11 @@ export async function cancelSarLink(apiBase: string, link: SarLink): Promise<Sar
     headers: { Authorization: `Bearer ${link.requestId}` },
   });
   if (
-    result.environment !== 'production' ||
+    result.environment !== environmentFor(apiBase).name ||
     result.platform !== link.platform ||
+    result.payeeHandle !== link.payeeHandle ||
     result.state !== link.state ||
     result.returnUrl !== link.returnUrl ||
-    typeof result.callerAddress !== 'string' ||
-    result.callerAddress.toLowerCase() !== link.callerAddress.toLowerCase() ||
     result.status !== 'cancelled'
   ) {
     throw new Error('The cancelled connection does not match this account.');
@@ -208,18 +191,18 @@ export function clearSarLink(): void {
   sessionStorage.removeItem(SESSION_KEY);
 }
 
-export function restoreSarLink(wallet: string | undefined, currentOrigin: string): SarLink | null {
+export function restoreSarLink(apiBase: string, currentOrigin: string): SarLink | null {
   const raw = sessionStorage.getItem(SESSION_KEY);
   if (!raw) return null;
   try {
     const link = object(JSON.parse(raw));
     if (
       typeof link.requestId !== 'string' || !REQUEST_ID.test(link.requestId) ||
-      typeof link.callerAddress !== 'string' || !ADDRESS.test(link.callerAddress) ||
-      !wallet || link.callerAddress.toLowerCase() !== wallet.toLowerCase() ||
+      link.requestId[0] !== environmentFor(apiBase).prefix ||
       typeof link.returnUrl !== 'string' || new URL(link.returnUrl).origin !== currentOrigin ||
       typeof link.state !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(link.state) ||
       !['cashapp', 'paypal', 'upi'].includes(String(link.platform)) ||
+      typeof link.payeeHandle !== 'string' || !link.payeeHandle ||
       !Number.isSafeInteger(link.expiresAt) || Number(link.expiresAt) <= Date.now()
     ) {
       clearSarLink();
@@ -227,10 +210,10 @@ export function restoreSarLink(wallet: string | undefined, currentOrigin: string
     }
     return {
       requestId: link.requestId,
-      callerAddress: link.callerAddress as `0x${string}`,
       returnUrl: link.returnUrl,
       state: link.state,
       platform: link.platform as SarPlatform,
+      payeeHandle: link.payeeHandle,
       expiresAt: link.expiresAt as number,
       url: `https://mobile.peer.xyz/clip/connect?request=${link.requestId}`,
     };
