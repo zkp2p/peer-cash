@@ -1,51 +1,29 @@
 import { useEffect, useId, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { DemoModel, DemoRail } from './useDemo';
+import type { DemoModel } from './useDemo';
+import type { SarPlatform } from './sar';
 
-const RAIL_ORDER: DemoRail[] = ['cashapp', 'paypal', 'upi'];
-const RAIL_LOGOS: Record<DemoRail, string> = {
+const RAIL_ORDER: SarPlatform[] = ['cashapp', 'paypal', 'upi'];
+const RAIL_LOGOS: Record<SarPlatform, string> = {
   cashapp: '/cashapp.svg',
   paypal: '/paypal.svg',
   upi: '/amazon-pay.png',
 };
+const RAIL_PLACEHOLDERS: Record<SarPlatform, string> = {
+  cashapp: '$username',
+  paypal: 'username',
+  upi: 'name@bank',
+};
+const LINK_TTL_MS = 15 * 60_000;
 
-function formatUsdc(units: bigint): string {
-  const whole = units / 1_000_000n;
-  const frac = (units % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : whole.toString();
-}
+type Tone = 'idle' | 'active' | 'connected' | 'paused';
 
-function formatMoney(value: number, currency: 'USD' | 'INR'): string {
-  return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatRate(rate: number, currency: 'USD' | 'INR'): string {
-  return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 4,
-  }).format(rate);
-}
-
-function shortAddress(address: string): string {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
-}
-
-function shortHash(hash: string): string {
-  return `${hash.slice(0, 10)}…${hash.slice(-6)}`;
-}
-
-/** Ticks once per 15s so the SAR link expiry label stays honest without re-rendering the form constantly. */
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
     setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    const timer = window.setInterval(() => setNow(Date.now()), 10_000);
     return () => window.clearInterval(timer);
   }, [active]);
   return now;
@@ -58,296 +36,257 @@ function expiryLabel(expiresAt: number, now: number): string {
   return minutes <= 1 ? 'Expires in under a minute' : `Expires in ${minutes} min`;
 }
 
-export function DemoView({ model }: { model: DemoModel }) {
-  const { auth, rails, rail, railSupported, amount, payee, estimate, sar, cashout, order } = model;
-  const railMeta = rails[rail];
-  const amountId = useId();
-  const payeeId = useId();
-  const amountHintId = `${amountId}-hint`;
-  const payeeHintId = `${payeeId}-hint`;
-  const sarActive = Boolean(sar.link) && !order.data;
-  const now = useNow(sarActive);
+function expiryPercent(expiresAt: number, now: number): number {
+  const fraction = (expiresAt - now) / LINK_TTL_MS;
+  return Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+}
 
-  const signedIn = auth.ready && auth.authenticated;
-  const walletReady = signedIn && Boolean(auth.address);
-  const formEnabled = walletReady && !order.data && !sar.pending;
+export function DemoView({ model }: { model: DemoModel }) {
+  const { rails, rail, payee, paypalEmail, sar } = model;
+  const payeeId = useId();
+  const payeeHintId = useId();
+  const paypalEmailId = useId();
+  const paypalEmailHintId = useId();
+  const now = useNow(Boolean(sar.link));
+  const link = sar.link;
+  const expired = link ? link.expiresAt <= now : false;
+  const status = sar.result?.status;
+  const connected = status === 'connected';
+  const cancelled = status === 'cancelled';
+  const linkActive = Boolean(link) && !expired && !cancelled && !connected;
+  const formLocked = Boolean(link) && !expired && !cancelled;
+  const railTitle = rails[rail].title;
+  const payeeDisplay = payee.trim();
+
+  const tone: Tone = connected
+    ? 'connected'
+    : expired || Boolean(sar.error) || Boolean(sar.accountStatusError)
+      ? 'paused'
+      : linkActive
+        ? 'active'
+        : sar.available
+          ? 'connected'
+          : 'idle';
+
+  const statusLabel = connected
+    ? 'Connected'
+    : expired
+      ? 'Link expired'
+      : cancelled
+        ? 'Cancelled'
+        : status === 'connecting'
+          ? 'Connecting…'
+          : linkActive
+            ? 'Waiting for your iPhone'
+            : sar.available
+              ? 'Already connected'
+              : 'Not connected';
 
   return (
     <main className="shell">
       <header className="masthead">
         <img className="logo" src="/peer-logo-colour.svg" alt="Peer" width={92} height={32} />
-        <div className="auth" data-testid="auth">
-          {!auth.ready ? (
-            <span className="muted" role="status" aria-live="polite">Checking sign-in…</span>
-          ) : auth.authenticated ? (
-            <>
-              <span className="auth-identity" title={auth.address ?? undefined}>
-                {auth.email ?? (auth.address ? shortAddress(auth.address) : 'Signed in')}
-              </span>
-              <button type="button" className="btn btn-quiet" onClick={() => void auth.logout()}>
-                Sign out
-              </button>
-            </>
-          ) : (
-            <button type="button" className="btn btn-secondary" onClick={() => auth.login()}>
-              Sign in
-            </button>
-          )}
-        </div>
+        <span className="masthead-tag">iPhone App Clip</span>
       </header>
 
-      <section className="form" aria-labelledby="form-title">
-        <h1 id="form-title" className="title">Cash out USDC</h1>
-        <p className="subtitle">Base USDC to your account at the live oracle rate. 0% spread.</p>
-
-        {signedIn && !auth.address ? (
-          <p className="notice" role="status" aria-live="polite">
-            Setting up your wallet. This usually takes a moment.
+      <section className="card" aria-labelledby="form-title">
+        <div className="card-head">
+          <h1 id="form-title" className="title">Connect a payout account</h1>
+          <p className="subtitle">
+            Link your {railTitle} account so Peer can confirm payments to it. Peer only reads your
+            receipts; connecting never moves money and needs no wallet.
           </p>
+        </div>
+
+        <fieldset className="field" data-testid="rail" disabled={formLocked}>
+          <legend className="label">
+            <span className="step" aria-hidden="true">1</span>
+            Choose an account
+          </legend>
+          <div className="segmented" role="radiogroup" aria-label="Payout platform">
+            {RAIL_ORDER.map((key) => (
+              <label key={key} className={`segment${rail === key ? ' is-selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="rail"
+                  value={key}
+                  checked={rail === key}
+                  onChange={() => model.setRail(key)}
+                  disabled={formLocked}
+                />
+                <span className="segment-logo">
+                  <img className="rail-logo" src={RAIL_LOGOS[key]} alt="" width={24} height={24} />
+                </span>
+                <span className="segment-title">{rails[key].title}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="field">
+          <label htmlFor={payeeId} className="label">
+            <span className="step" aria-hidden="true">2</span>
+            {rails[rail].label}
+          </label>
+          <input
+            id={payeeId}
+            data-testid="payee"
+            className="input"
+            type="text"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            enterKeyHint="done"
+            placeholder={RAIL_PLACEHOLDERS[rail]}
+            value={payee}
+            onChange={(event) => model.setPayee(event.target.value)}
+            disabled={formLocked}
+            aria-describedby={payeeHintId}
+          />
+          <p id={payeeHintId} className="hint">
+            {formLocked
+              ? 'Locked while a link is active. Cancel the link to change it.'
+              : `The ${railTitle} account you will sign in to on your iPhone.`}
+          </p>
+        </div>
+
+        {rail === 'paypal' ? (
+          <div className="field">
+            <label htmlFor={paypalEmailId} className="label">
+              <span className="step step-sub" aria-hidden="true" />
+              PayPal account email
+            </label>
+            <input
+              id={paypalEmailId}
+              data-testid="paypal-email"
+              className="input"
+              type="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              enterKeyHint="done"
+              placeholder="name@example.com"
+              value={paypalEmail}
+              onChange={(event) => model.setPaypalEmail(event.target.value)}
+              disabled={formLocked}
+              aria-describedby={paypalEmailHintId}
+            />
+            <p id={paypalEmailHintId} className="hint">Used to match receipts from your PayPal account.</p>
+          </div>
         ) : null}
 
-        {order.data ? (
-          <OrderPanel model={model} />
-        ) : (
-          <>
-            {/* Amount */}
-            <div className="field field-amount">
-              <label htmlFor={amountId} className="label">You send</label>
-              <div className="amount-control">
-                <input
-                  id={amountId}
-                  data-testid="amount"
-                  className="amount-input"
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(event) => model.setAmount(event.target.value.replace(/[^\d.]/g, ''))}
-                  aria-describedby={amountHintId}
-                  disabled={!formEnabled}
-                />
-                <span className="amount-unit" aria-hidden="true">USDC</span>
-              </div>
-              <p id={amountHintId} className="hint">USDC on Base. Minimum 0.01.</p>
-            </div>
-
-            {/* Rail */}
-            <fieldset className="field" data-testid="rail">
-              <legend className="label">Receive on</legend>
-              <div className="segmented" role="radiogroup" aria-label="Payout platform">
-                {RAIL_ORDER.map((key) => (
-                  <label key={key} className={`segment${rail === key ? ' is-selected' : ''}`}>
-                    <input
-                      type="radio"
-                      name="rail"
-                      value={key}
-                      checked={rail === key}
-                      onChange={() => model.setRail(key)}
-                      disabled={!formEnabled}
-                    />
-                    <img className="rail-logo" src={RAIL_LOGOS[key]} alt="" width={22} height={22} />
-                    <span>{rails[key].title}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-
-            {/* Receive amount */}
-            <div className="row row-receive" aria-live="polite">
-              <span className="row-key">You receive</span>
-              <span className="row-value">
-                {!railSupported ? (
-                  <span className="muted">{railMeta.title} is not available right now</span>
-                ) : model.estimateBusy ? (
-                  <span className="muted">Estimating…</span>
-                ) : model.estimateError ? (
-                  <span className="text-error">{model.estimateError}</span>
-                ) : estimate ? (
-                  <>≈ {formatMoney(estimate.receiveAmount, railMeta.currency)}</>
-                ) : (
-                  <span className="muted">≈ {formatMoney(0, railMeta.currency)}</span>
-                )}
-              </span>
-            </div>
-
-            {/* Payee */}
-            <div className="field">
-              <label htmlFor={payeeId} className="label">{railMeta.label}</label>
-              <input
-                id={payeeId}
-                data-testid="payee"
-                className="input"
-                type="text"
-                autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                placeholder={model.payeeHint || railMeta.label}
-                value={payee}
-                onChange={(event) => model.setPayee(event.target.value)}
-                aria-describedby={payeeHintId}
-                disabled={!formEnabled}
-              />
-              <p id={payeeHintId} className="hint">
-                {model.requiresIdentityAttestation
-                  ? `A ${railMeta.title} handle you have not used with Peer before needs identity verification first. A handle you already registered works as is.`
-                  : `Payments arrive at this ${railMeta.label}. Check it before you continue.`}
-              </p>
-            </div>
-
-            {rail === 'paypal' ? (
-              <div className="field">
-                <label htmlFor="paypal-account-email" className="label">PayPal account email</label>
-                <input
-                  id="paypal-account-email"
-                  data-testid="paypal-email"
-                  className="input"
-                  type="email"
-                  autoComplete="email"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  placeholder="name@example.com"
-                  value={model.paypalEmail}
-                  onChange={(event) => model.setPaypalEmail(event.target.value)}
-                  disabled={!formEnabled}
-                />
-                <p className="hint">Used to match your PayPal receipts. Enter it once here for the iPhone connection.</p>
-              </div>
-            ) : null}
-
-            {/* App Clip SAR (optional) */}
-            {walletReady ? <SarRow model={model} now={now} /> : null}
-
-            {/* Rate / binding */}
-            <div className="meta">
-              <div className="row">
-                <span className="row-key">Rate</span>
-                <span className="row-value">
-                  {estimate
-                    ? `1 USDC = ${formatRate(estimate.rate, railMeta.currency)}${estimate.stale ? ' · stale feed' : ''}`
-                    : '—'}
-                </span>
-              </div>
-              <p className="hint">
-                Estimate only. The binding rate is read from the Chainlink oracle when a buyer fills your cash-out.
-                {estimate?.amount ? ` Deposit: ${formatUsdc(estimate.amount)} USDC.` : ''}
-              </p>
-            </div>
-
-            {cashout.error ? (
-              <p className="alert" role="alert">{cashout.error}</p>
-            ) : null}
-
-            <button
-              type="button"
-              className="btn btn-primary"
-              data-testid="cashout-submit"
-              onClick={() => signedIn ? void cashout.start() : auth.login()}
-              disabled={!auth.ready || (signedIn && (!formEnabled || cashout.busy || !railSupported))}
-              aria-busy={cashout.busy || undefined}
+        <section className="connect" aria-labelledby="connect-title">
+          <div className="connect-head">
+            <h2 id="connect-title" className="label">
+              <span className="step" aria-hidden="true">3</span>
+              Confirm on iPhone
+            </h2>
+            <span
+              className={`status is-${tone}`}
+              data-testid="sar-status"
+              role="status"
+              aria-live="polite"
             >
-              {!auth.ready
-                ? 'Checking sign-in…'
-                : !signedIn
-                  ? 'Sign in to cash out'
-                  : cashout.busy
-                    ? 'Confirm in your wallet…'
-                    : `Cash out to ${railMeta.title}`}
-            </button>
-            {!signedIn && auth.ready ? (
-              <p className="hint hint-center">Sign in above to create a cash-out.</p>
-            ) : null}
-          </>
-        )}
-      </section>
-    </main>
-  );
-}
-
-function SarRow({ model, now }: { model: DemoModel; now: number }) {
-  const { sar, rail, rails } = model;
-  const link = sar.link;
-  const status = sar.result?.status ?? null;
-  const expired = link ? link.expiresAt <= now : false;
-  const connected = link ? status === 'connected' : Boolean(sar.account || sar.available);
-
-  let statusLabel: string;
-  if (connected) statusLabel = sar.account || link ? 'Connected' : 'SAR available';
-  else if (!link) statusLabel = 'Not connected';
-  else if (expired) statusLabel = 'Link expired';
-  else if (sar.error) statusLabel = 'Paused';
-  else if (status === 'connecting') statusLabel = 'Connecting…';
-  else statusLabel = 'Waiting for your iPhone';
-
-  return (
-    <div className="sar">
-      <div className="sar-head">
-        <div>
-          <span className="label">{rails[rail].title} account on iPhone</span>
-          <span className="tag">Optional</span>
-        </div>
-        <span
-          className={`sar-status${connected ? ' is-connected' : sar.error || expired ? ' is-paused' : ''}`}
-          data-testid="sar-status"
-          role="status"
-          aria-live="polite"
-        >
-          {statusLabel}
-        </span>
-      </div>
-      <p className="hint">
-        Connecting lets Peer confirm incoming payments to this account. It cannot move funds, and it is not
-        required to cash out{rail === 'upi' ? ' with UPI' : ''}.
-      </p>
-
-      {!link && connected ? (
-        <p className="sar-connected">
-          {sar.account
-            ? `Peer can confirm payments to ${sar.account.offchainId} through your ${rails[rail].title} account.`
-            : `SAR is already active for this ${rails[rail].title} account. You can cash out without reconnecting it. Management stays with the account that connected it.`}
-        </p>
-      ) : !link ? (
-        <div className="sar-actions">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            data-testid="sar-create"
-            onClick={() => void sar.start()}
-            disabled={sar.busy}
-            aria-busy={sar.busy || undefined}
-          >
-            {sar.busy ? 'Creating link…' : 'Connect on iPhone'}
-          </button>
-          {sar.error ? <p className="alert" role="alert">{sar.error}</p> : null}
-          {sar.accountsError ? <p className="alert" role="alert">{sar.accountsError}</p> : null}
-          {sar.accountStatusError ? <p className="alert" role="alert">{sar.accountStatusError}</p> : null}
-        </div>
-      ) : connected ? (
-        <p className="sar-connected">Peer can now confirm payments to your {rails[rail].title} account.</p>
-      ) : (
-        <div className="sar-link">
-          <div className="qr" aria-hidden={expired || undefined}>
-            <QRCodeSVG
-              value={link.url}
-              size={132}
-              bgColor="#ffffff"
-              fgColor="#000000"
-              level="M"
-              marginSize={2}
-              title="Scan with your iPhone camera to open the Peer App Clip"
-            />
+              <span className="status-dot" aria-hidden="true" />
+              {statusLabel}
+            </span>
           </div>
-          <div className="sar-link-body">
-            <p className="sar-link-copy">
-              Scan with your iPhone camera, or open the link on this iPhone. The App Clip only reads your account
-              details to confirm payments.
-            </p>
-            <p className="sar-expiry">{expiryLabel(link.expiresAt, now)} · links last 15 minutes</p>
-            {sar.error ? <p className="alert" role="alert">{sar.error}</p> : null}
-            <div className="sar-actions">
-              {!expired ? (
+
+          {connected ? (
+            <div className="panel panel-connected">
+              <div className="connected-row">
+                <span className="connected-mark" aria-hidden="true">
+                  <svg viewBox="0 0 20 20" width="20" height="20" focusable="false">
+                    <path
+                      d="M4 10.5l4 4 8-9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <div className="connected-copy">
+                  <p className="connected-title">{railTitle} connected</p>
+                  <p className="hint">
+                    Peer can now confirm payments to{' '}
+                    {payeeDisplay ? <span className="handle">{payeeDisplay}</span> : 'this account'}.
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="btn btn-secondary btn-block" onClick={sar.reset}>
+                Connect another account
+              </button>
+            </div>
+          ) : !linkActive ? (
+            <div className="panel">
+              {expired ? (
+                <p className="note">The previous link expired. Create a new one to continue.</p>
+              ) : cancelled ? (
+                <p className="note">That link was cancelled. Create a new one when you are ready.</p>
+              ) : sar.available ? (
+                <p className="note note-ok">
+                  This {railTitle} account is already connected to Peer. You can connect it again at any time.
+                </p>
+              ) : null}
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-testid="sar-create"
+                onClick={() => void sar.start()}
+                disabled={sar.busy}
+                aria-busy={sar.busy || undefined}
+              >
+                {sar.busy ? 'Creating link…' : link ? 'Create a new link' : 'Connect on iPhone'}
+              </button>
+
+              {sar.error ? <p className="alert" role="alert">{sar.error}</p> : null}
+              {sar.accountStatusError ? <p className="alert" role="alert">{sar.accountStatusError}</p> : null}
+
+              <ol className="how">
+                <li>Scan the code, or open the link on this iPhone.</li>
+                <li>Sign in to {railTitle} inside the Peer App Clip.</li>
+                <li>Come back here. The status updates on its own.</li>
+              </ol>
+            </div>
+          ) : link ? (
+            <div className="panel panel-link">
+              <div className="qr">
+                <QRCodeSVG
+                  value={link.url}
+                  size={168}
+                  bgColor="#ffffff"
+                  fgColor="#000000"
+                  level="M"
+                  marginSize={2}
+                  title="Scan with your iPhone camera to open the Peer App Clip"
+                />
+              </div>
+              <div className="link-body">
+                <p className="link-copy">
+                  Scan with your iPhone camera, or open the link on this iPhone. Sign in to {railTitle} in
+                  the App Clip and this page will update.
+                </p>
+                <div className="expiry">
+                  <div
+                    className="expiry-bar"
+                    role="progressbar"
+                    aria-label="Time remaining on this link"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={expiryPercent(link.expiresAt, now)}
+                  >
+                    <span className="expiry-fill" style={{ width: `${expiryPercent(link.expiresAt, now)}%` }} />
+                  </div>
+                  <p className="expiry-label">{expiryLabel(link.expiresAt, now)} · links last 15 minutes</p>
+                </div>
+              </div>
+              {sar.error ? <p className="alert panel-span" role="alert">{sar.error}</p> : null}
+              <div className="actions panel-span">
                 <a
-                  className="btn btn-secondary"
+                  className="btn btn-primary"
                   data-testid="sar-open"
                   href={link.url}
                   target="_blank"
@@ -355,106 +294,29 @@ function SarRow({ model, now }: { model: DemoModel; now: number }) {
                 >
                   Open on iPhone
                 </a>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  data-testid="sar-create"
-                  onClick={() => void sar.start()}
-                  disabled={sar.busy}
-                >
-                  {sar.busy ? 'Creating link…' : 'Create a new link'}
-                </button>
-              )}
-              {!expired ? (
-                <button type="button" className="btn btn-quiet" onClick={() => sar.refresh()} disabled={sar.busy}>
-                  Check status
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-quiet"
-                data-testid="sar-cancel"
-                onClick={() => void sar.cancel()}
-                disabled={sar.busy}
-              >
-                Cancel
-              </button>
+                <div className="actions-row">
+                  <button type="button" className="btn btn-quiet" onClick={sar.refresh} disabled={sar.busy}>
+                    Check status
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    data-testid="sar-cancel"
+                    onClick={() => void sar.cancel()}
+                    disabled={sar.busy}
+                  >
+                    Cancel link
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+          ) : null}
+        </section>
+      </section>
 
-function OrderPanel({ model }: { model: DemoModel }) {
-  const { order, cashout } = model;
-  const data = order.data;
-  if (!data) return null;
-  const settled = data.state === 'delivered' || data.state === 'returned';
-
-  return (
-    <div className="order">
-      <div className="row">
-        <span className="row-key">Status</span>
-        <span className="row-value order-state" data-testid="order-state" role="status" aria-live="polite">
-          {data.state}
-        </span>
-      </div>
-      <p className="order-explanation" aria-live="polite">{data.explanation}</p>
-
-      <div className="row row-stack">
-        <span className="row-key">Deposit ID</span>
-        <code className="mono">{data.depositId}</code>
-      </div>
-      {data.txHash ? (
-        <div className="row">
-          <span className="row-key">Transaction</span>
-          <a
-            className="mono link"
-            href={`https://basescan.org/tx/${data.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {shortHash(data.txHash)}
-          </a>
-        </div>
-      ) : (
-        <p className="hint">No transaction hash was recorded. Check this deposit before creating another.</p>
-      )}
-
-      {order.error ? <p className="alert" role="alert">{order.error}</p> : null}
-
-      <div className="order-actions">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => order.refresh()}
-          disabled={cashout.busy}
-        >
-          Refresh
-        </button>
-        {data.canWithdraw ? (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            data-testid="order-withdraw"
-            onClick={() => void order.withdraw()}
-            disabled={cashout.busy}
-            aria-busy={cashout.busy || undefined}
-          >
-            {cashout.busy ? 'Confirm in your wallet…' : 'Withdraw USDC'}
-          </button>
-        ) : null}
-      </div>
-      <p className="hint">
-        Withdraw returns unfilled USDC to your wallet. Keep this deposit ID: it is all you need to find this
-        cash-out again.
+      <p className="foot">
+        Peer gets read-only access to confirm payments. Connecting cannot move funds from your account.
       </p>
-      <button type="button" className="btn btn-quiet btn-block" onClick={() => order.newCashout()}>
-        {settled ? 'Start another cash-out' : 'Hide and start another cash-out'}
-      </button>
-    </div>
+    </main>
   );
 }
