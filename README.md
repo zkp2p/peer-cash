@@ -328,9 +328,9 @@ See the [full appearance options](https://www.npmjs.com/package/@zkp2p/sdk#popup
 | UPI                   | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
 | Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
 
-Use `receive: { platform: 'xmoney', currency: 'USD', payee: '@Peer_Intern' }`
+Use `receive: { platform: 'xmoney', currency: 'USD', payee: '@YourHandle' }`
 for X Money. Raw handles are trimmed, lowercased, and stripped of a leading `@`;
-structured payee data must already use `offchainId: 'peer_intern'`. Registration
+structured payee data must already use `offchainId: 'yourhandle'`. Registration
 normalizes the handle but does not verify that the X account exists or can receive
 X Money. Confirm that the receiving account has X Money enabled before cashing out.
 

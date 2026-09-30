@@ -57,7 +57,7 @@ Key facts:
 - capabilities() exposes one Zelle platform. A zelle cashout attaches only the
   generic Zelle payment method to the on-chain deposit.
 - X Money supports USD with `platform: 'xmoney'`. Raw payees such as
-  '@Peer_Intern' become 'peer_intern'; structured offchainId values must already
+  '@YourHandle' become 'yourhandle'; structured offchainId values must already
   be normalized. The receiving account must have X Money enabled; registration
   does not verify account existence or enrollment. No identity attestation or
   Peer Pay merchant policy is required.

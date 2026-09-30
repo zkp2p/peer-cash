@@ -188,9 +188,9 @@ UPI ID from any bank; do not add a seller bank-login, extension, identity
 attestation, or pre-registration step. Buyers pay and verify through Amazon Pay using standard UPI; UPI Lite and
 merchant payments are unsupported.
 
-X Money accepts `receive: { platform: 'xmoney', currency: 'USD', payee: '@Peer_Intern' }`.
+X Money accepts `receive: { platform: 'xmoney', currency: 'USD', payee: '@YourHandle' }`.
 Raw handles normalize to the bare lowercase username. Structured payee data must
-already use `offchainId: 'peer_intern'`. Confirm that the receiving account has
+already use `offchainId: 'yourhandle'`. Confirm that the receiving account has
 X Money enabled: registration does not verify account existence or enrollment.
 No identity attestation or Peer Pay merchant policy is required.
 
