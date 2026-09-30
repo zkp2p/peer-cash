@@ -6,6 +6,8 @@ describe('normalizeCashPayee', () => {
     ['venmo', '  @SellerTag  ', 'SellerTag'],
     ['cashapp', '  $SellerTag  ', 'SellerTag'],
     ['chime', '  $SellerTag  ', '$sellertag'],
+    ['xmoney', '  @Peer_Intern  ', 'peer_intern'],
+    ['xmoney', '  Peer_Intern  ', 'peer_intern'],
     ['n26', ' user @ example.com ', 'user@example.com'],
     ['paypal', ' https://www.paypal.me/@SellerTag?locale=en ', 'sellertag'],
     ['zelle', ' Alice@Example.COM ', 'alice@example.com'],

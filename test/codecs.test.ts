@@ -586,11 +586,18 @@ describe('prepared tx + result codecs', () => {
 });
 
 describe('capabilities codec', () => {
-  it('round-trips', () => {
-    const caps = buildCapabilities('staging');
-    const restored = capabilitiesFromJson(JSON.parse(JSON.stringify(capabilitiesToJson(caps))));
-    expect(restored).toEqual(caps);
-  });
+  it.each(['production', 'preproduction', 'staging'] as const)(
+    'round-trips including X Money in %s',
+    (environment) => {
+      const caps = buildCapabilities(environment);
+      const restored = capabilitiesFromJson(JSON.parse(JSON.stringify(capabilitiesToJson(caps))));
+      expect(restored).toEqual(caps);
+      expect(restored.platforms.find((platform) => platform.platform === 'xmoney')).toMatchObject({
+        currencies: ['USD'],
+        requiresIdentityAttestation: false,
+      });
+    },
+  );
 
   it('normalizes legacy atomic-policy capabilities to false', () => {
     const json = capabilitiesToJson(buildCapabilities('staging'));

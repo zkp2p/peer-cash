@@ -16,6 +16,8 @@
  * no Privy wallet is required. Venmo and PayPal attach their access
  * policy in a confirmed follow-up transaction. Override the demo corridor with:
  *   CASH_PLATFORM=revolut CASH_CURRENCY=EUR CASH_PAYEE=your-revtag
+ *   CASH_PLATFORM=xmoney CASH_CURRENCY=USD CASH_PAYEE=@your-x-username
+ * X Money requires an enrolled receiving account; registration does not check enrollment.
  */
 import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
