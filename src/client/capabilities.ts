@@ -30,6 +30,7 @@ const PAYEE_HINTS: Record<string, string> = {
   mercadopago: 'Mercado Pago alias or CVU',
   monzo: 'Monzo.me username',
   chime: 'ChimeSign (e.g. $andrew)',
+  xmoney: 'X username with X Money enabled, with or without the leading @ (e.g. @andrew)',
   luxon: 'Luxon Pay ID or account email',
   n26: 'MoneyBeam email or phone number',
   alipay: 'Email address linked to your Alipay account',

@@ -323,9 +323,16 @@ See the [full appearance options](https://www.npmjs.com/package/@zkp2p/sdk#popup
 | Venmo                 | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
 | PayPal                | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
 | Cash App              | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
+| X Money (USD)         | No access-policy follow-up                                                 | Bare lowercase X username; X Money must be enabled on the receiving account            |
 | Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
 | UPI                   | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
 | Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
+
+Use `receive: { platform: 'xmoney', currency: 'USD', payee: '@Peer_Intern' }`
+for X Money. Raw handles are trimmed, lowercased, and stripped of a leading `@`;
+structured payee data must already use `offchainId: 'peer_intern'`. Registration
+normalizes the handle but does not verify that the X account exists or can receive
+X Money. Confirm that the receiving account has X Money enabled before cashing out.
 
 No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
 work with any viem `WalletClient`, including a local or externally connected

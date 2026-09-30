@@ -61,6 +61,7 @@ import {
   currencyInfo,
   getAttributionDataSuffix,
   getPaymentMethodsCatalog,
+  resolvePaymentMethodHashFromCatalog,
   Zkp2pClient,
 } from '@zkp2p/sdk';
 import {
@@ -582,7 +583,10 @@ describe('orders()', () => {
 });
 
 describe('cashout()', () => {
-  it.each([['chime', '  $SellerTag  ', '$sellertag']] as const)(
+  it.each([
+    ['chime', '  $SellerTag  ', '$sellertag'],
+    ['xmoney', '  @Peer_Intern  ', 'peer_intern'],
+  ] as const)(
     'normalizes a raw %s handle before signed payee registration',
     async (platform, payee, offchainId) => {
       mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
@@ -603,6 +607,19 @@ describe('cashout()', () => {
         processorNames: [platform],
         payeeData: [{ offchainId }],
       });
+      expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paymentMethodsOverride: [
+            resolvePaymentMethodHashFromCatalog(
+              platform,
+              getPaymentMethodsCatalog(8453, 'staging'),
+            ),
+          ],
+        }),
+      );
+      expect(
+        mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit,
+      ).not.toHaveBeenCalled();
     },
   );
 
@@ -2132,8 +2149,20 @@ describe('cashout()', () => {
 });
 
 describe('prepare()', () => {
+  it('rejects non-USD X Money payouts before registration or transaction preparation', async () => {
+    await expect(
+      client().prepare({
+        amount: 5_000_000n,
+        receive: { platform: 'xmoney', currency: 'EUR', payee: '@Peer_Intern' },
+      }),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_PLATFORM_CURRENCY', retryable: false });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+    expect(mockInstance.prepareCreateDeposit).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['chime', 'USD', '  $SellerTag  ', '$sellertag'],
+    ['xmoney', 'USD', '  @Peer_Intern  ', 'peer_intern'],
     ['venmo', 'USD', '  @SellerTag  ', 'SellerTag'],
     ['cashapp', 'USD', '  $SellerTag  ', 'SellerTag'],
     ['zelle', 'USD', ' Alice@Example.COM ', 'alice@example.com'],

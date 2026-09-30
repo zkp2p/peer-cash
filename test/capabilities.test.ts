@@ -55,6 +55,23 @@ describe('buildCapabilities', () => {
     },
   );
 
+  it.each(['production', 'preproduction', 'staging'] as const)(
+    'includes the catalog-owned X Money/USD corridor in %s',
+    (environment) => {
+      expect(buildCapabilities(environment).platforms.find((p) => p.platform === 'xmoney')).toEqual(
+        {
+          platform: 'xmoney',
+          currencies: ['USD'],
+          pricing: { USD: { kind: 'oracle-at-intent-signal', spreadBps: 0 } },
+          payeeHint:
+            'X username with X Money enabled, with or without the leading @ (e.g. @andrew)',
+          requiresIdentityAttestation: false,
+          requiresAtomicAccessPolicy: false,
+        },
+      );
+    },
+  );
+
   it('presents generic Zelle as one platform', () => {
     const caps = buildCapabilities('production');
     const zelle = caps.platforms.filter((platform) => platform.platform.startsWith('zelle'));

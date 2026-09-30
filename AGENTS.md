@@ -61,6 +61,12 @@ deposit-level integration share instead of applying maker L1/L2.
 - **Cash App is non-chargebackable.** Cash App cash-outs stay public, do not
   attach a Peer Pay merchant policy, and never require dispute-protection stake.
 
+- **X Money supports USD.** Use `platform: 'xmoney'` and a receiving X username
+  with X Money enabled. Raw string payees accept a leading `@` and normalize to
+  the bare lowercase handle; structured `offchainId` values must already be
+  normalized. Curator does not verify account existence or X Money enrollment.
+  No identity attestation or Peer Pay merchant policy is required.
+
 - **Wise, PayPal, and Alipay** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
   (first-party Peer web obtains it through the Peer TEE browser extension).

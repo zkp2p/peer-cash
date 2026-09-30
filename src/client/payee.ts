@@ -19,6 +19,8 @@ export function normalizeCashPayee(platform: string, payee: CashPayeeInput): Cur
   switch (platform) {
     case 'venmo':
       return { offchainId: trimmed.replace(/^@+/, '') };
+    case 'xmoney':
+      return { offchainId: trimmed.replace(/^@/, '').toLowerCase() };
     case 'cashapp':
       return { offchainId: trimmed.replace(/^\$+/, '') };
     case 'chime':
