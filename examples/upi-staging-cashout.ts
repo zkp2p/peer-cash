@@ -1,4 +1,4 @@
-// UPI pricing reads Polygon mainnet; configure upiCreationRateRpcUrl for a dedicated provider.
+// UPI pricing uses the Base oracle; configure transport or rpcUrl for a dedicated provider.
 import { createCashClient, usdc } from '@zkp2p/cash';
 import type { WalletClient } from 'viem';
 

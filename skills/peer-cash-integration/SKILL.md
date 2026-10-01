@@ -28,11 +28,9 @@ protocol-held funds and no custodial off-ramp provider.
   send once with the origin wallet, optionally register that existing hash,
   poll status to `SUCCESS`, reconcile Base evidence, then cash out Base-only.
   Browser integrations use a same-origin proxy so the 1Click JWT stays server-side.
-- **Pricing has an explicit binding point.** Existing corridors carry
-  `oracleRateConfig { spreadBps: 0 }`; the binding rate is the Chainlink rate
-  when a buyer signals. Alipay/CNY is the exception: because Base has no CNY
-  oracle adapter, the SDK reads Chainlink CNY/USD on Ethereum and fixes that
-  fresh snapshot as the maker floor during deposit preparation. UPI/INR does the same using the direct Polygon INR/USD feed, rejecting wrong-chain, stale and invalid data. Read
+- **Pricing has an explicit binding point.** Every corridor carries
+  `oracleRateConfig { spreadBps: 0 }`; the binding rate is the Base oracle rate
+  when a buyer signals, including Alipay/CNY and UPI/INR. Read
   `estimate().binding` and `capabilities().platforms[].pricing`.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
@@ -271,23 +269,20 @@ a human with the `depositId` and tx hashes.
 
 ## UPI oracle checks
 
-UPI/INR reads the live Chainlink Polygon mainnet proxy
-`0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` (chain 137), inverts
-USD per INR, and rounds the creation-time maker floor up. Configure its
-read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
-Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
-`creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
-observations older than 24 hours; market closures do not bypass freshness.
+UPI/INR and Alipay/CNY use ZKP2P-operated AggregatorV3-compatible feeds on Base,
+through the SDK's Chainlink oracle adapter with `invert: true` and zero spread.
+The SDK feed catalog supplies the addresses and determines oracle availability;
+Cash adds no currency exceptions. Estimates read through the normal Base
+`transport` / `rpcUrl`; deposits float until each buyer signals an intent.
 UPI is available in production, preproduction, and staging without a feature flag.
 
 Before a funded UPI QA run, call
 `cash.estimate({ amount: 1000000n, platform: 'upi', currency: 'INR' }, { includeEta: false })`
-using the intended live Polygon RPC. Require a positive finite rate,
-`binding: 'deposit-creation'`, and `oracleUpdatedAt` no more than 86400 seconds
+using the intended live Base RPC. Require a positive finite rate,
+`binding: 'intent-signal'`, and `oracleUpdatedAt` no more than 86400 seconds
 old and not in the future. Record the observation time and selected chain,
 then stop before funding if the read fails. Unit-test fixtures prove routing,
-not live availability. The authoritative feed listing is
-https://data.chain.link/feeds/polygon/mainnet/inr-usd.
+not live availability. Use the pinned SDK oracle feed catalog for the feed address.
 
 ## Optional Venmo receipt linking
 

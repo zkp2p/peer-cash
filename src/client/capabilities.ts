@@ -6,7 +6,6 @@ import { getCurrencyCodeFromHash } from '@zkp2p/sdk';
 import type { CurrencyType, RuntimeEnv } from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
-import { isCreationRateCorridor } from './creationRate';
 import type { CashSourceCapabilities } from './relay';
 import type { NearIntentsSourceCapabilities } from './nearIntents';
 import { getCashPaymentMethodsCatalog } from '../engine/paymentMethodCatalog';
@@ -45,9 +44,7 @@ const PAYEE_HINTS: Record<string, string> = {
  */
 const IDENTITY_ATTESTATION_PLATFORMS = new Set(['wise', 'paypal', 'alipay']);
 
-export type CashCorridorPricing =
-  | { kind: 'oracle-at-intent-signal'; spreadBps: 0 }
-  | { kind: 'fixed-at-deposit-creation'; source: 'chainlink-ethereum'; spreadBps: 0 };
+export type CashCorridorPricing = { kind: 'oracle-at-intent-signal'; spreadBps: 0 };
 
 /** Whether a platform's curator registration needs a signed identity attestation. */
 export function platformRequiresIdentityAttestation(platform: string): boolean {
@@ -101,7 +98,7 @@ export interface CashCapabilities {
   currencies: CurrencyType[];
   /** Amount bounds in USDC base units. */
   amount: { min: bigint; recommendedMin: bigint; max: null };
-  /** Default pricing for corridors without a platform-level creation-time exception. */
+  /** Pricing for every supported corridor. */
   pricing: { kind: 'oracle-market-rate'; spreadBps: 0 };
 }
 
@@ -114,8 +111,7 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
         .map((hash) => getCurrencyCodeFromHash(hash))
         .filter(
           (code): code is CurrencyType =>
-            code != null &&
-            (isMarketRateSupported(code as CurrencyType) || isCreationRateCorridor(platform, code)),
+            code != null && isMarketRateSupported(code as CurrencyType),
         );
       const uniqueCurrencies = [...new Set(currencies)].sort();
       return {
@@ -124,13 +120,7 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
         pricing: Object.fromEntries(
           uniqueCurrencies.map((currency) => [
             currency,
-            isCreationRateCorridor(platform, currency)
-              ? {
-                  kind: 'fixed-at-deposit-creation' as const,
-                  source: 'chainlink-ethereum' as const,
-                  spreadBps: 0 as const,
-                }
-              : { kind: 'oracle-at-intent-signal' as const, spreadBps: 0 as const },
+            { kind: 'oracle-at-intent-signal' as const, spreadBps: 0 as const },
           ]),
         ),
         payeeHint: PAYEE_HINTS[platform] ?? 'Your payment handle for this platform',

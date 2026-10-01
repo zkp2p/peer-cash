@@ -7,8 +7,8 @@
 You are integrating Peer Cash: an offramp that routes Relay-supported EVM
 assets or NEAR Intents 1Click external deposits into Base USDC, then converts
 Base USDC to fiat (Venmo, Revolut, Wise, Alipay, Zelle, ...) at a zero-spread
-Chainlink market rate. Existing corridors bind at intent signal; Alipay/CNY
-fixes a fresh Ethereum Chainlink snapshot during deposit preparation; UPI/INR uses Polygon Chainlink. The user whose USDC you
+oracle market rate. Every corridor, including Alipay/CNY and UPI/INR, binds
+the Base oracle at intent signal. The user whose USDC you
 manage is the **maker**; a buyer pays them fiat and proves it with TEE-TLS; the
 protocol releases the USDC. Funds are held by the protocol, and only the maker
 can withdraw an unmatched deposit.
@@ -200,10 +200,8 @@ const route = await cash.nearIntentsStatus({
 ## Rules that prevent wrong behavior
 
 - **Respect the declared binding point.** `estimate()` is
-  `kind: 'oracle-estimate'`. Its `binding` is `intent-signal` for existing
-  on-chain oracle corridors and `deposit-creation` for Alipay/CNY and UPI/INR. Do not call
-  an estimate locked before that point. Once a creation-time corridor is prepared, its fresh
-  Chainlink snapshot is the on-chain maker floor.
+  `kind: 'oracle-estimate'` with `binding: 'intent-signal'` for every currency.
+  The estimate is approximate; each buyer's signal binds the live oracle rate.
 - **Do not invent an ETA.** Use `estimate().eta`: `{ seconds, label }` backed
   by the same rolling 30-day, intent-attributed pair sample as `fillStats()`,
   measured from deposit creation to first fill. Use `order.explain()` for live
@@ -340,13 +338,11 @@ wallet. Never wait on a buyer - buyer-side is out of your scope:
 If step 4 ever fails with funds stuck, stop and escalate - do not retry
 blindly.
 
-UPI/INR reads the live Chainlink Polygon mainnet proxy
-`0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` (chain 137), inverts
-USD per INR, and rounds the creation-time maker floor up. Configure its
-read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
-Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
-`creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
-observations older than 24 hours; market closures do not bypass freshness.
+UPI/INR and Alipay/CNY use ZKP2P-operated AggregatorV3-compatible feeds on Base,
+through the SDK's Chainlink oracle adapter with `invert: true` and zero spread.
+The SDK feed catalog supplies the addresses and determines oracle availability;
+Cash adds no currency exceptions. Estimates read through the normal Base
+`transport` / `rpcUrl`; deposits float until each buyer signals an intent.
 UPI is available in production, preproduction, and staging without a feature flag.
 
 ## Optional Venmo receipt linking

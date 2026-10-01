@@ -10,11 +10,6 @@ import type {
   CreateDepositParamsArg,
 } from '../sdk-types';
 import {
-  isCreationRateCorridor,
-  type CreationRateReader,
-  type CreationRateSnapshot,
-} from '../client/creationRate';
-import {
   BASE_USDC_ADDRESS,
   CASH_RETAIN_ON_EMPTY,
   MARKET_SPREAD_BPS,
@@ -41,13 +36,13 @@ export function isMarketRateSupported(
   return getSpreadOracleConfig(currency, adapters) != null;
 }
 
-/** Whether Cash can construct this exact platform/currency corridor. */
+/** Oracle availability for a corridor; callers separately validate the method catalog. */
 export function isCashCorridorSupported(
-  platform: string,
+  _platform: string,
   currency: CurrencyType,
   adapters?: OracleAdapterOverrides,
 ): boolean {
-  return isMarketRateSupported(currency, adapters) || isCreationRateCorridor(platform, currency);
+  return isMarketRateSupported(currency, adapters);
 }
 
 /**
@@ -93,14 +88,12 @@ export function buildIntentAmountRange(amount: bigint): { min: bigint; max: bigi
  *
  * Registers payee details with the curator (no auth), resolves payment-method
  * hashes + the gating service from the catalog, and assembles the override
- * arrays with signal-time oracle configs. Alipay/CNY and UPI/INR instead fix
- * fresh Chainlink snapshots from Ethereum and Polygon as their maker floors.
+ * arrays with signal-time oracle configs.
  */
 export async function prepareCashDepositParams(
   client: Zkp2pClient,
   input: CashDepositInput,
   adapters?: OracleAdapterOverrides,
-  creationRateReader?: CreationRateReader,
 ): Promise<CreateDepositParamsArg> {
   const { payouts } = input;
   if (!payouts.length) throw new Error('At least one payout is required');
@@ -127,28 +120,12 @@ export async function prepareCashDepositParams(
     );
     for (const currency of currencies) {
       if (!isCashCorridorSupported(payout.processorName, currency, adapters)) {
-        throw new Error(
-          `${payout.processorName}/${currency} has no live oracle or supported creation-time rate.`,
-        );
+        throw new Error(`${payout.processorName}/${currency} has no live oracle.`);
       }
       const currencyHash = currencyInfo[currency]?.currencyCodeHash;
       if (!currencyHash || !supportedCurrencyHashes.has(currencyHash.toLowerCase())) {
         throw new Error(`${payout.processorName} does not support ${currency}`);
       }
-    }
-  }
-
-  const creationRates = new Map<string, CreationRateSnapshot>();
-  for (const payout of payouts) {
-    for (const currency of payoutCurrencies(payout)) {
-      if (!isCreationRateCorridor(payout.processorName, currency)) continue;
-      if (!creationRateReader) {
-        throw new Error(
-          `A creation-time rate reader is required for ${payout.processorName}/${currency}`,
-        );
-      }
-      const key = `${payout.processorName.toLowerCase()}:${currency}`;
-      creationRates.set(key, await creationRateReader(payout.processorName, currency));
     }
   }
 
@@ -169,17 +146,6 @@ export async function prepareCashDepositParams(
 
   const currenciesOverride: OnchainCurrency[][] = payouts.map((payout) =>
     payoutCurrencies(payout).map((currency) => {
-      if (isCreationRateCorridor(payout.processorName, currency)) {
-        const snapshot = creationRates.get(`${payout.processorName.toLowerCase()}:${currency}`);
-        if (!snapshot || snapshot.rate1e18 <= 0n) {
-          throw new Error(
-            `Failed to build creation-time rate for ${payout.processorName}/${currency}`,
-          );
-        }
-        const code = currencyInfo[currency]?.currencyCodeHash as `0x${string}` | undefined;
-        if (!code) throw new Error(`Missing on-chain currency code for ${currency}`);
-        return { code, minConversionRate: snapshot.rate1e18 } as OnchainCurrency;
-      }
       const tuple = buildMarketRateCurrencyOverride(currency, adapters);
       if (!tuple) throw new Error(`Failed to build market-rate config for ${currency}`);
       return tuple;
@@ -191,11 +157,7 @@ export async function prepareCashDepositParams(
   const conversionRates = payouts.map((payout) =>
     payoutCurrencies(payout).map((currency) => ({
       currency,
-      conversionRate: isCreationRateCorridor(payout.processorName, currency)
-        ? creationRates
-            .get(`${payout.processorName.toLowerCase()}:${currency}`)!
-            .rate1e18.toString()
-        : ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString(),
+      conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString(),
     })),
   );
 

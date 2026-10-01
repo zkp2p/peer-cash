@@ -41,9 +41,9 @@ Key facts:
   address/memo, and deadline; send once with the origin wallet; optionally
   submit that existing hash; poll status to SUCCESS; reconcile Base evidence;
   then cash out Base-only. Use EXACT_OUTPUT when the order amount must be fixed.
-- estimate() reports its binding point. Existing corridors bind the on-chain
-  oracle when an intent is signaled; Alipay/CNY fixes a fresh Ethereum
-  Chainlink snapshot during deposit preparation; UPI/INR uses a fresh Polygon Chainlink snapshot. ETA is `{ seconds, label }` from the same rolling
+- estimate() reports binding: intent-signal for every corridor, including
+  Alipay/CNY and UPI/INR. All deposits float with the Base oracle plus zero
+  spread until a buyer signals. ETA is `{ seconds, label }` from the same rolling
   30-day, intent-attributed pair sampler as fillStats(), not a guarantee.
 - fillStats() returns raw `{ fills, medianFillSeconds? }` evidence keyed by
   `platform:currency` or a sorted set such as `revolut:EUR+GBP+USD`. Set
@@ -95,7 +95,7 @@ Key facts:
   platforms (each platform at most once); read each capability's pricing entry
   for its binding semantics.
 - Orders carry their payout legs (platform, currency, payee hash) plus indexed
-  pricing evidence for either signal-time oracle or fixed-at-creation pricing.
+  pricing evidence for signal-time oracle pricing (or historical fixed-rate orders).
 - Order reads fail closed when any deposit method is absent from the active
   catalog; mixed historical deposits are never partially reclassified.
 - buyer(address) aggregates a buyer's track record (fulfilled/pruned/success
@@ -152,11 +152,9 @@ Key facts:
 - [Codecs](src/codecs/): zod schemas + lossless JSON round-trips
 
 
-UPI/INR reads the live Chainlink Polygon mainnet proxy
-`0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` (chain 137), inverts
-USD per INR, and rounds the creation-time maker floor up. Configure its
-read-only RPC with `upiCreationRateRpcUrl` or `upiCreationRateTransport`.
-Alipay/CNY retains the Ethereum registry and `creationRateRpcUrl` /
-`creationRateTransport`. UPI rejects the wrong chain, invalid rounds, and
-observations older than 24 hours; market closures do not bypass freshness.
+UPI/INR and Alipay/CNY use ZKP2P-operated AggregatorV3-compatible feeds on Base,
+through the SDK's Chainlink oracle adapter with `invert: true` and zero spread.
+The SDK feed catalog supplies the addresses and determines oracle availability;
+Cash adds no currency exceptions. Estimates read through the normal Base
+`transport` / `rpcUrl`; deposits float until each buyer signals an intent.
 UPI is available in production, preproduction, and staging without a feature flag.

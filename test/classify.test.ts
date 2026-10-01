@@ -16,12 +16,16 @@ function payout(overrides: Partial<CashPayoutInfo> = {}): CashPayoutInfo {
 }
 
 describe('Cash payout classification', () => {
-  it('keeps zero-spread oracle deposits structurally resumable', () => {
+  it.each([
+    ['venmo', 'USD'],
+    ['upi', 'INR'],
+    ['alipay', 'CNY'],
+  ])('keeps zero-spread %s/%s oracle deposits structurally resumable', (platform, currency) => {
     expect(
       isCashPayoutSet([
         payout({
-          platform: 'venmo',
-          currency: 'USD',
+          platform,
+          currency,
           pricing: { marketRate: true, spreadBps: 0, kind: 'oracle_chainlink' },
         }),
       ]),
@@ -37,7 +41,7 @@ describe('Cash payout classification', () => {
     expect(isCashPayoutSet(rows, true)).toBe(true);
   });
 
-  it('rejects UPI with the wrong currency or missing creation-rate evidence', () => {
+  it('rejects UPI with the wrong currency or missing historical fixed-rate evidence', () => {
     expect(isCashPayoutSet([payout({ platform: 'upi', currency: 'CNY' })], true)).toBe(false);
     for (const pricing of [
       { marketRate: false, fixedRate: 95 },

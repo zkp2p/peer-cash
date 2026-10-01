@@ -346,7 +346,7 @@ export const cashOrderJsonSchema = z.object({
 
 export const cashEstimateJsonSchema = z.object({
   kind: z.literal('oracle-estimate'),
-  binding: z.enum(['intent-signal', 'deposit-creation']).optional(),
+  binding: z.literal('intent-signal').optional(),
   currency: z.string(),
   amount: nonNegativeBigintString,
   rate: z.number(),
@@ -531,14 +531,7 @@ export const cashCapabilitiesJsonSchema = z.object({
       pricing: z
         .record(
           z.string(),
-          z.union([
-            z.object({ kind: z.literal('oracle-at-intent-signal'), spreadBps: z.literal(0) }),
-            z.object({
-              kind: z.literal('fixed-at-deposit-creation'),
-              source: z.literal('chainlink-ethereum'),
-              spreadBps: z.literal(0),
-            }),
-          ]),
+          z.object({ kind: z.literal('oracle-at-intent-signal'), spreadBps: z.literal(0) }),
         )
         .optional(),
       requiresIdentityAttestation: z.boolean(),

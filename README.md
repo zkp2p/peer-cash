@@ -3,9 +3,8 @@
 Route Relay-supported EVM assets or NEAR Intents 1Click external deposits into
 Base USDC, then cash out to fiat on Venmo, Revolut, Wise, Alipay, Zelle, and
 more at a zero-spread Chainlink market rate with no centralized off-ramp
-provider. Existing corridors bind the live oracle when a buyer signals;
-Alipay/CNY and UPI/INR fix fresh Chainlink snapshots when the SDK prepares
-the deposit (Ethereum for CNY; Polygon for INR).
+provider. Every corridor, including Alipay/CNY and UPI/INR, binds the live
+Base oracle when a buyer signals.
 
 Peer Cash is an **offramp-only** SDK for the [ZKP2P](https://peer.xyz)
 protocol. The cashing-out user is the maker: their USDC becomes a deposit in
@@ -79,14 +78,14 @@ const widestReach = await cash.cashout(
   { signer },
 );
 
-// Alipay/CNY is the explicit creation-time exception. New Alipay payees need
+// Alipay/CNY uses the same signal-time oracle path. New Alipay payees need
 // the identity attestation prepared by first-party Peer web.
 const alipayEstimate = await cash.estimate({
   amount: usdc(1000),
   platform: 'alipay',
   currency: 'CNY',
 });
-// alipayEstimate.binding === 'deposit-creation'
+// alipayEstimate.binding === 'intent-signal'
 
 for await (const order of cash.watch(depositId)) {
   console.log(order.state, order.explain());
@@ -96,8 +95,8 @@ for await (const order of cash.watch(depositId)) {
 
 ### Staging and preproduction UPI cash-out
 
-UPI requires the canonical UPI/INR catalog from `@zkp2p/sdk` 0.14.2-rc.1
-or its approved successor; a missing catalog entry keeps the corridor disabled.
+UPI requires the canonical UPI/INR catalog and INR oracle config from the
+pinned `@zkp2p/sdk` 0.14.5-rc.2; missing oracle support disables the corridor.
 UPI is available in every environment without an opt-in. Any valid UPI ID from any bank can receive a cash-out. The seller
 does not connect a bank account, install an extension, or complete a separate
 registration flow:
@@ -120,21 +119,23 @@ Buyers pay and verify through Amazon Pay using standard UPI. UPI Lite and
 merchant payments are unsupported. The seller may receive at a valid UPI ID
 from any bank.
 
-INR pricing uses the [Chainlink Polygon INR/USD feed](https://data.chain.link/feeds/polygon/mainnet/inr-usd),
-inverted into INR per USDC and fixed at deposit preparation. The SDK rejects
-invalid rounds and readings older than 24 hours, including market-hour gaps.
-Only oracle reads use Polygon; funds and transactions stay on Base. Override
-the Polygon reader with `upiCreationRateTransport` or `upiCreationRateRpcUrl`.
-The existing `creationRateTransport`/`creationRateRpcUrl` options remain Ethereum-only for CNY.
+UPI/INR and Alipay/CNY use ZKP2P-operated AggregatorV3-compatible feeds on Base,
+through the SDK's Chainlink oracle adapter with `invert: true` and zero spread.
+The SDK feed catalog supplies the addresses and determines oracle availability;
+Cash adds no currency exceptions. Estimates read through the normal Base
+`transport` / `rpcUrl`; deposits float until each buyer signals an intent.
+UPI is available in production, preproduction, and staging without a feature flag.
+
+See [the INR/CNY migration notes](docs/lifecycle-and-recovery.md#inrcny-oracle-migration-breaking) before upgrading an existing integration.
 
 ## Pick the right SDK
 
 Peer Cash and the general ZKP2P SDK serve different integration depths:
 
-| Package       | Use it when                                       | Boundary                                                                                                                                                                                                                       |
-| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is zero-spread Chainlink (signal-time by default; creation-time for Alipay/CNY and UPI/INR), and the SDK owns the resumable order lifecycle. |
-| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices.                                      |
+| Package       | Use it when                                       | Boundary                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is zero-spread Base oracles at intent signal, and the SDK owns the resumable order lifecycle.           |
+| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
 
 Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
 cannot express custom spreads, buyer-side proof flows, vaults, disputes, or
@@ -521,15 +522,10 @@ awaiting-buyer ──────────► matched ───────�
    returned ◄─────────────────┘
 ```
 
-- **You are the maker.** Pricing is zero-spread. Existing corridors resolve
-  from the on-chain Chainlink oracle when a buyer signals an intent.
-- **Alipay/CNY binds earlier.** Base has no CNY oracle adapter, so the SDK reads
-  Chainlink CNY/USD on Ethereum, rejects stale or invalid data, and fixes the
-  resulting CNY-per-USDC maker floor when it prepares the deposit. A buyer may
-  signal at that floor or a better rate for the maker.
-- **Read `binding`.** `estimate().binding` is `intent-signal` by default and
-  `deposit-creation` for Alipay/CNY and UPI/INR. An estimate remains approximate until its
-  stated binding point.
+- **You are the maker.** Every corridor uses the live Base oracle with zero
+  spread when a buyer signals an intent, including Alipay/CNY and UPI/INR.
+- **Read `binding`.** `estimate().binding` is `intent-signal`. An estimate
+  remains approximate; each signal binds the then-current rate.
 - **ETA is historical.** `estimate().eta` is just `{ seconds, label }`, backed
   by the same rolling 30-day, intent-attributed pair sampler as `fillStats()`,
   measured from deposit creation to the first fulfilled fill through the pair.

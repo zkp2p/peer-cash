@@ -57,98 +57,33 @@ describe('readEstimate', () => {
     expect(pc.readContract).toHaveBeenCalledOnce();
   });
 
-  it('estimates Alipay/CNY from the Ethereum creation-rate feed', async () => {
-    const now = Math.floor(Date.now() / 1000);
-    const creationRateClient = {
-      readContract: vi.fn(async ({ functionName }: { functionName: string }) =>
-        functionName === 'decimals' ? 8 : ([1n, 14_871_215n, 0n, BigInt(now - 60), 1n] as const),
-      ),
-    } as unknown as PublicClient;
-
-    const upiCreationRateClient = mockPublicClient(0n);
-    const estimate = await readEstimate(
-      mockPublicClient(0n),
-      { amount: 1_000_000n, platform: 'alipay', currency: 'CNY' },
-      { creationRateClient, upiCreationRateClient },
-    );
-
-    expect(upiCreationRateClient.readContract).not.toHaveBeenCalled();
-    expect(creationRateClient.readContract).toHaveBeenCalledWith(
-      expect.objectContaining({
-        address: '0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf',
-        args: [
-          '0x000000000000000000000000000000000000009c',
-          '0x0000000000000000000000000000000000000348',
-        ],
-      }),
-    );
-    expect(estimate.binding).toBe('deposit-creation');
-    expect(estimate.rate).toBeCloseTo(6.7244, 3);
-    expect(estimate.receiveAmount).toBeCloseTo(6.7244, 3);
-    expect(estimate.oracleUpdatedAt).toBe(now - 60);
-  });
-
-  it('infers the only CNY Cash corridor when platform is omitted', async () => {
-    const now = Math.floor(Date.now() / 1000);
-    const creationRateClient = {
-      readContract: vi.fn(async ({ functionName }: { functionName: string }) =>
-        functionName === 'decimals' ? 8 : ([1n, 14_871_215n, 0n, BigInt(now - 60), 1n] as const),
-      ),
-    } as unknown as PublicClient;
-
-    const estimate = await readEstimate(
-      mockPublicClient(0n),
-      { amount: 1_000_000n, currency: 'CNY' },
-      { creationRateClient },
-    );
-
-    expect(estimate.binding).toBe('deposit-creation');
-  });
-
-  it('routes UPI/INR to its Polygon client without touching Ethereum or Base', async () => {
-    const now = Math.floor(Date.now() / 1000);
-    const upiCreationRateClient = {
-      getChainId: vi.fn(async () => 137),
-      readContract: vi.fn(async ({ functionName }: { functionName: string }) =>
-        functionName === 'decimals' ? 8 : ([1n, 1_050_700n, 0n, BigInt(now - 60), 1n] as const),
-      ),
-    } as unknown as PublicClient;
-    const creationRateClient = mockPublicClient(0n);
-    const baseClient = mockPublicClient(0n);
-    const estimate = await readEstimate(
-      baseClient,
-      { amount: 1_000_000n, platform: 'upi', currency: 'INR' },
-      { creationRateClient, upiCreationRateClient },
-    );
-    expect(estimate.binding).toBe('deposit-creation');
-    expect(estimate.rate).toBeCloseTo(95.174645, 5);
-    expect(estimate.oracleUpdatedAt).toBe(now - 60);
-    expect(creationRateClient.readContract).not.toHaveBeenCalled();
-    expect(baseClient.readContract).not.toHaveBeenCalled();
-    expect(upiCreationRateClient.readContract).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not fall back to Ethereum when the UPI creation-rate client is missing', async () => {
-    const creationRateClient = mockPublicClient(1_050_700n);
-    await expect(
-      readEstimate(
-        mockPublicClient(0n),
-        { amount: 1_000_000n, platform: 'upi', currency: 'INR' },
-        { creationRateClient },
-      ),
-    ).rejects.toThrow();
-    expect(creationRateClient.readContract).not.toHaveBeenCalled();
-  });
-
-  it('rejects CNY for a platform without the creation-time exception', async () => {
-    await expect(
-      readEstimate(mockPublicClient(0n), {
-        amount: 1_000_000n,
-        platform: 'wise',
-        currency: 'CNY',
-      }),
-    ).rejects.toMatchObject({ code: 'ORACLE_UNSUPPORTED_CURRENCY' });
-  });
+  it.each([
+    ['upi', 'INR', 1_039_177n],
+    ['alipay', 'CNY', 14_892_033n],
+  ] as const)(
+    'estimates %s/%s through the Base oracle with or without a platform',
+    async (platform, currency, answer) => {
+      const now = Math.floor(Date.now() / 1000);
+      const pc = mockPublicClient(answer, BigInt(now - 60));
+      for (const selectedPlatform of [platform, undefined]) {
+        const estimate = await readEstimate(pc, {
+          amount: 1_000_000n,
+          currency,
+          ...(selectedPlatform ? { platform: selectedPlatform } : {}),
+        });
+        expect(estimate.binding).toBe('intent-signal');
+        expect(estimate.rate).toBeCloseTo(1e8 / Number(answer), 10);
+        expect(estimate.receiveAmount).toBe(estimate.rate);
+        expect(estimate.oracleUpdatedAt).toBe(now - 60);
+        expect(pc.readContract).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            address: CHAINLINK_ORACLE_FEEDS[currency]!.feed,
+            functionName: 'latestRoundData',
+          }),
+        );
+      }
+    },
+  );
 
   it('surfaces oracle freshness and a stale flag for old feed readings', async () => {
     const feed = (CHAINLINK_ORACLE_FEEDS as Record<string, { decimals: number; invert: boolean }>)[

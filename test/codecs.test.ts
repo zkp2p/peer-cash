@@ -158,6 +158,24 @@ describe('order codec', () => {
 });
 
 describe('estimate codec', () => {
+  it.each(['INR', 'CNY'] as const)(
+    'round-trips %s signal-time estimates and rejects removed binding',
+    (currency) => {
+      const estimate: CashEstimate = {
+        kind: 'oracle-estimate',
+        binding: 'intent-signal',
+        currency,
+        amount: 1_000_000n,
+        rate: 10,
+        receiveAmount: 10,
+        asOf: NOW,
+      };
+      const json = estimateToJson(estimate);
+      expect(estimateFromJson(json)).toEqual(estimate);
+      expect(() => estimateFromJson({ ...json, binding: 'deposit-creation' })).toThrow();
+    },
+  );
+
   it('round-trips', () => {
     const estimate: CashEstimate = {
       kind: 'oracle-estimate',
@@ -586,6 +604,35 @@ describe('prepared tx + result codecs', () => {
 });
 
 describe('capabilities codec', () => {
+  it.each([
+    ['upi', 'INR'],
+    ['alipay', 'CNY'],
+  ])('round-trips %s/%s oracle pricing and rejects removed fixed pricing', (platform, currency) => {
+    const json = capabilitiesToJson(buildCapabilities('staging'));
+    const entry = json.platforms.find((item) => item.platform === platform)!;
+    expect(entry.pricing?.[currency]).toEqual({ kind: 'oracle-at-intent-signal', spreadBps: 0 });
+    expect(
+      capabilitiesFromJson(json).platforms.find((item) => item.platform === platform)?.pricing,
+    ).toEqual(entry.pricing);
+    expect(() =>
+      capabilitiesFromJson({
+        ...json,
+        platforms: [
+          {
+            ...entry,
+            pricing: {
+              [currency]: {
+                kind: 'fixed-at-deposit-creation',
+                source: 'chainlink-ethereum',
+                spreadBps: 0,
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it.each(['production', 'preproduction', 'staging'] as const)(
     'round-trips including X Money in %s',
     (environment) => {

@@ -97,7 +97,7 @@ describe('buildCapabilities', () => {
     expect(platformRequiresIdentityAttestation('ALIPAY')).toBe(true);
   });
 
-  it('advertises Alipay/CNY as a creation-time Chainlink snapshot', () => {
+  it('advertises Alipay/CNY as a signal-time oracle corridor', () => {
     const alipay = buildCapabilities('production').platforms.find((p) => p.platform === 'alipay');
     expect(alipay).toMatchObject({
       currencies: ['CNY'],
@@ -105,8 +105,7 @@ describe('buildCapabilities', () => {
       requiresIdentityAttestation: true,
       pricing: {
         CNY: {
-          kind: 'fixed-at-deposit-creation',
-          source: 'chainlink-ethereum',
+          kind: 'oracle-at-intent-signal',
           spreadBps: 0,
         },
       },
