@@ -142,8 +142,10 @@ describe('optional Venmo receipt linking', () => {
 
   it.each([
     ['active', 'google_oauth', true],
+    ['active', 'microsoft_oauth', true],
     ['active', 'session_cookie', false],
     ['inactive', 'google_oauth', false],
+    ['inactive', 'microsoft_oauth', false],
     ['missing', null, false],
   ])('reports %s / %s as connected=%s', async (status, credentialType, expected) => {
     mocks.getSellerCredentialStatus.mockResolvedValueOnce({
@@ -170,6 +172,7 @@ describe('optional Venmo receipt linking', () => {
     'connection_closed',
     'connection_timeout',
     'venmo_google_oauth_receipt_not_found',
+    'VENMO_MICROSOFT_OAUTH_RECEIPT_NOT_FOUND',
   ])('preserves the hosted %s error code', async (code) => {
     const error = new VenmoGmailConnectError(code, 'Linking did not complete');
     mocks.open.mockRejectedValueOnce(error);

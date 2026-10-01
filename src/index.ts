@@ -120,7 +120,7 @@ export type {
   RuntimeEnv,
 } from './sdk-types';
 
-// Optional hosted Venmo linking errors and result; no Google credentials enter Cash.
+// Optional hosted Venmo linking errors and result; no mailbox credentials enter Cash.
 export { VenmoGmailConnectError } from '@zkp2p/sdk';
 export type {
   VenmoGmailConnectResult,
