@@ -73,7 +73,7 @@ bodies out of committed evidence; publish only redacted checkpoint results.
 
 ## Live order reconstruction regression
 
-After the exact UPI fixture is indexed, require both `cash.order(depositId)` and `cash.orders(owner)` to return it. New UPI/INR deposits must have zero-spread oracle pricing evidence. Historical fixed-rate UPI/INR deposits still require positive fixed-rate evidence and the indexed `peer-cash` attribution marker for recovery. Do not classify unrelated Advanced Sell deposits as Cash orders. A quoteable indexer row alone is insufficient: run order lookup, partial-fill observation and withdrawal checks too. Keep the method/currency pair explicit; UPI/CNY must be rejected.
+After the exact UPI fixture is indexed, require both `cash.order(depositId)` and `cash.orders(owner)` to return it. New UPI/INR deposits must have zero-spread oracle pricing evidence. Historical fixed-rate UPI/INR deposits still require positive fixed-rate evidence and the indexed `peer-cash` attribution marker for recovery. Zero-spread oracle payouts are classified structurally without requiring the `peer-cash` marker, including INR/CNY as with other oracle currencies. A qualifying zero-spread INR/CNY oracle deposit created via Advanced Sell from the same wallet can therefore appear in `cash.orders(owner)` and `cash.order(depositId)`. The attribution requirement excludes unrelated historical fixed-rate Advanced Sell deposits, not qualifying oracle deposits. A quoteable indexer row alone is insufficient: run order lookup, partial-fill observation and withdrawal checks too. Keep the method/currency pair explicit; UPI/CNY must be rejected.
 
 ## Small-fixture visibility and dust reconciliation
 

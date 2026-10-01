@@ -4,6 +4,22 @@ import { isMarketRateSupported } from '../src/engine/marketRate';
 
 describe('buildCapabilities', () => {
   for (const env of ['production', 'preproduction', 'staging'] as const) {
+    it(`${env}: pins the exact INR/CNY corridor set`, () => {
+      const corridors = buildCapabilities(env).platforms.flatMap(({ platform, currencies }) =>
+        currencies
+          .filter((currency) => currency === 'INR' || currency === 'CNY')
+          .map((currency) => `${platform}:${currency}`),
+      );
+
+      expect(corridors.sort()).toEqual([
+        'alipay:CNY',
+        'revolut:CNY',
+        'upi:INR',
+        'wise:CNY',
+        'wise:INR',
+      ]);
+    });
+
     it(`${env}: advertises only supported Cash corridors`, () => {
       const caps = buildCapabilities(env);
 

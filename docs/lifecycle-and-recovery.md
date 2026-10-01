@@ -28,6 +28,13 @@ its rate. Existing deposits keep their on-chain pricing; upgrading does not
 reprice them. Historical fixed-rate Cash orders remain readable and withdrawable
 when indexed attribution and pricing evidence identify them as Cash.
 
+With `@zkp2p/sdk` 0.14.5-rc.2, Express Cash intentionally also offers
+Wise/INR, Wise/CNY, and Revolut/CNY because corridor support derives from
+oracle availability and each platform's currency catalog. The exact INR/CNY
+corridor set in production, preproduction, and staging is UPI/INR, Wise/INR,
+Alipay/CNY, Wise/CNY, and Revolut/CNY. All five use zero-spread oracle pricing
+bound at intent signal; currencies without an oracle config remain unsupported.
+
 This is a hard API cutover, with no deprecated aliases:
 
 - Remove `creationRateTransport`, `creationRateRpcUrl`,
@@ -300,10 +307,14 @@ payout platforms (`receive` as an array of legs) surfaces one entry per
 platform-currency pair.
 
 Reconstruction is fail-closed: every payment method on the indexed deposit
-must resolve through the active SDK catalog. Oracle-priced rows retain the
-historical structural classification. Historical fixed Alipay/CNY and UPI/INR rows must also carry the
-indexed `peer-cash` ERC-8021 attribution so unrelated Advanced Sell deposits
-cannot be mistaken for Cash orders. `orders()` excludes unsupported or mixed
+must resolve through the active SDK catalog. Zero-spread oracle payouts are
+classified structurally, without requiring the `peer-cash` ERC-8021 attribution
+marker. This includes INR/CNY, consistently with other oracle currencies: a
+qualifying oracle deposit created via Advanced Sell from the same wallet can
+appear in `cash.orders(owner)` and be returned by `cash.order(depositId)`.
+Historical fixed Alipay/CNY and UPI/INR rows instead require both positive
+fixed-rate evidence and indexed `peer-cash` attribution; unrelated fixed-rate
+Advanced Sell deposits do not qualify. `orders()` excludes unsupported or mixed
 rows; `order()` returns `ORDER_NOT_FOUND` rather than partially reclassifying
 them.
 
