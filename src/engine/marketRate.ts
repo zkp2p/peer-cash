@@ -27,7 +27,7 @@ function payoutCurrencies(payout: CashPayout): readonly CurrencyType[] {
 
 /**
  * Whether a currency can use the signal-time on-chain market rate. Only
- * currencies with a Chainlink feed (`supportsSpreadOracle`) qualify.
+ * currencies with an SDK oracle configuration qualify.
  */
 export function isMarketRateSupported(
   currency: CurrencyType,
@@ -36,18 +36,9 @@ export function isMarketRateSupported(
   return getSpreadOracleConfig(currency, adapters) != null;
 }
 
-/** Oracle availability for a corridor; callers separately validate the method catalog. */
-export function isCashCorridorSupported(
-  _platform: string,
-  currency: CurrencyType,
-  adapters?: OracleAdapterOverrides,
-): boolean {
-  return isMarketRateSupported(currency, adapters);
-}
-
 /**
  * Build a single oracle-backed currency tuple priced at market (0% spread).
- * Returns `null` for currencies without a Chainlink feed.
+ * Returns `null` for currencies without an SDK oracle configuration.
  */
 export function buildMarketRateCurrencyOverride(
   currency: CurrencyType,
@@ -119,7 +110,7 @@ export async function prepareCashDepositParams(
       ),
     );
     for (const currency of currencies) {
-      if (!isCashCorridorSupported(payout.processorName, currency, adapters)) {
+      if (!isMarketRateSupported(currency, adapters)) {
         throw new Error(`${payout.processorName}/${currency} has no live oracle.`);
       }
       const currencyHash = currencyInfo[currency]?.currencyCodeHash;

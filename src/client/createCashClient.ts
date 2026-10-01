@@ -40,7 +40,7 @@ import {
   CASH_ORDER_STATUSES,
   CASH_RESTRICTED_PLATFORMS,
 } from '../engine/constants';
-import { isCashCorridorSupported, prepareCashDepositParams } from '../engine/marketRate';
+import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
 import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
 import { derivePayouts } from '../engine/payouts';
 import { deriveBuyerProfile } from '../engine/buyerProfile';
@@ -677,7 +677,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         throw errors.invalidPayoutCurrencies(leg.platform, 'currencies must be unique');
       }
       for (const currency of currencies) {
-        if (!isCashCorridorSupported(leg.platform, currency)) {
+        if (!isMarketRateSupported(currency)) {
           throw errors.oracleUnsupportedCurrency(currency);
         }
         if (!platform.currencies.includes(currency)) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCapabilities, platformRequiresIdentityAttestation } from '../src/client/capabilities';
-import { isCashCorridorSupported } from '../src/engine/marketRate';
+import { isMarketRateSupported } from '../src/engine/marketRate';
 
 describe('buildCapabilities', () => {
   for (const env of ['production', 'preproduction', 'staging'] as const) {
@@ -23,7 +23,7 @@ describe('buildCapabilities', () => {
         expect(platform.payeeHint.length).toBeGreaterThan(0);
         expect(platform.requiresAtomicAccessPolicy).toBe(false);
         for (const currency of platform.currencies) {
-          expect(isCashCorridorSupported(platform.platform, currency)).toBe(true);
+          expect(isMarketRateSupported(currency)).toBe(true);
           expect(platform.pricing[currency]).toBeDefined();
         }
       }

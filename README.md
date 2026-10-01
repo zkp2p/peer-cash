@@ -2,7 +2,7 @@
 
 Route Relay-supported EVM assets or NEAR Intents 1Click external deposits into
 Base USDC, then cash out to fiat on Venmo, Revolut, Wise, Alipay, Zelle, and
-more at a zero-spread Chainlink market rate with no centralized off-ramp
+more at a zero-spread on-chain oracle market rate with no centralized off-ramp
 provider. Every corridor, including Alipay/CNY and UPI/INR, binds the live
 Base oracle when a buyer signals.
 

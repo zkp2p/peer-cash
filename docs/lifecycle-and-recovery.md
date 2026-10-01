@@ -6,7 +6,7 @@ fills and ETA work, how unwinding works, and why every order survives a crash.
 ## The model: you are the maker
 
 A Peer Cash order is a **deposit** in the ZKP2P protocol. When you
-`cashout()`, Base USDC becomes protocol-held funds priced from Chainlink with
+`cashout()`, Base USDC becomes protocol-held funds priced from on-chain oracles with
 zero spread. Every corridor, including Alipay/CNY and UPI/INR, binds the
 on-chain Base oracle at intent signal. A buyer (a standard protocol taker) _signals an
 intent_ against your deposit, pays you fiat offchain (Venmo, Revolut, Wise,
@@ -42,6 +42,20 @@ This is a hard API cutover, with no deprecated aliases:
   the removed `deposit-creation` / `fixed-at-deposit-creation` variants.
   Refresh persisted estimates and capabilities when upgrading. Historical
   order payout codecs retain fixed-rate evidence for recovery.
+
+For `zkp2p-clients` consumers (verified at `origin/main` commit `004abbc`),
+`clients/web/src/components/PeerCash/usePeerCashExpressFlow.ts:278-288` passes
+both `creationRateTransport` and `upiCreationRateTransport` through conditional
+object spreads. TypeScript will **not** flag these leftover options after the
+SDK bump; they will be silently ignored. Remove both spreads, their obsolete
+imports, and the Polygon RPC proxy plumbing (`rpcProxyPolygonUrl` in
+`clients/web/src/helpers/rpcProxy.ts`, its helper tests, and the Express test
+mock). Keep shared Ethereum proxy plumbing that other features still use.
+Remove `clients/web/src/components/PeerCash/peerCashCreationRate.test.ts`: it
+sets both removed options and expects `binding: 'deposit-creation'`, so it will
+fail after the bump. Replace that obsolete test with Base oracle transport
+coverage asserting `binding: 'intent-signal'`. Do not rely on the compiler to
+complete this migration.
 
 INR/USD and CNY/USD are ZKP2P-operated, 8-decimal AggregatorV3-compatible
 Base feeds consumed by the existing Chainlink adapter with `invert: true`.

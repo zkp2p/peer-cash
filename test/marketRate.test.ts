@@ -1,17 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decodeAbiParameters, decodeFunctionData } from 'viem';
-import { getSpreadOracleConfig, Zkp2pClient as RuntimeZkp2pClient } from '@zkp2p/sdk';
+import { Zkp2pClient as RuntimeZkp2pClient } from '@zkp2p/sdk';
 import {
   buildIntentAmountRange,
   buildMarketRateCurrencyOverride,
   isMarketRateSupported,
   prepareCashDepositParams,
 } from '../src/engine/marketRate';
-import {
-  BASE_USDC_ADDRESS,
-  MARKET_SPREAD_BPS,
-  ORACLE_MIN_CONVERSION_RATE_SENTINEL,
-} from '../src/engine/constants';
+import { BASE_USDC_ADDRESS, ORACLE_MIN_CONVERSION_RATE_SENTINEL } from '../src/engine/constants';
 import type { Zkp2pClient } from '../src/sdk-types';
 
 describe('isMarketRateSupported', () => {
@@ -100,17 +96,13 @@ describe('prepareCashDepositParams', () => {
           amount: 5_000_000n,
           payouts: [{ processorName: platform, currency, payeeData: { offchainId } }],
         });
-        const oracle = getSpreadOracleConfig(currency)!;
-        expect(oracle).toBeDefined();
         const tuple = params.currenciesOverride?.[0]?.[0];
-        expect(tuple).toEqual(buildMarketRateCurrencyOverride(currency));
         expect(tuple).toMatchObject({
           minConversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL,
           oracleRateConfig: {
-            adapter: oracle.adapter,
-            adapterConfig: oracle.adapterConfig,
-            maxStaleness: oracle.maxStaleness,
-            spreadBps: MARKET_SPREAD_BPS,
+            adapter: '0xfc81d1b5841e697973af3072fc8e03af76cb39ef',
+            maxStaleness: 86400,
+            spreadBps: 0,
           },
         });
         const [actualFeed, invert] = decodeAbiParameters(
@@ -119,6 +111,11 @@ describe('prepareCashDepositParams', () => {
         );
         expect(actualFeed.toLowerCase()).toBe(feed.toLowerCase());
         expect(invert).toBe(true);
+        if (platform === 'upi') {
+          expect(params.paymentMethodsOverride).toEqual([
+            '0xe99a5081226cbbff9440a63da5caa04fa30f210c12c4dd9976132ac075054cd9',
+          ]);
+        }
         expect(params.conversionRates).toEqual([
           [{ currency, conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString() }],
         ]);

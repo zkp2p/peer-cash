@@ -3,7 +3,7 @@
 > Offramp-only SDK for the ZKP2P protocol: route Relay-supported EVM assets or
 > NEAR Intents 1Click external deposits to Base USDC, then cash out to fiat
 > (Venmo, Revolut, Wise, Alipay, Zelle, ...)
-> at a zero-spread Chainlink market rate with no centralized
+> at a zero-spread on-chain oracle market rate with no centralized
 > off-ramp provider. The user is the maker, a buyer pays them fiat and proves
 > the payment, and the SDK exposes readable order state.
 > Base-USDC flows are serializable through prepare paths; source-routed cashout

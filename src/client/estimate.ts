@@ -47,7 +47,7 @@ export interface EstimateInput {
   amount: bigint;
   /** Target fiat currency. */
   currency: CurrencyType;
-  /** Optional payout platform for pricing semantics and pair-specific ETA sampling. */
+  /** Optional payout platform for pair-specific ETA sampling. */
   platform?: string;
   /** Optional Relay EVM source asset. Omit for the current Base USDC default path. */
   source?: RelaySourceInput & {
