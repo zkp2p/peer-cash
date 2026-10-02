@@ -100,9 +100,9 @@ export async function createSarLink(input: {
     throw new Error('The return address must be HTTPS.');
   }
   const state = crypto.randomUUID();
-  const demoEndpoint = new URL(endpoint(input.apiBase));
-  demoEndpoint.pathname += '/demo';
-  const result = await request(demoEndpoint.toString(), {
+  const checkoutEndpoint = new URL(endpoint(input.apiBase));
+  checkoutEndpoint.pathname += '/checkout';
+  const result = await request(checkoutEndpoint.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -115,6 +115,7 @@ export async function createSarLink(input: {
     }),
   });
   const expiresAt = Number(result.expiresAt);
+  const expectedUrl = `https://mobile.peer.xyz/clip/connect?request=${result.requestId}`;
   if (
     typeof result.requestId !== 'string' ||
     !REQUEST_ID.test(result.requestId) ||
@@ -122,7 +123,8 @@ export async function createSarLink(input: {
     typeof result.expiresAt !== 'string' ||
     !/^\d+$/.test(result.expiresAt) ||
     !Number.isSafeInteger(expiresAt) ||
-    expiresAt <= Date.now()
+    expiresAt <= Date.now() ||
+    result.url !== expectedUrl
   ) {
     throw new Error('Curator returned an invalid connection link.');
   }
@@ -134,7 +136,7 @@ export async function createSarLink(input: {
     returnUrl: input.returnUrl,
     state,
     expiresAt,
-    url: `https://mobile.peer.xyz/clip/connect?request=${result.requestId}`,
+    url: result.url as string,
   };
 }
 
@@ -203,6 +205,7 @@ export function restoreSarLink(apiBase: string, currentOrigin: string): SarLink 
       typeof link.requestId !== 'string' || !REQUEST_ID.test(link.requestId) ||
       link.requestId[0] !== environmentFor(apiBase).prefix ||
       typeof link.returnUrl !== 'string' || new URL(link.returnUrl).origin !== currentOrigin ||
+      link.url !== `https://mobile.peer.xyz/clip/connect?request=${link.requestId}` ||
       typeof link.state !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(link.state) ||
       !['cashapp', 'paypal', 'upi'].includes(String(link.platform)) ||
       typeof link.payeeHandle !== 'string' || !link.payeeHandle ||
@@ -221,7 +224,7 @@ export function restoreSarLink(apiBase: string, currentOrigin: string): SarLink 
       payeeHandle: link.payeeHandle,
       ...(link.platform === 'paypal' ? { paypalEmail: link.paypalEmail as string } : {}),
       expiresAt: link.expiresAt as number,
-      url: `https://mobile.peer.xyz/clip/connect?request=${link.requestId}`,
+      url: link.url as string,
     };
   } catch {
     clearSarLink();
