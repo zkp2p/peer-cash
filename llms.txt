@@ -15,16 +15,18 @@ Key facts:
 - Optional Venmo receipt linking: prepareVenmoGmailConnect(handle) registers
   the selected handle and returns { payeeDetails, url }. From a separate click,
   openVenmoGmailConnect(payeeDetails) opens the environment's hosted flow.
-  isVenmoGmailConnected(payeeDetails) checks for an active Google credential;
+  isVenmoGmailConnected(payeeDetails) checks for an active Gmail or Outlook
+  credential;
   lookup errors reject. Cashout and prepare never call or require these steps.
   Native hosts use prepareVenmoGmailConnect(handle, { returnUrl }) and open
   link.url with Expo openAuthSessionAsync(link.url, returnUrl). Register the
   app scheme in the binary; Peer needs no callback registration and appends
   no data. Omitted/empty callbacks attempt closure; blocked tabs keep the
   success page. Always check status on return or ambiguous popup closure.
-  Google-hosted school/custom domains are supported; actual receipt failures
-  use VenmoGmailConnectError.code, including venmo_google_oauth_receipt_not_found.
-  Partner apps receive neither emails nor Google tokens. Re-prepare when the
+  The hosted page offers Gmail, including Google-hosted school/custom domains,
+  and personal Outlook. Receipt failures use VenmoGmailConnectError.code:
+  venmo_google_oauth_receipt_not_found or VENMO_MICROSOFT_OAUTH_RECEIPT_NOT_FOUND.
+  Partner apps receive neither emails nor mailbox tokens. Re-prepare when the
   handle changes; persist payee hash with environment and user account.
   Optional createCashClient({ venmoGmail: { appearance, popup } }) shares branding
   between the prepared URL and popup. Defaults use Peer branding; desktop popup

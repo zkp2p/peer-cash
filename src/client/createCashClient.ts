@@ -356,7 +356,7 @@ export interface CashClient {
   ): Promise<PreparedVenmoGmailConnect>;
   /** Optional, browser-only: call directly from a click handler with the prepared payee hash. */
   openVenmoGmailConnect(payeeDetails: Hash): Promise<VenmoGmailConnectResult>;
-  /** True only for an active Google receipt credential; errors reject instead of reporting unlinked. */
+  /** True only for an active Gmail or Outlook receipt credential; errors reject instead of reporting unlinked. */
   isVenmoGmailConnected(payeeDetails: Hash): Promise<boolean>;
   /** 0 - Discovery: sync, static. */
   capabilities(): CashCapabilities;
@@ -1211,7 +1211,11 @@ export function createCashClient(options: CashClientOptions): CashClient {
         processorName: 'venmo',
         payeeDetails,
       });
-      return responseObject.status === 'active' && responseObject.credentialType === 'google_oauth';
+      return (
+        responseObject.status === 'active' &&
+        (responseObject.credentialType === 'google_oauth' ||
+          responseObject.credentialType === 'microsoft_oauth')
+      );
     },
 
     capabilities,
