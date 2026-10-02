@@ -41,4 +41,4 @@ export function checkVenmoLink(link: PreparedVenmoGmailConnect) {
 }
 
 // cash.cashout(...) remains a separate action and does not require these helpers.
-// No Gmail address is taken here: receipt verification belongs to the hosted flow.
+// No email address is taken here: receipt verification belongs to the hosted flow.
