@@ -20,7 +20,7 @@ a rational maker can offer. That is the fill incentive.
 
 ## INR/CNY oracle migration (breaking)
 
-With the SDK dependency pinned to `@zkp2p/sdk` 0.14.5-rc.2, new Express Cash
+With the SDK dependency pinned to `@zkp2p/sdk` 0.14.5, new Express Cash
 UPI/INR and Alipay/CNY deposits float with the Base oracle plus
 `MARKET_SPREAD_BPS` (zero), exactly like every other supported currency.
 They no longer fix a creation-time snapshot. Each buyer's intent signal binds
@@ -28,7 +28,7 @@ its rate. Existing deposits keep their on-chain pricing; upgrading does not
 reprice them. Historical fixed-rate Cash orders remain readable and withdrawable
 when indexed attribution and pricing evidence identify them as Cash.
 
-With `@zkp2p/sdk` 0.14.5-rc.2, Express Cash intentionally also offers
+With `@zkp2p/sdk` 0.14.5, Express Cash intentionally also offers
 Wise/INR, Wise/CNY, and Revolut/CNY because corridor support derives from
 oracle availability and each platform's currency catalog. The exact INR/CNY
 corridor set in production, preproduction, and staging is UPI/INR, Wise/INR,
@@ -77,7 +77,8 @@ implementation. Cash's hosted Venmo Gmail connector is unchanged. The contracts
 pin moves from 0.4.2 to 0.4.3-rc.1, adding FxRateStore/feed ABIs and addresses
 and provider metadata to the oracle catalog. Existing payment-method catalog
 content, escrow/guardian addresses, and active dispute-stack selections are
-unchanged. Indexer schema remains 0.22.0.
+unchanged. Indexer schema remains 0.22.0. The prepared stable SDK 0.14.5
+pins stable contracts 0.4.3.
 
 Release history remains in PR titles per the contributor guide; this change
 does not bump the Cash package version or publish a release.

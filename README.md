@@ -96,7 +96,7 @@ for await (const order of cash.watch(depositId)) {
 ### Staging and preproduction UPI cash-out
 
 UPI requires the canonical UPI/INR catalog and INR oracle config from the
-pinned `@zkp2p/sdk` 0.14.5-rc.2; missing oracle support disables the corridor.
+pinned `@zkp2p/sdk` 0.14.5; missing oracle support disables the corridor.
 UPI is available in every environment without an opt-in. Any valid UPI ID from any bank can receive a cash-out. The seller
 does not connect a bank account, install an extension, or complete a separate
 registration flow:
@@ -126,7 +126,7 @@ Cash adds no currency exceptions. Estimates read through the normal Base
 `transport` / `rpcUrl`; deposits float until each buyer signals an intent.
 UPI is available in production, preproduction, and staging without a feature flag.
 
-With `@zkp2p/sdk` 0.14.5-rc.2, Express Cash intentionally also offers
+With `@zkp2p/sdk` 0.14.5, Express Cash intentionally also offers
 Wise/INR, Wise/CNY, and Revolut/CNY because corridor support derives from
 oracle availability and each platform's currency catalog. The exact INR/CNY
 corridor set in production, preproduction, and staging is UPI/INR, Wise/INR,
