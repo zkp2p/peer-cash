@@ -6,10 +6,9 @@ fills and ETA work, how unwinding works, and why every order survives a crash.
 ## The model: you are the maker
 
 A Peer Cash order is a **deposit** in the ZKP2P protocol. When you
-`cashout()`, Base USDC becomes protocol-held funds priced from Chainlink with
-zero spread. Existing corridors bind the on-chain oracle at intent signal;
-Alipay/CNY fixes a fresh Ethereum Chainlink snapshot as the maker floor during
-deposit preparation. A buyer (a standard protocol taker) _signals an
+`cashout()`, Base USDC becomes protocol-held funds priced from on-chain oracles with
+zero spread. Every corridor, including Alipay/CNY and UPI/INR, binds the
+on-chain Base oracle at intent signal. A buyer (a standard protocol taker) _signals an
 intent_ against your deposit, pays you fiat offchain (Venmo, Revolut, Wise,
 ...), and proves the payment via TEE-TLS. The protocol then releases your USDC
 to them.
@@ -18,6 +17,70 @@ special-cased.
 
 Because your deposit is priced at market with no spread, it is the best price
 a rational maker can offer. That is the fill incentive.
+
+## INR/CNY oracle migration (breaking)
+
+With the SDK dependency pinned to `@zkp2p/sdk` 0.14.5-rc.2, new Express Cash
+UPI/INR and Alipay/CNY deposits float with the Base oracle plus
+`MARKET_SPREAD_BPS` (zero), exactly like every other supported currency.
+They no longer fix a creation-time snapshot. Each buyer's intent signal binds
+its rate. Existing deposits keep their on-chain pricing; upgrading does not
+reprice them. Historical fixed-rate Cash orders remain readable and withdrawable
+when indexed attribution and pricing evidence identify them as Cash.
+
+With `@zkp2p/sdk` 0.14.5-rc.2, Express Cash intentionally also offers
+Wise/INR, Wise/CNY, and Revolut/CNY because corridor support derives from
+oracle availability and each platform's currency catalog. The exact INR/CNY
+corridor set in production, preproduction, and staging is UPI/INR, Wise/INR,
+Alipay/CNY, Wise/CNY, and Revolut/CNY. All five use zero-spread oracle pricing
+bound at intent signal; currencies without an oracle config remain unsupported.
+
+This is a hard API cutover, with no deprecated aliases:
+
+- Remove `creationRateTransport`, `creationRateRpcUrl`,
+  `upiCreationRateTransport`, and `upiCreationRateRpcUrl` from client options.
+  Use the existing Base `transport` / `rpcUrl` for oracle reads.
+- Remove imports of `CREATION_RATE_MAX_STALENESS_SECONDS`,
+  `isCreationRateCorridor`, `readAlipayCnyCreationRate`, `CreationRateReader`,
+  and `CreationRateSnapshot`. The internal `readCashCreationRate` reader and
+  `prepareCashDepositParams`' fourth reader argument are also removed.
+- Estimates now expose only `binding: 'intent-signal'`; capability pricing
+  exposes only `kind: 'oracle-at-intent-signal'`. Their types and codecs reject
+  the removed `deposit-creation` / `fixed-at-deposit-creation` variants.
+  Refresh persisted estimates and capabilities when upgrading. Historical
+  order payout codecs retain fixed-rate evidence for recovery.
+
+For `zkp2p-clients` consumers (verified at `origin/main` commit `004abbc`),
+`clients/web/src/components/PeerCash/usePeerCashExpressFlow.ts:278-288` passes
+both `creationRateTransport` and `upiCreationRateTransport` through conditional
+object spreads. TypeScript will **not** flag these leftover options after the
+SDK bump; they will be silently ignored. Remove both spreads, their obsolete
+imports, and the Polygon RPC proxy plumbing (`rpcProxyPolygonUrl` in
+`clients/web/src/helpers/rpcProxy.ts`, its helper tests, and the Express test
+mock). Keep shared Ethereum proxy plumbing that other features still use.
+Remove `clients/web/src/components/PeerCash/peerCashCreationRate.test.ts`: it
+sets both removed options and expects `binding: 'deposit-creation'`, so it will
+fail after the bump. Replace that obsolete test with Base oracle transport
+coverage asserting `binding: 'intent-signal'`. Do not rely on the compiler to
+complete this migration.
+
+INR/USD and CNY/USD are ZKP2P-operated, 8-decimal AggregatorV3-compatible
+Base feeds consumed by the existing Chainlink adapter with `invert: true`.
+Oracle availability comes from the SDK catalog; there are no special INR/CNY
+support branches or Ethereum/Polygon rate readers. A failing estimate returns
+the same oracle errors as other currencies; stale estimates are display-flagged,
+and the on-chain adapter enforces `maxStaleness` at signal.
+
+The published SDK rc.1 → rc.2 diff also adds Microsoft OAuth seller-credential
+uploads (including PKCE `codeVerifier`) and shares the Google upload path's
+implementation. Cash's hosted Venmo Gmail connector is unchanged. The contracts
+pin moves from 0.4.2 to 0.4.3-rc.1, adding FxRateStore/feed ABIs and addresses
+and provider metadata to the oracle catalog. Existing payment-method catalog
+content, escrow/guardian addresses, and active dispute-stack selections are
+unchanged. Indexer schema remains 0.22.0.
+
+Release history remains in PR titles per the contributor guide; this change
+does not bump the Cash package version or publish a release.
 
 ## Source routing
 
@@ -189,9 +252,8 @@ then read that pair from `fillStats()` without coupling the two loading states.
 - **Buyer arrival time is market-driven.** A deposit at market rate should
   fill fast, but the ETA is only a recent historical sample.
 - **The binding point is explicit.** `estimate().binding` is `intent-signal`
-  for existing on-chain oracle corridors. Alipay/CNY returns
-  `deposit-creation`: its fresh Ethereum Chainlink snapshot becomes the
-  on-chain maker floor when the deposit is prepared.
+  for every corridor, including Alipay/CNY and UPI/INR. Each buyer's signal
+  binds the live Base oracle rate.
 - **The label is display-ready.** Use `eta.label` in simple UIs; use
   `eta.seconds` only if you need your own formatting.
 
@@ -237,17 +299,22 @@ same ceil-to-cent math, and the decode is verified against live production
 receipts.
 
 Orders also carry their `payouts` legs reconstructed from the chain - platform,
-currency, payee hash, and indexed pricing evidence. Existing corridors expose
-`spreadBps: 0`, an oracle `kind`, and `marketRate: true`; Alipay/CNY exposes
-`fixedAtCreation: true` and its `fixedRate`. An order created with several
+currency, payee hash, and indexed pricing evidence. New orders expose
+`spreadBps: 0`, an oracle `kind`, and `marketRate: true`, including Alipay/CNY
+and UPI/INR. Historical fixed-rate orders expose `fixedAtCreation: true` and
+their `fixedRate`. An order created with several
 payout platforms (`receive` as an array of legs) surfaces one entry per
 platform-currency pair.
 
 Reconstruction is fail-closed: every payment method on the indexed deposit
-must resolve through the active SDK catalog. Oracle-priced rows retain the
-historical structural classification. Fixed Alipay/CNY rows must also carry the
-indexed `peer-cash` ERC-8021 attribution so unrelated Advanced Sell deposits
-cannot be mistaken for Cash orders. `orders()` excludes unsupported or mixed
+must resolve through the active SDK catalog. Zero-spread oracle payouts are
+classified structurally, without requiring the `peer-cash` ERC-8021 attribution
+marker. This includes INR/CNY, consistently with other oracle currencies: a
+qualifying oracle deposit created via Advanced Sell from the same wallet can
+appear in `cash.orders(owner)` and be returned by `cash.order(depositId)`.
+Historical fixed Alipay/CNY and UPI/INR rows instead require both positive
+fixed-rate evidence and indexed `peer-cash` attribution; unrelated fixed-rate
+Advanced Sell deposits do not qualify. `orders()` excludes unsupported or mixed
 rows; `order()` returns `ORDER_NOT_FOUND` rather than partially reclassifying
 them.
 
@@ -329,7 +396,7 @@ explicit override.
 | Code                                    | Retryable | What happened / what to do                                                                                                                   |
 | --------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Platform/currency corridor is unavailable. Pick a pair from `capabilities()`.                                                                |
-| `ORACLE_READ_FAILED`                    | yes       | A Chainlink read failed. Retry through the configured Base or creation-rate Ethereum RPC; do not present a cached value as fresh.            |
+| `ORACLE_READ_FAILED`                    | yes       | A Chainlink read failed. Retry through the configured Base RPC; do not present a cached value as fresh.                                      |
 | `UNSUPPORTED_PLATFORM`                  | no        | Platform is absent from this environment's catalog. Pick from `capabilities()`.                                                              |
 | `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | The platform does not support that currency. Use its `capabilities()` currencies.                                                            |
 | `AMOUNT_BELOW_MINIMUM`                  | no        | Amount is below the $0.01 hard floor. The recommended minimum is 1 USDC.                                                                     |

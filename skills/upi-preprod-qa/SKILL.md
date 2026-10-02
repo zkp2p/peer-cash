@@ -29,17 +29,14 @@ for (const environment of ['staging', 'preproduction', 'production'] as const) {
 Use an explicitly authorized low-value wallet and verified recipient UPI ID.
 Keep the identity and operation ledger in ignored private storage, outside this skill.
 `cashout` accepts any valid VPA; no seller bank login or identity attestation is required.
-Verify INR pricing is a fresh Polygon Chainlink snapshot fixed at deposit creation.
-The official [INR/USD feed](https://data.chain.link/feeds/polygon/mainnet/inr-usd)
-is proxy `0xDA0F8Df6F5dB15b346f4B8D1156722027E194E60` on chain 137;
-it is not registered in Ethereum's Feed Registry. Before funding, call
+Verify INR pricing uses the ZKP2P-operated Base INR/USD oracle from the SDK
+catalog, inverted through the Chainlink adapter with zero spread. Before funding, call
 `cash.estimate({ amount: 5_000_000n, platform: 'upi', currency: 'INR' }, { includeEta: false })`
-against the live default or explicitly configured Polygon RPC. Confirm a positive
-rate, fresh `oracleUpdatedAt`, and `binding: 'deposit-creation'`. Do not accept
-mocked-rate unit tests as proof of a functioning live corridor. The reader must
-reject the wrong chain, invalid/incomplete rounds, future timestamps and data
-older than 86,400 seconds. Forex market-hour gaps must fail closed; do not
-substitute a static price or relax freshness to make QA pass.
+against the live default or explicitly configured Base RPC. Confirm a positive
+rate, fresh `oracleUpdatedAt`, and `binding: 'intent-signal'`. Do not accept
+mocked-rate unit tests as proof of a functioning live corridor. Stop before funding
+if the read fails or is stale. The on-chain adapter enforces the SDK config's
+`maxStaleness` at signal; do not substitute a static price to make QA pass.
 
 With bounded task authorization, create one small Base-USDC deposit, recording
 transaction hash and deposit ID before any retry. Confirm the receipt, then
@@ -76,7 +73,7 @@ bodies out of committed evidence; publish only redacted checkpoint results.
 
 ## Live order reconstruction regression
 
-After the exact UPI fixture is indexed, require both `cash.order(depositId)` and `cash.orders(owner)` to return it. Fixed UPI/INR creation-rate deposits must have positive fixed-rate evidence and the indexed `peer-cash` attribution marker. Do not classify unrelated Advanced Sell deposits as Cash orders. A quoteable indexer row alone is insufficient: run order lookup, partial-fill observation and withdrawal checks too. Keep the method/currency pair explicit; UPI/CNY must be rejected.
+After the exact UPI fixture is indexed, require both `cash.order(depositId)` and `cash.orders(owner)` to return it. New UPI/INR deposits must have zero-spread oracle pricing evidence. Historical fixed-rate UPI/INR deposits still require positive fixed-rate evidence and the indexed `peer-cash` attribution marker for recovery. Zero-spread oracle payouts are classified structurally without requiring the `peer-cash` marker, including INR/CNY as with other oracle currencies. A qualifying zero-spread INR/CNY oracle deposit created via Advanced Sell from the same wallet can therefore appear in `cash.orders(owner)` and `cash.order(depositId)`. The attribution requirement excludes unrelated historical fixed-rate Advanced Sell deposits, not qualifying oracle deposits. A quoteable indexer row alone is insufficient: run order lookup, partial-fill observation and withdrawal checks too. Keep the method/currency pair explicit; UPI/CNY must be rejected.
 
 ## Small-fixture visibility and dust reconciliation
 

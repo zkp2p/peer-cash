@@ -11,7 +11,6 @@
  */
 import {
   createWalletClient,
-  createPublicClient,
   encodeFunctionData,
   http,
   parseAbi,
@@ -22,7 +21,7 @@ import {
   type Transport,
   type WalletClient,
 } from 'viem';
-import { base, mainnet, polygon } from 'viem/chains';
+import { base } from 'viem/chains';
 import {
   Zkp2pClient,
   appendAttributionToCalldata,
@@ -41,7 +40,7 @@ import {
   CASH_ORDER_STATUSES,
   CASH_RESTRICTED_PLATFORMS,
 } from '../engine/constants';
-import { isCashCorridorSupported, prepareCashDepositParams } from '../engine/marketRate';
+import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
 import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
 import { derivePayouts } from '../engine/payouts';
 import { deriveBuyerProfile } from '../engine/buyerProfile';
@@ -99,12 +98,10 @@ import {
   type NearIntentsStatus,
   type NearIntentsStatusInput,
 } from './nearIntents';
-import { isCreationRateCorridor, readCashCreationRate } from './creationRate';
 import { createCashAttributionReader } from './attribution';
 import { isCashPayoutSet } from './classify';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
-const DEFAULT_ETHEREUM_RPC_URL = 'https://ethereum-rpc.publicnode.com';
 const FILL_STATS_CACHE_MS = 15 * 60 * 1000;
 
 /**
@@ -175,14 +172,6 @@ export interface CashClientOptions {
   };
   /** Optional ZKP2P API key. */
   apiKey?: string;
-  /** Ethereum transport used only to snapshot Alipay/CNY's creation-time rate. */
-  creationRateTransport?: Transport;
-  /** Convenience alternative to `creationRateTransport`. */
-  creationRateRpcUrl?: string;
-  /** Polygon transport used only to snapshot UPI/INR's creation-time rate. */
-  upiCreationRateTransport?: Transport;
-  /** Convenience alternative to `upiCreationRateTransport`; requires Polygon mainnet. */
-  upiCreationRateRpcUrl?: string;
   /** Relay API configuration for source assets outside Base USDC. */
   relay?: RelayOptions;
   /** NEAR Intents 1Click configuration for externally funded source routes. */
@@ -576,16 +565,6 @@ function depositOrderOptions(deposit: DepositAggregatesWithQuality): DeriveCashO
 export function createCashClient(options: CashClientOptions): CashClient {
   const { environment } = options;
   const transport = options.transport ?? http(options.rpcUrl ?? DEFAULT_RPC_URL);
-  const creationRateTransport =
-    options.creationRateTransport ?? http(options.creationRateRpcUrl ?? DEFAULT_ETHEREUM_RPC_URL);
-  const creationRateClient = createPublicClient({
-    chain: mainnet,
-    transport: creationRateTransport,
-  });
-  const upiCreationRateClient = createPublicClient({
-    chain: polygon,
-    transport: options.upiCreationRateTransport ?? http(options.upiCreationRateRpcUrl),
-  });
   const readCashAttribution = createCashAttributionReader({
     environment,
     ...(options.indexerUrl ? { indexerUrl: options.indexerUrl } : {}),
@@ -698,7 +677,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         throw errors.invalidPayoutCurrencies(leg.platform, 'currencies must be unique');
       }
       for (const currency of currencies) {
-        if (!isCashCorridorSupported(leg.platform, currency)) {
+        if (!isMarketRateSupported(currency)) {
           throw errors.oracleUnsupportedCurrency(currency);
         }
         if (!platform.currencies.includes(currency)) {
@@ -735,34 +714,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
     };
   }
 
-  function hasCreationRateCorridor(input: CashDepositInput): boolean {
-    return input.payouts.some((payout) => {
-      const currencies = payout.currencies ?? (payout.currency ? [payout.currency] : []);
-      return currencies.some((currency) => isCreationRateCorridor(payout.processorName, currency));
-    });
-  }
-
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
     try {
-      return await prepareCashDepositParams(
-        client,
-        depositInput,
-        undefined,
-        async (platform, currency) => {
-          if (!isCreationRateCorridor(platform, currency)) {
-            throw new Error(`No creation-time rate reader for ${platform}/${currency}`);
-          }
-          try {
-            return await readCashCreationRate(
-              platform.toLowerCase() === 'upi' ? upiCreationRateClient : creationRateClient,
-              platform,
-              currency,
-            );
-          } catch (err) {
-            throw errors.oracleReadFailed(currency, err);
-          }
-        },
-      );
+      return await prepareCashDepositParams(client, depositInput);
     } catch (err) {
       if (isCashError(err)) throw err;
       // The curator rejects Wise/PayPal/Alipay payees that lack a signed attestation.
@@ -1321,8 +1275,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           ? { includeEta: estimateOptions.includeEta }
           : {}),
         etaReader: async (etaInput) => fillEtaFromSample(await getFillStatsSample(), etaInput),
-        creationRateClient,
-        upiCreationRateClient,
         ...(options.relay ? { relay: options.relay } : {}),
       });
     },
@@ -1366,7 +1318,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         }
         const cashoutAmount = relayQuote.outputAmount;
         const depositInput = validateDepositInput(cashoutAmount, input, payoutInput);
-        let params = await buildDepositParams(client, depositInput);
+        const params = await buildDepositParams(client, depositInput);
 
         // Spender must be the escrow createDeposit will target - the default can
         // point at the legacy escrow while deposits go to EscrowV2.
@@ -1404,16 +1356,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           );
         }
 
-        // Relay can take long enough that a preflight snapshot no longer
-        // represents deposit creation. Refresh fixed-at-creation corridors
-        // after Base funds arrive and preserve source-route recovery context.
-        if (hasCreationRateCorridor(depositInput)) {
-          try {
-            params = await buildDepositParams(client, depositInput);
-          } catch (err) {
-            throw errors.sourceRouteCompletedCashoutFailed(routedSource, err);
-          }
-        }
         const attributedParams = { ...params, txOverrides: attribution };
         // Submit the deposit; one retry for the replica-lag case the allowance
         // visibility loop cannot fully rule out. All other failures map to typed

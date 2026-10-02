@@ -61,6 +61,7 @@ import {
   currencyInfo,
   getAttributionDataSuffix,
   getPaymentMethodsCatalog,
+  getSpreadOracleConfig,
   resolvePaymentMethodHashFromCatalog,
   Zkp2pClient,
 } from '@zkp2p/sdk';
@@ -622,6 +623,53 @@ describe('cashout()', () => {
       ).not.toHaveBeenCalled();
     },
   );
+
+  it('accepts the newly opened Revolut/CNY oracle corridor', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+    const oracle = getSpreadOracleConfig('CNY')!;
+    expect(oracle).toBeDefined();
+
+    const result = await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'revolut', currency: 'CNY', payee: { offchainId: 'revtag' } },
+      },
+      { signer },
+    );
+
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: ['revolut'],
+      payeeData: [{ offchainId: 'revtag' }],
+    });
+    expect(mockInstance.createDeposit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        processorNames: ['revolut'],
+        paymentMethodsOverride: [
+          getPaymentMethodsCatalog(8453, 'staging').revolut!.paymentMethodHash,
+        ],
+        currenciesOverride: [
+          [
+            {
+              code: currencyInfo.CNY.currencyCodeHash,
+              minConversionRate: 1n,
+              oracleRateConfig: {
+                adapter: oracle.adapter,
+                adapterConfig: oracle.adapterConfig,
+                spreadBps: 0,
+                maxStaleness: oracle.maxStaleness,
+              },
+            },
+          ],
+        ],
+      }),
+    );
+    expect(result.depositId).toBe(DEPOSIT_ID);
+    expect(result.txHash).toBe('0xhash');
+  });
 
   it('creates one signed Revolut method with three payout currencies', async () => {
     mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
@@ -2088,6 +2136,27 @@ describe('cashout()', () => {
         { signer },
       ),
     ).rejects.toMatchObject({ code: 'ORACLE_UNSUPPORTED_CURRENCY' });
+  });
+
+  it('rejects a catalog currency without an oracle config before any side effect', async () => {
+    expect(getPaymentMethodsCatalog(8453, 'staging').revolut!.currencies).toContain(
+      currencyInfo.JPY.currencyCodeHash,
+    );
+    expect(getSpreadOracleConfig('JPY')).toBeNull();
+
+    await expect(
+      client().cashout(
+        {
+          amount: 5_000_000n,
+          receive: { platform: 'revolut', currency: 'JPY', payee: { offchainId: 'revtag' } },
+        },
+        { signer },
+      ),
+    ).rejects.toMatchObject({ code: 'ORACLE_UNSUPPORTED_CURRENCY', retryable: false });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+    expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+    expect(signer.sendTransaction).not.toHaveBeenCalled();
   });
 
   it('rejects an oracle-supported currency that the payout platform cannot receive', async () => {

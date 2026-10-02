@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { buildCapabilities, platformRequiresIdentityAttestation } from '../src/client/capabilities';
-import { isCashCorridorSupported } from '../src/engine/marketRate';
+import { isMarketRateSupported } from '../src/engine/marketRate';
 
 describe('buildCapabilities', () => {
   for (const env of ['production', 'preproduction', 'staging'] as const) {
+    it(`${env}: pins the exact INR/CNY corridor set`, () => {
+      const corridors = buildCapabilities(env).platforms.flatMap(({ platform, currencies }) =>
+        currencies
+          .filter((currency) => currency === 'INR' || currency === 'CNY')
+          .map((currency) => `${platform}:${currency}`),
+      );
+
+      expect(corridors.sort()).toEqual([
+        'alipay:CNY',
+        'revolut:CNY',
+        'upi:INR',
+        'wise:CNY',
+        'wise:INR',
+      ]);
+    });
+
     it(`${env}: advertises only supported Cash corridors`, () => {
       const caps = buildCapabilities(env);
 
@@ -23,7 +39,7 @@ describe('buildCapabilities', () => {
         expect(platform.payeeHint.length).toBeGreaterThan(0);
         expect(platform.requiresAtomicAccessPolicy).toBe(false);
         for (const currency of platform.currencies) {
-          expect(isCashCorridorSupported(platform.platform, currency)).toBe(true);
+          expect(isMarketRateSupported(currency)).toBe(true);
           expect(platform.pricing[currency]).toBeDefined();
         }
       }
@@ -97,7 +113,7 @@ describe('buildCapabilities', () => {
     expect(platformRequiresIdentityAttestation('ALIPAY')).toBe(true);
   });
 
-  it('advertises Alipay/CNY as a creation-time Chainlink snapshot', () => {
+  it('advertises Alipay/CNY as a signal-time oracle corridor', () => {
     const alipay = buildCapabilities('production').platforms.find((p) => p.platform === 'alipay');
     expect(alipay).toMatchObject({
       currencies: ['CNY'],
@@ -105,8 +121,7 @@ describe('buildCapabilities', () => {
       requiresIdentityAttestation: true,
       pricing: {
         CNY: {
-          kind: 'fixed-at-deposit-creation',
-          source: 'chainlink-ethereum',
+          kind: 'oracle-at-intent-signal',
           spreadBps: 0,
         },
       },

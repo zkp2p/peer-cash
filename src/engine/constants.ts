@@ -34,10 +34,7 @@ export const CASH_ACCESS_GROUP_IDS: Record<RuntimeEnv, readonly Hex[]> = {
 /** USDC has 6 decimals. */
 export const USDC_DECIMALS = 6;
 
-/**
- * Signal-time oracle corridors use zero spread. Alipay/CNY instead fixes a
- * fresh creation-time snapshot because Base has no CNY oracle adapter.
- */
+/** Every corridor uses the signal-time oracle rate with zero spread. */
 export const MARKET_SPREAD_BPS = 0;
 
 /**

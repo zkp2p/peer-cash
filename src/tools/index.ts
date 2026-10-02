@@ -410,7 +410,7 @@ export const cashToolManifest = {
   name: '@zkp2p/cash',
   version: packageJson.version,
   description:
-    'Peer Cash - offramp-only: route Relay EVM or NEAR Intents external-deposit source assets to Base USDC, then cash out to fiat at a zero-spread Chainlink market rate. Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
+    'Peer Cash - offramp-only: route Relay EVM or NEAR Intents external-deposit source assets to Base USDC, then cash out to fiat at a zero-spread on-chain oracle market rate. Mutating protocol tools return unsigned transactions plus step labels with ERC-8021 peer-cash attribution.',
   tools: cashTools,
 } as const;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { decodeFunctionData } from 'viem';
+import { decodeAbiParameters, decodeFunctionData } from 'viem';
 import { Zkp2pClient as RuntimeZkp2pClient } from '@zkp2p/sdk';
 import {
   buildIntentAmountRange,
@@ -84,85 +84,48 @@ describe('prepareCashDepositParams', () => {
     expect(client.registerPayeeDetails).toHaveBeenCalledOnce();
   });
 
-  it('builds Alipay/CNY with a fixed creation-time floor and no Base oracle config', async () => {
-    const client = mockClient();
-    const creationRate = {
-      rate1e18: 6_724_400_000_000_000_000n,
-      rate: 6.7244,
-      updatedAt: 2_000_000_000,
-    };
-    const reader = vi.fn(async () => creationRate);
-
-    const params = await prepareCashDepositParams(
-      client,
-      {
-        amount: 5_000_000n,
-        payouts: [
-          {
-            processorName: 'alipay',
-            currency: 'CNY',
-            payeeData: { offchainId: 'seller@example.com' },
-          },
-        ],
-      },
-      undefined,
-      reader,
-    );
-
-    expect(reader).toHaveBeenCalledWith('alipay', 'CNY');
-    expect(params.conversionRates).toEqual([
-      [{ currency: 'CNY', conversionRate: creationRate.rate1e18.toString() }],
-    ]);
-    expect(params.currenciesOverride?.[0]?.[0]).toMatchObject({
-      minConversionRate: creationRate.rate1e18,
-    });
-    expect(params.currenciesOverride?.[0]?.[0]).not.toHaveProperty('oracleRateConfig');
-    expect(client.registerPayeeDetails).toHaveBeenCalledWith({
-      processorNames: ['alipay'],
-      payeeData: [{ offchainId: 'seller@example.com' }],
-    });
-  });
-
-  it.each(['production', 'staging', 'preproduction'] as const)(
-    'builds %s UPI/INR without an identity attestation',
-    async (runtimeEnv) => {
-      const client = { ...mockClient(), runtimeEnv } as Zkp2pClient;
-      const creationRate = {
-        rate1e18: 83_333_333_333_333_333_333n,
-        rate: 83.333333,
-        updatedAt: 2_000_000_000,
-      };
-      const reader = vi.fn(async () => creationRate);
-
-      const params = await prepareCashDepositParams(
-        client,
-        {
+  for (const runtimeEnv of ['production', 'staging', 'preproduction'] as const) {
+    it.each([
+      ['upi', 'INR', 'seller@bank', '0x053A03F1704aE3F71082D3cDFD50BC830415A326'],
+      ['alipay', 'CNY', 'seller@example.com', '0xc034d806DbeA6b13980D94174eA5FF83E1C191C3'],
+    ] as const)(
+      `${runtimeEnv}: builds %s/%s from the published SDK oracle`,
+      async (platform, currency, offchainId, feed) => {
+        const client = { ...mockClient(), runtimeEnv } as Zkp2pClient;
+        const params = await prepareCashDepositParams(client, {
           amount: 5_000_000n,
-          payouts: [
-            {
-              processorName: 'upi',
-              currency: 'INR',
-              payeeData: { offchainId: 'seller@bank' },
-            },
-          ],
-        },
-        undefined,
-        reader,
-      );
-
-      expect(reader).toHaveBeenCalledWith('upi', 'INR');
-      expect(params.paymentMethodsOverride).toEqual([
-        '0xe99a5081226cbbff9440a63da5caa04fa30f210c12c4dd9976132ac075054cd9',
-      ]);
-      expect(params.conversionRates).toEqual([
-        [{ currency: 'INR', conversionRate: creationRate.rate1e18.toString() }],
-      ]);
-      expect(client.registerPayeeDetails).toHaveBeenCalledWith({
-        processorNames: ['upi'],
-        payeeData: [{ offchainId: 'seller@bank' }],
-      });
-    },
-  );
+          payouts: [{ processorName: platform, currency, payeeData: { offchainId } }],
+        });
+        const tuple = params.currenciesOverride?.[0]?.[0];
+        expect(tuple).toMatchObject({
+          minConversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL,
+          oracleRateConfig: {
+            adapter: '0xfc81d1b5841e697973af3072fc8e03af76cb39ef',
+            maxStaleness: 86400,
+            spreadBps: 0,
+          },
+        });
+        const [actualFeed, invert] = decodeAbiParameters(
+          [{ type: 'address' }, { type: 'bool' }],
+          tuple!.oracleRateConfig!.adapterConfig,
+        );
+        expect(actualFeed.toLowerCase()).toBe(feed.toLowerCase());
+        expect(invert).toBe(true);
+        if (platform === 'upi') {
+          expect(params.paymentMethodsOverride).toEqual([
+            '0xe99a5081226cbbff9440a63da5caa04fa30f210c12c4dd9976132ac075054cd9',
+          ]);
+        }
+        expect(params.conversionRates).toEqual([
+          [{ currency, conversionRate: ORACLE_MIN_CONVERSION_RATE_SENTINEL.toString() }],
+        ]);
+        expect(client.registerPayeeDetails).toHaveBeenCalledExactlyOnceWith({
+          processorNames: [platform],
+          payeeData: [{ offchainId }],
+        });
+      },
+    );
+  }
 
   it.each([
     ['staging', '0x3355bb8CEFA54509d244384CFA7f2A71fdb1FDD6'],
