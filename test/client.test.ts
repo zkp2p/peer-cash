@@ -890,7 +890,9 @@ describe('cashout()', () => {
       expect(Zkp2pClient).toHaveBeenCalledWith(
         expect.objectContaining({ walletClient: eoaSigner }),
       );
-      expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
+      expect(mockInstance.createDeposit).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ enableTrustedGroupBypass: false }),
+      );
       expect(mockInstance.createDeposit.mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(eoaSigner.sendTransaction).mock.invocationCallOrder[0]!,
       );
@@ -1437,6 +1439,7 @@ describe('cashout()', () => {
     expect(mockInstance.createDeposit).toHaveBeenCalledWith(
       expect.objectContaining({
         txOverrides: expect.not.objectContaining({ nonce: expect.anything() }),
+        enableTrustedGroupBypass: false,
       }),
     );
   });

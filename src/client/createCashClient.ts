@@ -1330,7 +1330,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
           );
         }
 
-        const attributedParams = { ...params, txOverrides: attribution };
+        // Cash attaches the Peer Pay merchant policy itself after the deposit.
+        const attributedParams = {
+          ...params,
+          txOverrides: attribution,
+          enableTrustedGroupBypass: false,
+        };
         // Submit the deposit; one retry for the replica-lag case the allowance
         // visibility loop cannot fully rule out. All other failures map to typed
         // errors and a reverted receipt throws - no raw errors, no false success.
@@ -1410,7 +1415,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const escrow = client.escrowV2Address ?? client.escrowAddress;
       await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
 
-      const attributedParams = { ...params, txOverrides: attribution };
+      // Cash attaches the Peer Pay merchant policy itself after the deposit.
+      const attributedParams = {
+        ...params,
+        txOverrides: attribution,
+        enableTrustedGroupBypass: false,
+      };
       // Submit the deposit; one retry for the replica-lag case the allowance
       // visibility loop cannot fully rule out. All other failures map to typed
       // errors and a reverted receipt throws - no raw errors, no false success.
