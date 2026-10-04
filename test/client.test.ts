@@ -35,7 +35,6 @@ const mockInstance = {
   prepareCreateDeposit: vi.fn(),
   accessPolicy: {
     prepareConfigurePeerPayMerchantDeposit: vi.fn(),
-    prepareConfigureDeposit: vi.fn(),
   },
   getDisputeProtectionReadiness: vi.fn(),
   setDisputeProtectionEnabled: Object.assign(vi.fn(), { prepare: vi.fn() }),
@@ -213,12 +212,6 @@ beforeEach(() => {
   });
   mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: true });
   mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit.mockReturnValue({
-    to: '0x3333333333333333333333333333333333333333',
-    data: '0xaccess',
-    value: 0n,
-    chainId: 8453,
-  });
-  mockInstance.accessPolicy.prepareConfigureDeposit.mockReturnValue({
     to: '0x3333333333333333333333333333333333333333',
     data: '0xaccess',
     value: 0n,
@@ -2459,27 +2452,6 @@ describe('prepareAccessPolicy()', () => {
       value: 0n,
       chainId: 8453,
     });
-  });
-
-  it('falls back to the legacy configurable policy API before the SDK upgrade lands', () => {
-    const modernPreparer = mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit;
-    Reflect.deleteProperty(mockInstance.accessPolicy, 'prepareConfigurePeerPayMerchantDeposit');
-
-    try {
-      client().prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
-
-      expect(mockInstance.accessPolicy.prepareConfigureDeposit).toHaveBeenCalledWith({
-        escrow: ESCROW,
-        depositId: 5n,
-        paymentMethod: VENMO_PAYMENT_METHOD,
-        enabled: true,
-        groupIds: CASH_ACCESS_GROUP_IDS.staging,
-        takers: [],
-        txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
-      });
-    } finally {
-      mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit = modernPreparer;
-    }
   });
 
   it.each(['production', 'preproduction'] as const)(
