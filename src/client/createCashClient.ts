@@ -1077,38 +1077,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
     const { compositeId, escrowAddress, onchainDepositId } = parseDepositId(depositId);
     const groupIds = CASH_ACCESS_GROUP_IDS[environment];
     try {
-      const accessPolicy = client.accessPolicy as unknown as {
-        prepareConfigurePeerPayMerchantDeposit?: (params: {
-          escrow: Address;
-          depositId: bigint;
-          paymentMethod: Hex;
-          txOverrides: TxOverrides;
-        }) => PreparedTransaction;
-        prepareConfigureDeposit?: (params: {
-          escrow: Address;
-          depositId: bigint;
-          paymentMethod: Hex;
-          enabled: boolean;
-          groupIds: readonly Hex[];
-          takers: readonly Address[];
-          txOverrides: TxOverrides;
-        }) => PreparedTransaction;
-      };
-      const merchantPolicyParams = {
+      const prepared = client.accessPolicy.prepareConfigurePeerPayMerchantDeposit({
         escrow: escrowAddress as Address,
         depositId: onchainDepositId,
         paymentMethod,
         txOverrides: attribution,
-      };
-      const prepared = accessPolicy.prepareConfigurePeerPayMerchantDeposit
-        ? accessPolicy.prepareConfigurePeerPayMerchantDeposit(merchantPolicyParams)
-        : accessPolicy.prepareConfigureDeposit?.({
-            ...merchantPolicyParams,
-            enabled: true,
-            groupIds,
-            takers: [],
-          });
-      if (!prepared) throw new Error('SDK access-policy preparation is unavailable');
+      });
       return {
         to: prepared.to,
         data: prepared.data,
@@ -1356,7 +1330,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
           );
         }
 
-        const attributedParams = { ...params, txOverrides: attribution };
+        // Cash attaches the Peer Pay merchant policy itself after the deposit.
+        const attributedParams = {
+          ...params,
+          txOverrides: attribution,
+          enableTrustedGroupBypass: false,
+        };
         // Submit the deposit; one retry for the replica-lag case the allowance
         // visibility loop cannot fully rule out. All other failures map to typed
         // errors and a reverted receipt throws - no raw errors, no false success.
@@ -1436,7 +1415,12 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const escrow = client.escrowV2Address ?? client.escrowAddress;
       await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
 
-      const attributedParams = { ...params, txOverrides: attribution };
+      // Cash attaches the Peer Pay merchant policy itself after the deposit.
+      const attributedParams = {
+        ...params,
+        txOverrides: attribution,
+        enableTrustedGroupBypass: false,
+      };
       // Submit the deposit; one retry for the replica-lag case the allowance
       // visibility loop cannot fully rule out. All other failures map to typed
       // errors and a reverted receipt throws - no raw errors, no false success.
