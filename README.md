@@ -154,7 +154,7 @@ arbitrary protocol operations.
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `prepareVenmoGmailConnect(payee, { returnUrl }?)`              | Optional Venmo handle registration; returns the payee hash and hosted URL, with an optional app callback                        |
 | `openVenmoGmailConnect(payeeDetails)`                          | Optional browser popup/tab; call directly from a click                                                                          |
-| `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Gmail or Outlook receipt credential exists                                                               |
+| `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Gmail, Outlook or iCloud Mail receipt credential exists                                                  |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
 | `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
 | `capabilities({ includeNearIntentsSources: true })`            | Async discovery: adds live NEAR Intents 1Click source assets                                                                    |

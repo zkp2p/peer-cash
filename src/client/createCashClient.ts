@@ -27,6 +27,7 @@ import {
   appendAttributionToCalldata,
   createCompositeDepositId,
   getVenmoGmailConnectUrl,
+  isMailboxSellerCredentialType,
   openVenmoGmailConnect,
   type VenmoGmailConnectResult,
   type VenmoGmailAppearance,
@@ -356,7 +357,7 @@ export interface CashClient {
   ): Promise<PreparedVenmoGmailConnect>;
   /** Optional, browser-only: call directly from a click handler with the prepared payee hash. */
   openVenmoGmailConnect(payeeDetails: Hash): Promise<VenmoGmailConnectResult>;
-  /** True only for an active Gmail or Outlook receipt credential; errors reject instead of reporting unlinked. */
+  /** True only for an active Gmail, Outlook or iCloud Mail receipt credential; errors reject instead of reporting unlinked. */
   isVenmoGmailConnected(payeeDetails: Hash): Promise<boolean>;
   /** 0 - Discovery: sync, static. */
   capabilities(): CashCapabilities;
@@ -1187,8 +1188,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       });
       return (
         responseObject.status === 'active' &&
-        (responseObject.credentialType === 'google_oauth' ||
-          responseObject.credentialType === 'microsoft_oauth')
+        isMailboxSellerCredentialType(responseObject.credentialType)
       );
     },
 

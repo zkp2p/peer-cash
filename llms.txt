@@ -15,8 +15,8 @@ Key facts:
 - Optional Venmo receipt linking: prepareVenmoGmailConnect(handle) registers
   the selected handle and returns { payeeDetails, url }. From a separate click,
   openVenmoGmailConnect(payeeDetails) opens the environment's hosted flow.
-  isVenmoGmailConnected(payeeDetails) checks for an active Gmail or Outlook
-  credential;
+  isVenmoGmailConnected(payeeDetails) checks for an active Gmail, Outlook or
+  iCloud Mail credential;
   lookup errors reject. Cashout and prepare never call or require these steps.
   Native hosts use prepareVenmoGmailConnect(handle, { returnUrl }) and open
   link.url with Expo openAuthSessionAsync(link.url, returnUrl). Register the
