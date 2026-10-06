@@ -291,8 +291,9 @@ Run `cash.prepareVenmoGmailConnect(handle)` when the user selects Venmo, then
 call `cash.openVenmoGmailConnect(link.payeeDetails)` directly from a separate
 button click. Re-prepare when the selected handle changes. Use
 `cash.isVenmoGmailConnected(link.payeeDetails)` after returning from a mobile
-tab or an ambiguous closure; service errors reject, and only an active Gmail or
-Outlook credential counts as connected. Persist the hash with its environment and user.
+tab or an ambiguous closure; service errors reject, and any active Gmail,
+Outlook or iCloud Mail credential counts as connected (`@zkp2p/sdk` 0.14.7
+`isMailboxSellerCredentialType`). Persist the hash with its environment and user.
 
 For native apps, use `prepareVenmoGmailConnect(handle, { returnUrl })` and
 open `link.url` with Expo's `openAuthSessionAsync(link.url, returnUrl)`.
@@ -300,9 +301,10 @@ Register the scheme in your app binary; no registration with Peer is needed.
 Peer appends no data to the callback. Omitted/empty callbacks attempt closure;
 tabs that block it keep the success page. Always re-check status on return.
 
-The hosted flow offers Gmail, including Google-hosted custom domains, and
-personal Outlook, then verifies actual Venmo receipts. `VenmoGmailConnectError`
-is separate from `CashError`; no emails or mailbox tokens reach the partner. Configure `venmoGmail: { appearance, popup }`
+The hosted flow offers Gmail, including Google-hosted custom domains, personal
+Outlook, and iCloud Mail, then verifies actual Venmo receipts.
+`VenmoGmailConnectError` is separate from `CashError`; no emails, mailbox
+tokens or app-specific passwords reach the partner. Configure `venmoGmail: { appearance, popup }`
 for branding and desktop dimensions; omission keeps Peer defaults.
 See the README for error codes, native callbacks, package-free URLs, and
 customization, plus `examples/venmo-link.ts`.

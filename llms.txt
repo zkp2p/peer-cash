@@ -15,19 +15,22 @@ Key facts:
 - Optional Venmo receipt linking: prepareVenmoGmailConnect(handle) registers
   the selected handle and returns { payeeDetails, url }. From a separate click,
   openVenmoGmailConnect(payeeDetails) opens the environment's hosted flow.
-  isVenmoGmailConnected(payeeDetails) checks for an active Gmail or Outlook
-  credential;
-  lookup errors reject. Cashout and prepare never call or require these steps.
+  isVenmoGmailConnected(payeeDetails) is true for any active mailbox
+  credential (Gmail, Outlook or iCloud Mail, per @zkp2p/sdk 0.14.7
+  isMailboxSellerCredentialType); lookup errors reject. Cashout and prepare
+  never call or require these steps.
   Native hosts use prepareVenmoGmailConnect(handle, { returnUrl }) and open
   link.url with Expo openAuthSessionAsync(link.url, returnUrl). Register the
   app scheme in the binary; Peer needs no callback registration and appends
   no data. Omitted/empty callbacks attempt closure; blocked tabs keep the
   success page. Always check status on return or ambiguous popup closure.
   The hosted page offers Gmail, including Google-hosted school/custom domains,
-  and personal Outlook. Receipt failures use VenmoGmailConnectError.code:
-  venmo_google_oauth_receipt_not_found or VENMO_MICROSOFT_OAUTH_RECEIPT_NOT_FOUND.
-  Partner apps receive neither emails nor mailbox tokens. Re-prepare when the
-  handle changes; persist payee hash with environment and user account.
+  personal Outlook, and iCloud Mail (Apple app-specific password). Receipt
+  failures use VenmoGmailConnectError.code: venmo_google_oauth_receipt_not_found,
+  VENMO_MICROSOFT_OAUTH_RECEIPT_NOT_FOUND or icloud_receipt_not_found.
+  Partner apps receive no emails, mailbox tokens or app-specific passwords.
+  Re-prepare when the handle changes; persist payee hash with environment and
+  user account.
   Optional createCashClient({ venmoGmail: { appearance, popup } }) shares branding
   between the prepared URL and popup. Defaults use Peer branding; desktop popup
   dimensions do not control mobile tab sizing. See the README customization example.

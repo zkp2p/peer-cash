@@ -143,9 +143,11 @@ describe('optional Venmo receipt linking', () => {
   it.each([
     ['active', 'google_oauth', true],
     ['active', 'microsoft_oauth', true],
+    ['active', 'icloud_mail', true],
     ['active', 'session_cookie', false],
     ['inactive', 'google_oauth', false],
     ['inactive', 'microsoft_oauth', false],
+    ['inactive', 'icloud_mail', false],
     ['missing', null, false],
   ])('reports %s / %s as connected=%s', async (status, credentialType, expected) => {
     mocks.getSellerCredentialStatus.mockResolvedValueOnce({

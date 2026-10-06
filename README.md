@@ -154,7 +154,7 @@ arbitrary protocol operations.
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `prepareVenmoGmailConnect(payee, { returnUrl }?)`              | Optional Venmo handle registration; returns the payee hash and hosted URL, with an optional app callback                        |
 | `openVenmoGmailConnect(payeeDetails)`                          | Optional browser popup/tab; call directly from a click                                                                          |
-| `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Gmail or Outlook receipt credential exists                                                               |
+| `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Gmail, Outlook or iCloud Mail receipt credential exists                                                  |
 | `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
 | `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
 | `capabilities({ includeNearIntentsSources: true })`            | Async discovery: adds live NEAR Intents 1Click source assets                                                                    |
@@ -196,7 +196,7 @@ mixed historical deposit.
 ## Optional Venmo receipt linking
 
 Partners such as Tailgate can offer **Link Venmo** separately from cash-out.
-`cashout()` and `prepare()` never open Gmail or Outlook, check receipt
+`cashout()` and `prepare()` never open a mailbox, check receipt
 credentials, or require this step. Skipping or cancelling linking leaves cash-out available.
 
 ```ts
@@ -233,19 +233,23 @@ Preparation and status reads also work on the server.
 Desktop opens a popup; mobile requests a new browser tab (including Safari).
 The browser controls presentation and may sever the opener connection. In that
 case check status rather than assuming `connection_closed` or
-`connection_timeout` means verification failed. Status is true only for an
-active `google_oauth` or `microsoft_oauth` credential; lookup failures reject.
-Versions before `0.6.3-rc.2` count only `google_oauth`.
+`connection_timeout` means verification failed. Status is true for any active
+mailbox credential (`google_oauth`, `microsoft_oauth` or `icloud_mail`, per
+`isMailboxSellerCredentialType` in `@zkp2p/sdk` 0.14.7); lookup failures
+reject. Versions before `0.7.2` do not count `icloud_mail`, and versions before
+`0.6.3-rc.2` count only `google_oauth`.
 
 The hosted page offers Gmail, including Google-hosted school/custom-domain
-inboxes, and personal Outlook. It verifies actual receipts; there is no
-email-domain precheck. A missing receipt reports
-`venmo_google_oauth_receipt_not_found` (Gmail) or
-`VENMO_MICROSOFT_OAUTH_RECEIPT_NOT_FOUND` (Outlook) through
-`VenmoGmailConnectError.code`. Cancellation, popup blocking, and other hosted
-errors retain their codes. This error class is separate from `CashError`;
-registration and status service errors also reject. Emails and mailbox tokens
-never pass through the partner app or Cash SDK.
+inboxes, personal Outlook, and iCloud Mail (with an Apple app-specific
+password). It verifies actual receipts; there is no email-domain precheck. A
+missing receipt reports `venmo_google_oauth_receipt_not_found` (Gmail),
+`VENMO_MICROSOFT_OAUTH_RECEIPT_NOT_FOUND` (Outlook) or
+`icloud_receipt_not_found` (iCloud Mail) through `VenmoGmailConnectError.code`;
+other iCloud Mail failures use `icloud_<reason>` codes. Cancellation, popup
+blocking, and other hosted errors retain their codes. This error class is
+separate from `CashError`; registration and status service errors also reject.
+Emails, mailbox tokens and app-specific passwords never pass through the
+partner app or Cash SDK.
 
 See [the browser example](examples/venmo-link.ts). JSON codecs are exported for
 `PreparedVenmoGmailConnect` and `VenmoGmailConnectResult`.

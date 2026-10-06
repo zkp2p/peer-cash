@@ -1,6 +1,6 @@
 {
   "name": "@zkp2p/cash",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Peer Cash - offramp-only SDK for routing Relay or NEAR Intents assets to Base USDC, then cashing out to fiat at zero-spread on-chain oracle market rates.",
   "license": "MIT",
   "author": "Peer (https://peer.xyz)",
@@ -108,7 +108,7 @@
   },
   "dependencies": {
     "@relayprotocol/relay-sdk": "^7.0.1",
-    "@zkp2p/sdk": "0.14.6",
+    "@zkp2p/sdk": "0.14.7",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
