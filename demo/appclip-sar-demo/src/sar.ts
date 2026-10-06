@@ -100,9 +100,9 @@ export async function createSarLink(input: {
     throw new Error('The return address must be HTTPS.');
   }
   const state = crypto.randomUUID();
-  const demoEndpoint = new URL(endpoint(input.apiBase));
-  demoEndpoint.pathname += '/demo';
-  const result = await request(demoEndpoint.toString(), {
+  const checkoutEndpoint = new URL(endpoint(input.apiBase));
+  checkoutEndpoint.pathname += '/checkout';
+  const result = await request(checkoutEndpoint.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
