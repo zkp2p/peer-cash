@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('wallet-free App Clip SAR handoff', () => {
   it('mints a UPI request without Privy or a client-selected wallet', async () => {
     const fetcher = vi.fn(async (url: string, init: RequestInit) => {
-      expect(url).toBe('https://api.zkp2p.xyz/v2/sar/connections/demo');
+      expect(url).toBe('https://api.zkp2p.xyz/v2/sar/connections/checkout');
       expect(init.method).toBe('POST');
       expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
       const body = JSON.parse(String(init.body));
