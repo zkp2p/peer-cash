@@ -280,7 +280,12 @@ describe('fillStats()', () => {
     const cash = client();
 
     const [estimate, stats] = await Promise.all([
-      cash.estimate({ amount: 1_000_000n, currency: 'USD', platform: 'venmo' }),
+      cash.estimate({
+        fillMode: 'flexible',
+        amount: 1_000_000n,
+        currency: 'USD',
+        platform: 'venmo',
+      }),
       cash.fillStats(),
     ]);
     const unmatchedPairEstimate = await cash.estimate({
@@ -590,10 +595,7 @@ describe('cashout()', () => {
       });
 
       await client().cashout(
-        {
-          amount: 5_000_000n,
-          receive: { platform, currency: 'USD', payee },
-        },
+        { fillMode: 'flexible', amount: 5_000_000n, receive: { platform, currency: 'USD', payee } },
         { signer },
       );
 
@@ -756,6 +758,7 @@ describe('cashout()', () => {
     await expect(
       client().cashout(
         {
+          fillMode: 'flexible',
           amount: 5_000_000n,
           receive: [
             { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
@@ -852,6 +855,7 @@ describe('cashout()', () => {
 
     const result = await client().cashout(
       {
+        fillMode: 'flexible',
         amount: 5_000_000n,
         receive: { platform: 'cashapp', currency: 'USD', payee: { offchainId: '$seller' } },
       },
@@ -877,6 +881,7 @@ describe('cashout()', () => {
 
       const result = await client().cashout(
         {
+          fillMode: 'flexible',
           amount: 5_000_000n,
           receive: {
             platform,
@@ -945,6 +950,7 @@ describe('cashout()', () => {
 
     const result = await client().cashout(
       {
+        fillMode: 'flexible',
         amount: 5_000_000n,
         receive: [
           {
@@ -990,6 +996,7 @@ describe('cashout()', () => {
     await expect(
       client().cashout(
         {
+          fillMode: 'flexible',
           amount: 5_000_000n,
           receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@seller' } },
         },
@@ -1016,6 +1023,7 @@ describe('cashout()', () => {
     const error = await client()
       .cashout(
         {
+          fillMode: 'flexible',
           amount: 5_000_000n,
           receive: {
             platform: 'paypal',
@@ -1049,6 +1057,7 @@ describe('cashout()', () => {
     await expect(
       client().cashout(
         {
+          fillMode: 'flexible',
           amount: 5_000_000n,
           receive: { platform: 'paypal', currency: 'USD', payee: 'paypal.me/seller' },
         },
@@ -1300,6 +1309,7 @@ describe('cashout()', () => {
     })
       .cashout(
         {
+          fillMode: 'flexible',
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
           receive: { platform: 'venmo', currency: 'USD', payee: '@seller' },
@@ -2126,6 +2136,7 @@ describe('cashout()', () => {
     await expect(
       client().cashout(
         {
+          fillMode: 'flexible',
           amount: 5_000_000n,
           receive: { platform: 'venmo', currency: 'XYZ' as never, payee: { offchainId: '@a' } },
         },
@@ -2159,6 +2170,7 @@ describe('cashout()', () => {
     await expect(
       client().cashout(
         {
+          fillMode: 'flexible',
           amount: 5_000_000n,
           receive: { platform: 'venmo', currency: 'EUR', payee: { offchainId: '@a' } },
         },
@@ -2240,6 +2252,7 @@ describe('prepare()', () => {
       });
 
       await client().prepare({
+        fillMode: 'flexible',
         amount: 5_000_000n,
         receive: { platform, currency, payee },
       });
@@ -2289,6 +2302,7 @@ describe('prepare()', () => {
 
     const { txs, steps, register, accessPolicyRequired, accessPolicyPaymentMethods } =
       await client().prepare({
+        fillMode: 'flexible',
         amount: 5_000_000n,
         receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
       });
@@ -2343,6 +2357,7 @@ describe('prepare()', () => {
   it('rejects Relay source routing because prepare cannot execute the bridge pre-step', async () => {
     await expect(
       client().prepare({
+        fillMode: 'flexible',
         amount: 1_000_000n,
         source: { chainId: 10, currency: '0xsource' },
         receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
@@ -3264,5 +3279,147 @@ describe('typed errors', () => {
         expect(json.remediation.length).toBeGreaterThan(10);
       }
     }
+  });
+});
+
+describe('automatic fixed sizing', () => {
+  it.each(['venmo', 'paypal', 'cashapp'])(
+    'uses the same $900 plan for %s estimate, prepare and signed cashout',
+    async (platform) => {
+      const cash = client();
+      const input = {
+        amount: 900_000_000n,
+        receive: {
+          platform,
+          currency: 'USD' as const,
+          payee: { offchainId: platform === 'paypal' ? 'seller@example.com' : 'seller' },
+        },
+      };
+      const range = { min: 300_000_000n, max: 300_000_000n };
+      mockInstance.prepareCreateDeposit.mockResolvedValue({
+        prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
+      });
+      mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+        status: 'success',
+        logs: [depositReceivedLog(5n)],
+      });
+      expect(
+        (
+          await cash.estimate(
+            { amount: input.amount, currency: 'USD', platform },
+            { includeEta: false },
+          )
+        ).intentAmountRange,
+      ).toEqual(range);
+      expect((await cash.prepare(input)).intentAmountRange).toEqual(range);
+      const result = await cash.cashout(input, { signer });
+      expect(result.order.intentAmountRange).toEqual(range);
+      expect(result.order.totalAmount).toBe(900_000_000n);
+      expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 900_000_000n, intentAmountRange: range }),
+      );
+      expect(mockInstance.prepareCreateDeposit).toHaveBeenCalledWith(
+        expect.objectContaining({ intentAmountRange: range }),
+      );
+      expect(
+        mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit,
+      ).toHaveBeenCalledTimes(platform === 'cashapp' ? 0 : 1);
+    },
+  );
+
+  it.each([49_000_000n, 650_000_000n, 950_000_000n, 10_500_000_000n, 900_000_001n])(
+    'rejects an ineligible total %s before registration or transactions',
+    async (amount) => {
+      const cash = client();
+      const input = {
+        amount,
+        receive: { platform: 'venmo', currency: 'USD' as const, payee: '@seller' },
+      };
+      await expect(cash.prepare(input)).rejects.toMatchObject({ code: 'FIXED_AMOUNT_NOT_PRESET' });
+      await expect(cash.cashout(input, { signer })).rejects.toMatchObject({
+        code: 'FIXED_AMOUNT_NOT_PRESET',
+      });
+      expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+      expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+      expect(mockInstance.prepareCreateDeposit).not.toHaveBeenCalled();
+      expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+      expect(signer.sendTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an ineligible refreshed Relay output before any funds move', async () => {
+    const quote = (amount: string) => ({
+      details: {
+        sender: '0xmaker',
+        recipient: '0xmaker',
+        currencyIn: {
+          amount: '1000000',
+          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+        },
+        currencyOut: {
+          amount,
+          currency: { chainId: 8453, address: BASE_USDC_ADDRESS, symbol: 'USDC', decimals: 6 },
+        },
+      },
+      steps: [],
+    });
+    const relayClient = {
+      chains: [{ id: 10 }],
+      actions: {
+        getQuote: vi
+          .fn()
+          .mockResolvedValueOnce(quote('900000000'))
+          .mockResolvedValueOnce(quote('899999999')),
+        execute: vi.fn(),
+      },
+    };
+    const cash = createCashClient({
+      environment: 'staging',
+      relay: { client: relayClient as never },
+    });
+    const estimate = await cash.estimate(
+      {
+        amount: 1_000_000n,
+        platform: 'venmo',
+        currency: 'USD',
+        source: { chainId: 10, currency: '0xsource', user: '0xmaker' },
+      },
+      { includeEta: false },
+    );
+    expect(estimate.amount).toBe(900_000_000n);
+    expect(estimate.intentAmountRange).toEqual({ min: 300_000_000n, max: 300_000_000n });
+    await expect(
+      cash.cashout(
+        {
+          amount: 1_000_000n,
+          source: { chainId: 10, currency: '0xsource' },
+          receive: { platform: 'venmo', currency: 'USD', payee: '@seller' },
+        },
+        { signer, sourceSigner },
+      ),
+    ).rejects.toMatchObject({ code: 'FIXED_AMOUNT_NOT_PRESET' });
+    expect(relayClient.actions.execute).not.toHaveBeenCalled();
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+    expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+  });
+
+  it('reconstructs current equal bounds on resumed orders and list rows', async () => {
+    const row = depositRow({
+      intentAmountMin: '300000000',
+      intentAmountMax: '300000000',
+      remainingDeposits: '600000000',
+      totalAmountTaken: '300000000',
+    });
+    mockInstance.indexer.getDepositsByIdsWithRelations.mockResolvedValue([row]);
+    mockInstance.indexer.getDepositsWithRelations.mockResolvedValue([row]);
+    mockInstance.indexer.getDeposits.mockResolvedValue([row]);
+    const cash = client();
+    const order = await cash.order(DEPOSIT_ID);
+    expect(order.intentAmountRange).toEqual({ min: 300_000_000n, max: 300_000_000n });
+    expect(order.totalAmount).toBe(900_000_000n);
+    const orders = await cash.orders('0xmaker');
+    expect(orders[0]?.intentAmountRange).toEqual(order.intentAmountRange);
   });
 });

@@ -46,13 +46,19 @@ console.log(
 );
 
 // 1 - What would 1 USDC get us, roughly?
-const est = await cash.estimate({ amount: usdc(1), currency: receive.currency });
+// This smoke test opts out of fixed presets to keep its funded amount small.
+const est = await cash.estimate({
+  amount: usdc(1),
+  currency: receive.currency,
+  platform: receive.platform,
+  fillMode: 'flexible',
+});
 console.log(
   `estimate: ≈ ${est.receiveAmount} ${receive.currency} at rate ${est.rate} (${est.kind})`,
 );
 
 // 2 - Cash out.
-const result = await cash.cashout({ amount: usdc(1), receive }, { signer });
+const result = await cash.cashout({ amount: usdc(1), receive, fillMode: 'flexible' }, { signer });
 console.log(`deposit created: ${result.depositId} (tx ${result.txHash})`);
 for (const hash of result.accessPolicyTxHashes ?? []) {
   console.log(`access policy attached: ${hash}`);

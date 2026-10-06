@@ -46,6 +46,12 @@ protocol-held funds and no custodial off-ramp provider.
   the same payout corridor, measured from deposit creation to first fill. Do
   not use signal-to-fulfillment latency and never render it as a guarantee.
 
+**Fill sizing:** USD Venmo/PayPal/Cash App default to fixed presets when every
+leg qualifies; other payout sets remain flexible. Use the same platform and
+fill options in `estimate()`, and inspect `intentAmountRange` before signing.
+Small smoke tests and arbitrary totals require `fillMode: 'flexible'`.
+Read [the preset and recovery reference](../../docs/fixed-fill-mode.md).
+
 ## 2. Decision tree - entry point by runtime
 
 | Runtime                   | Entry                                                            | Signer pattern                                                                      |

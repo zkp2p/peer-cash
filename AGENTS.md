@@ -80,6 +80,14 @@ deposit-level integration share instead of applying maker L1/L2.
   is no seller bank login, extension, identity attestation, or prior
   registration flow. Buyers pay and verify through Amazon Pay using standard UPI.
 
+## Fill sizing
+
+USD Venmo/PayPal/Cash App default to automatic fixed presets when all offered
+legs qualify. Pass the platform to `estimate()` and inspect `intentAmountRange`.
+Unlisted totals reject before funding; use `fillMode: 'flexible'` for arbitrary
+amounts and small smoke tests. Other payout sets keep flexible defaults.
+See [the preset table and recovery rules](docs/fixed-fill-mode.md).
+
 ## The loop
 
 ```ts
@@ -328,7 +336,7 @@ and tool results.
 Prove your integration against `environment: 'staging'` with a funded test
 wallet. Never wait on a buyer - buyer-side is out of your scope:
 
-1. `cashout()` a small amount (1–2 USDC) → capture `depositId` and, for a
+1. `cashout({ ..., fillMode: 'flexible' })` a small amount (1–2 USDC) → capture `depositId` and, for a
    restricted payout, every entry in `accessPolicyTxHashes`.
 2. `order(depositId)` shows `awaiting-buyer` (retry through indexer lag).
 3. `orders(owner)` includes the deposit.

@@ -37,6 +37,8 @@ export type {
   OrdersOptions,
 } from './client/createCashClient';
 
+export type { CashFillOptions } from './client/fillPolicy';
+
 // Discovery + estimate
 export {
   buildCapabilities,

@@ -135,6 +135,15 @@ bound at intent signal; currencies without an oracle config remain unsupported.
 
 See [the INR/CNY migration notes](docs/lifecycle-and-recovery.md#inrcny-oracle-migration-breaking) before upgrading an existing integration.
 
+## Fill sizing
+
+USD Venmo, PayPal and Cash App now default to [automatic fixed presets](docs/fixed-fill-mode.md)
+when every offered leg uses those rails: 900 USDC → 3 × 300; 10,000 → 20 × 500.
+Unlisted totals such as 650 and 950 reject before funding. Pass
+`fillMode: 'flexible'` to retain arbitrary totals and the previous flexible
+range. Other payout sets retain flexible defaults; explicit ranges remain supported.
+Use the same platform and fill options in `estimate()` to preview the bounds.
+
 ## Pick the right SDK
 
 Peer Cash and the general ZKP2P SDK serve different integration depths:
@@ -150,28 +159,28 @@ arbitrary protocol operations.
 
 ## The core verbs
 
-| Verb                                                           | What it does                                                                                                                    |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `prepareVenmoGmailConnect(payee, { returnUrl }?)`              | Optional Venmo handle registration; returns the payee hash and hosted URL, with an optional app callback                        |
-| `openVenmoGmailConnect(payeeDetails)`                          | Optional browser popup/tab; call directly from a click                                                                          |
-| `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Gmail, Outlook or iCloud Mail receipt credential exists                                                  |
-| `capabilities()`                                               | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
-| `capabilities({ includeRelaySources: true })`                  | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
-| `capabilities({ includeNearIntentsSources: true })`            | Async discovery: adds live NEAR Intents 1Click source assets                                                                    |
-| `fillStats()`                                                  | Cached 30-day fill counts and median first-fill time per exact `platform:currency` pair or sorted multi-currency set            |
-| `quoteSource(input)` / `executeSourceQuote(quote, { signer })` | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
-| `relayStatus(requestId)`                                       | Relay request status from the Relay SDK request path                                                                            |
-| `quoteNearIntentsSource(input)`                                | Signed 1Click quote with an origin-chain deposit address and optional memo                                                      |
-| `submitNearIntentsDeposit(input)` / `nearIntentsStatus(input)` | Optionally register an origin tx, then track 1Click delivery/refund evidence                                                    |
-| `estimate({ amount, currency, platform? }, { includeEta? })`   | Base USDC market-rate estimate with an explicit `binding`; optionally skip historical ETA                                       |
-| `cashout(input, { signer })`                                   | Creates the order with any viem wallet; restricted methods then attach the Peer Pay merchant policy                             |
-| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then iterate `accessPolicyPaymentMethods` for follow-ups                         |
-| `prepareAccessPolicy(depositId, paymentMethod)`                | Prepare one post-deposit, method-scoped Peer Pay merchant policy transaction                                                    |
-| `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
-| `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
-| `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
-| `topUp(depositId, amount, { signer })`                         | Add USDC to a live order - same payee, same market rate                                                                         |
-| `buyer(address)`                                               | A buyer's track record from their intent history - who just matched your order?                                                 |
+| Verb                                                                    | What it does                                                                                                                    |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `prepareVenmoGmailConnect(payee, { returnUrl }?)`                       | Optional Venmo handle registration; returns the payee hash and hosted URL, with an optional app callback                        |
+| `openVenmoGmailConnect(payeeDetails)`                                   | Optional browser popup/tab; call directly from a click                                                                          |
+| `isVenmoGmailConnected(payeeDetails)`                                   | Read whether an active Gmail, Outlook or iCloud Mail receipt credential exists                                                  |
+| `capabilities()`                                                        | Sync discovery: Base USDC destination/default source, platforms × currencies × payee hints × amount bounds                      |
+| `capabilities({ includeRelaySources: true })`                           | Async discovery: adds live Relay SDK EVM source chains/tokens                                                                   |
+| `capabilities({ includeNearIntentsSources: true })`                     | Async discovery: adds live NEAR Intents 1Click source assets                                                                    |
+| `fillStats()`                                                           | Cached 30-day fill counts and median first-fill time per exact `platform:currency` pair or sorted multi-currency set            |
+| `quoteSource(input)` / `executeSourceQuote(quote, { signer })`          | Relay SDK EVM source routing into Base USDC before cashout                                                                      |
+| `relayStatus(requestId)`                                                | Relay request status from the Relay SDK request path                                                                            |
+| `quoteNearIntentsSource(input)`                                         | Signed 1Click quote with an origin-chain deposit address and optional memo                                                      |
+| `submitNearIntentsDeposit(input)` / `nearIntentsStatus(input)`          | Optionally register an origin tx, then track 1Click delivery/refund evidence                                                    |
+| `estimate({ amount, currency, platform?, fillMode? }, { includeEta? })` | Base USDC market-rate estimate with resolved sizing when a platform is supplied; ETA measures first fill                        |
+| `cashout(input, { signer })`                                            | Resolves fixed/flexible sizing, creates one deposit, then attaches required Peer Pay policies                                   |
+| `prepare(input)` / `finalizePreparedCashout(receipt)`                   | Preview `intentAmountRange` and unsigned txs; finalize the receipt and attach required access policies                          |
+| `prepareAccessPolicy(depositId, paymentMethod)`                         | Prepare one post-deposit, method-scoped Peer Pay merchant policy transaction                                                    |
+| `order(depositId)` / `orders(owner)`                                    | Resume any order from its id alone; list all orders for a wallet                                                                |
+| `watch(depositId)`                                                      | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
+| `withdraw(depositId, { signer, amount? })`                              | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
+| `topUp(depositId, amount, { signer })`                                  | Add USDC to a live order - same payee, same market rate                                                                         |
+| `buyer(address)`                                                        | A buyer's track record from their intent history - who just matched your order?                                                 |
 
 Base-USDC cashout, withdraw, and top-up have unsigned counterparts (`prepare`,
 `prepareWithdraw`, `prepareTopUp`). The unsigned path returns raw `txs[]` plus

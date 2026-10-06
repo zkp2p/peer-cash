@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { deriveCashOrder } from '../src/engine/orderState';
 import {
+  fillOptionsFromJson,
+  fillOptionsToJson,
+  cashFillOptionsJsonSchema,
   capabilitiesFromJson,
   capabilitiesToJson,
   cashoutResultFromJson,
@@ -817,5 +820,78 @@ describe('CashError codec', () => {
       txHashes: ['0xorigin'],
       transactions: { origin: [{ hash: '0xorigin', chainId: 10 }], destination: [] },
     });
+  });
+});
+
+describe('fixed sizing wire compatibility', () => {
+  it('round-trips current bounds on orders, estimates and unsigned plans', () => {
+    const range = { min: 300_000_000n, max: 300_000_000n };
+    const wireRange = { min: '300000000', max: '300000000' };
+    const fixedOrder = { ...order, intentAmountRange: range };
+    expect(orderToJson(fixedOrder).intentAmountRange).toEqual(wireRange);
+    expect(
+      orderFromJson(JSON.parse(JSON.stringify(orderToJson(fixedOrder)))).intentAmountRange,
+    ).toEqual(range);
+    const estimate: CashEstimate = {
+      kind: 'oracle-estimate',
+      currency: 'USD',
+      amount: 900_000_000n,
+      rate: 1,
+      receiveAmount: 900,
+      asOf: NOW,
+      intentAmountRange: range,
+    };
+    expect(estimateToJson(estimate).intentAmountRange).toEqual(wireRange);
+    expect(
+      estimateFromJson(JSON.parse(JSON.stringify(estimateToJson(estimate)))).intentAmountRange,
+    ).toEqual(range);
+    const prepared = {
+      txs: [],
+      steps: [],
+      register: { hashedOnchainIds: [] },
+      accessPolicyRequired: false,
+      accessPolicyPaymentMethods: [],
+      intentAmountRange: range,
+    };
+    expect(prepareResultToJson(prepared).intentAmountRange).toEqual(wireRange);
+    expect(
+      prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(prepared))))
+        .intentAmountRange,
+    ).toEqual(range);
+    expect(orderFromJson(orderToJson(order)).intentAmountRange).toBeUndefined();
+    const oldPrepared = prepareResultToJson(prepared);
+    delete oldPrepared.intentAmountRange;
+    expect(prepareResultFromJson(oldPrepared).intentAmountRange).toBeUndefined();
+  });
+
+  it('preserves the accepted amounts through the error codec', () => {
+    const error = errors.fixedAmountNotPreset(950_000_000n, [50_000_000n, 900_000_000n]);
+    expect(cashErrorFromJson(JSON.parse(JSON.stringify(cashErrorToJson(error)))).recovery).toEqual({
+      kind: 'select-fixed-amount',
+      allowedAmounts: ['50000000', '900000000'],
+    });
+  });
+});
+
+describe('fill option codecs', () => {
+  it('round-trips fixed, default and custom flexible inputs', () => {
+    expect(fillOptionsFromJson(fillOptionsToJson({ fillMode: 'fixed' }))).toEqual({
+      fillMode: 'fixed',
+    });
+    expect(fillOptionsFromJson({})).toEqual({});
+    const options = { intentAmountRange: { min: 1_000_000n, max: 10_000_000n } };
+    expect(fillOptionsToJson(options)).toEqual({
+      intentAmountRange: { min: '1000000', max: '10000000' },
+    });
+    expect(fillOptionsFromJson(fillOptionsToJson(options))).toEqual(options);
+  });
+
+  it.each([
+    { fillMode: 'unknown' },
+    { fillMode: 'fixed', intentAmountRange: { min: '1', max: '1' } },
+    { fillMode: 'fixed', intentAmount: '300000000' },
+    { intentAmountRange: { min: '10', max: '1' } },
+  ])('rejects invalid wire options %#', (options) => {
+    expect(cashFillOptionsJsonSchema.safeParse(options).success).toBe(false);
   });
 });

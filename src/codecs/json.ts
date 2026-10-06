@@ -7,6 +7,7 @@ import type { VenmoGmailConnectResult } from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
+import type { CashFillOptions } from '../client/fillPolicy';
 import type { CashEstimate } from '../client/estimate';
 import type { CashFillStats } from '../client/fillEta';
 import {
@@ -39,6 +40,8 @@ import type {
   WithdrawResult,
 } from '../client/createCashClient';
 import {
+  cashFillOptionsJsonSchema,
+  type CashFillOptionsJson,
   preparedVenmoGmailConnectJsonSchema,
   venmoGmailConnectResultJsonSchema,
   type PreparedVenmoGmailConnectJson,
@@ -96,6 +99,34 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T;
 }
 
+function rangeToJson(range: { min: bigint; max: bigint }) {
+  return { min: range.min.toString(), max: range.max.toString() };
+}
+
+function rangeFromJson(range: { min: string; max: string }) {
+  return { min: BigInt(range.min), max: BigInt(range.max) };
+}
+
+export function fillOptionsToJson(options: CashFillOptions): CashFillOptionsJson {
+  return cashFillOptionsJsonSchema.parse({
+    ...options,
+    ...(options.intentAmountRange !== undefined
+      ? { intentAmountRange: rangeToJson(options.intentAmountRange) }
+      : {}),
+  });
+}
+
+export function fillOptionsFromJson(json: unknown): CashFillOptions {
+  const parsed = cashFillOptionsJsonSchema.parse(json);
+  if (parsed.fillMode === 'fixed') return { fillMode: 'fixed' };
+  return {
+    ...(parsed.fillMode !== undefined ? { fillMode: parsed.fillMode } : {}),
+    ...(parsed.intentAmountRange !== undefined
+      ? { intentAmountRange: rangeFromJson(parsed.intentAmountRange) }
+      : {}),
+  };
+}
+
 // --- CashFill ---
 
 export function fillToJson(fill: CashFill): CashFillJson {
@@ -139,6 +170,9 @@ export function orderToJson(order: CashOrder): CashOrderJson {
   return cashOrderJsonSchema.parse(
     omitUndefined({
       depositId: order.depositId,
+      ...(order.intentAmountRange !== undefined
+        ? { intentAmountRange: rangeToJson(order.intentAmountRange) }
+        : {}),
       state: order.state,
       fills: order.fills.map(fillToJson),
       totalAmount: order.totalAmount.toString(),
@@ -170,6 +204,9 @@ export function orderFromJson(json: unknown): CashOrder {
     filledAmount: BigInt(parsed.filledAmount),
     pendingAmount: BigInt(parsed.pendingAmount),
     returnedAmount: BigInt(parsed.returnedAmount),
+    ...(parsed.intentAmountRange !== undefined
+      ? { intentAmountRange: rangeFromJson(parsed.intentAmountRange) }
+      : {}),
   }) as unknown as CashOrderData;
   return withExplain(data);
 }
@@ -180,6 +217,9 @@ export function estimateToJson(estimate: CashEstimate): CashEstimateJson {
   return omitUndefined({
     ...estimate,
     amount: estimate.amount.toString(),
+    ...(estimate.intentAmountRange !== undefined
+      ? { intentAmountRange: rangeToJson(estimate.intentAmountRange) }
+      : {}),
     source: estimate.source
       ? {
           ...estimate.source,
@@ -203,6 +243,9 @@ export function estimateFromJson(json: unknown): CashEstimate {
   const parsed = cashEstimateJsonSchema.parse(json);
   return omitUndefined({
     ...parsed,
+    ...(parsed.intentAmountRange !== undefined
+      ? { intentAmountRange: rangeFromJson(parsed.intentAmountRange) }
+      : {}),
     currency: parsed.currency as CurrencyType,
     amount: BigInt(parsed.amount),
     source: parsed.source
@@ -546,6 +589,9 @@ export function cashoutResultFromJson(json: unknown): CashoutResult {
 
 export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
   return {
+    ...(result.intentAmountRange !== undefined
+      ? { intentAmountRange: rangeToJson(result.intentAmountRange) }
+      : {}),
     txs: result.txs.map(preparedTxToJson),
     steps: result.steps.map(preparedStepToJson),
     register: result.register,
@@ -557,6 +603,9 @@ export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
 export function prepareResultFromJson(json: unknown): PrepareResult {
   const parsed = prepareResultJsonSchema.parse(json);
   return {
+    ...(parsed.intentAmountRange !== undefined
+      ? { intentAmountRange: rangeFromJson(parsed.intentAmountRange) }
+      : {}),
     txs: parsed.txs.map(preparedTxFromJson),
     steps: parsed.steps.map(preparedStepFromJson),
     register: parsed.register,
@@ -669,7 +718,9 @@ export function cashErrorFromJson(json: unknown): CashError {
   const parsed = cashErrorJsonSchema.parse(json);
   let recovery: CashErrorRecovery | undefined;
   if (parsed.recovery) {
-    if (parsed.recovery.kind === 'inspect-base-transaction') {
+    if (parsed.recovery.kind === 'select-fixed-amount') {
+      recovery = { kind: parsed.recovery.kind, allowedAmounts: parsed.recovery.allowedAmounts };
+    } else if (parsed.recovery.kind === 'inspect-base-transaction') {
       recovery = {
         kind: parsed.recovery.kind,
         transactionHash: parsed.recovery.transactionHash,

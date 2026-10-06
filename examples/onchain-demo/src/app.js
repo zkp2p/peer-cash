@@ -141,21 +141,22 @@ const refreshEstimate = () => {
   clearTimeout(estimateTimer);
   const amount = state.amountWei;
   const currency = safeCurrency();
-  if (!amount || amount < caps.amount.min || !currency) {
+  const platform = selectedCapability()?.platform;
+  if (!amount || amount < caps.amount.min || !currency || !platform) {
     state.estimate = null;
     state.estimateError = null;
     state.estimating = false;
     estimateKey = null;
     return;
   }
-  const key = `${amount}:${currency}`;
+  const key = `${amount}:${currency}:${platform}`;
   if (key === estimateKey && (state.estimate || state.estimating)) return;
   estimateKey = key;
   state.estimating = true;
   const seq = ++estimateSeq;
   estimateTimer = setTimeout(async () => {
     const settled = await cash
-      .estimate({ amount, currency }, { includeEta: false })
+      .estimate({ amount, currency, platform }, { includeEta: false })
       .then((estimate) => ({ estimate }), (error) => ({ error }));
     if (seq !== estimateSeq) return;
     state.estimate = settled.estimate ?? null;

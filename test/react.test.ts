@@ -482,3 +482,63 @@ describe('@zkp2p/cash/react', () => {
     }
   });
 });
+
+describe('fixed fill previews', () => {
+  it('invalidates a same-amount preview when fill mode or range changes', async () => {
+    const fixed = deferred<CashEstimate>();
+    const flexible = deferred<CashEstimate>();
+    const custom = deferred<CashEstimate>();
+    const estimateMock = vi
+      .fn()
+      .mockReturnValueOnce(fixed.promise)
+      .mockReturnValueOnce(flexible.promise)
+      .mockReturnValueOnce(custom.promise);
+    const client = { estimate: estimateMock } as unknown as CashClient;
+    let current: ReturnType<typeof useEstimate> | undefined;
+    let renderer: ReactTestRenderer;
+    function Harness(props: UseEstimateOptions) {
+      current = useEstimate(props);
+      return null;
+    }
+    const common = { client, amount: 900_000_000n, currency: 'USD' as const, platform: 'venmo' };
+    await act(async () => {
+      renderer = create(createElement(Harness, { ...common, fillMode: 'fixed' }));
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, { ...common, fillMode: 'flexible' }));
+    });
+    expect(estimateMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fillMode: 'flexible' }),
+      { includeEta: true },
+    );
+    await act(async () => {
+      flexible.resolve({
+        ...estimate(900_000_000n),
+        intentAmountRange: { min: 1_000_000n, max: 900_000_000n },
+      });
+    });
+    await act(async () => {
+      fixed.resolve({
+        ...estimate(900_000_000n),
+        intentAmountRange: { min: 300_000_000n, max: 300_000_000n },
+      });
+    });
+    expect(current?.estimate?.intentAmountRange?.min).toBe(1_000_000n);
+    const range = { min: 50_000_000n, max: 100_000_000n };
+    await act(async () => {
+      renderer.update(
+        createElement(Harness, { ...common, fillMode: 'flexible', intentAmountRange: range }),
+      );
+    });
+    expect(current?.estimate).toBeNull();
+    expect(estimateMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fillMode: 'flexible', intentAmountRange: range }),
+      { includeEta: true },
+    );
+    await act(async () => {
+      custom.resolve({ ...estimate(900_000_000n), intentAmountRange: range });
+    });
+    expect(current?.estimate?.intentAmountRange).toEqual(range);
+    await act(async () => renderer.unmount());
+  });
+});

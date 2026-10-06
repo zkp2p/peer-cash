@@ -232,13 +232,28 @@ const builtInCashTools = [
       type: 'object',
       properties: {
         amount: bigintString,
+        fillMode: {
+          type: 'string',
+          enum: ['fixed', 'flexible'],
+          description:
+            'Automatic fixed presets default for USD Venmo, PayPal and Cash App only. Other payout sets default to flexible. Fixed totals: 50-500 by 50; 600, 700, 750, 800, 900; 1000-10000 by 500. No manual ticket override.',
+        },
+        intentAmountRange: {
+          type: 'object',
+          description:
+            'Explicit flexible bounds in USDC base units. Incompatible with fillMode fixed.',
+          properties: { min: bigintString, max: bigintString },
+          required: ['min', 'max'],
+          additionalProperties: false,
+        },
         currency: {
           type: 'string',
           description: 'Fiat currency code from cash_capabilities, e.g. "USD"',
         },
         platform: {
           type: 'string',
-          description: 'Optional payout platform for platform-specific ETA sampling.',
+          description:
+            'Payout platform for default sizing and platform-specific first-fill ETA sampling.',
         },
         source: {
           type: 'object',
@@ -263,6 +278,10 @@ const builtInCashTools = [
           additionalProperties: false,
         },
       },
+      not: {
+        properties: { fillMode: { const: 'fixed' } },
+        required: ['fillMode', 'intentAmountRange'],
+      },
       required: ['amount', 'currency'],
       additionalProperties: false,
     },
@@ -285,6 +304,20 @@ const builtInCashTools = [
       type: 'object',
       properties: {
         amount: bigintString,
+        fillMode: {
+          type: 'string',
+          enum: ['fixed', 'flexible'],
+          description:
+            'Automatic fixed presets default for USD Venmo, PayPal and Cash App only. Other payout sets default to flexible. Fixed totals: 50-500 by 50; 600, 700, 750, 800, 900; 1000-10000 by 500. No manual ticket override.',
+        },
+        intentAmountRange: {
+          type: 'object',
+          description:
+            'Explicit flexible bounds in USDC base units. Incompatible with fillMode fixed.',
+          properties: { min: bigintString, max: bigintString },
+          required: ['min', 'max'],
+          additionalProperties: false,
+        },
         receive: {
           description:
             'Where the fiat should arrive: one payout leg, or an array of legs to offer several platforms (each platform at most once; consult cash_capabilities for each corridor binding point)',
@@ -298,6 +331,10 @@ const builtInCashTools = [
             },
           ],
         },
+      },
+      not: {
+        properties: { fillMode: { const: 'fixed' } },
+        required: ['fillMode', 'intentAmountRange'],
       },
       required: ['amount', 'receive'],
       additionalProperties: false,

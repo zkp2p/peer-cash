@@ -14,6 +14,23 @@ export const nonNegativeBigintString = z
 const positiveBigintString = z
   .string()
   .regex(/^[1-9]\d*$/, 'expected a positive decimal bigint string');
+export const cashIntentAmountRangeJsonSchema = z
+  .object({ min: positiveBigintString, max: positiveBigintString })
+  .refine((range) => BigInt(range.min) <= BigInt(range.max), 'min must not exceed max');
+
+export const cashFillOptionsJsonSchema = z.discriminatedUnion('fillMode', [
+  z.object({
+    fillMode: z.literal('fixed'),
+    intentAmountRange: z.never().optional(),
+    intentAmount: z.never().optional(),
+  }),
+  z.object({
+    fillMode: z.literal('flexible').optional(),
+    intentAmountRange: cashIntentAmountRangeJsonSchema.optional(),
+    intentAmount: z.never().optional(),
+  }),
+]);
+
 const nearIntentsAssetIdSchema = z.string().min(1).max(512);
 const nearIntentsAddressSchema = z.string().min(1).max(512);
 const isoTimestampSchema = z.string().datetime({ offset: true });
@@ -325,6 +342,7 @@ export const cashBuyerProfileJsonSchema = z.object({
 });
 
 export const cashOrderJsonSchema = z.object({
+  intentAmountRange: cashIntentAmountRangeJsonSchema.optional(),
   depositId: z.string(),
   state: cashOrderStateSchema,
   fills: z.array(cashFillJsonSchema),
@@ -345,6 +363,7 @@ export const cashOrderJsonSchema = z.object({
 });
 
 export const cashEstimateJsonSchema = z.object({
+  intentAmountRange: cashIntentAmountRangeJsonSchema.optional(),
   kind: z.literal('oracle-estimate'),
   binding: z.literal('intent-signal').optional(),
   currency: z.string(),
@@ -489,6 +508,7 @@ export const cashoutResultJsonSchema = z.object({
 });
 
 export const prepareResultJsonSchema = z.object({
+  intentAmountRange: cashIntentAmountRangeJsonSchema.optional(),
   txs: z.array(preparedTransactionJsonSchema),
   steps: z.array(cashPreparedStepJsonSchema),
   register: z.object({ hashedOnchainIds: z.array(z.string()) }),
@@ -560,6 +580,9 @@ const CASH_ERROR_CODES = defineCashErrorCodes([
   'UNSUPPORTED_PLATFORM_CURRENCY',
   'AMOUNT_BELOW_MINIMUM',
   'INVALID_INTENT_AMOUNT_RANGE',
+  'INVALID_FILL_CONFIGURATION',
+  'FIXED_CURRENCY_UNSUPPORTED',
+  'FIXED_AMOUNT_NOT_PRESET',
   'INVALID_PAYOUT_CURRENCIES',
   'INVALID_PAYOUT_PLATFORMS',
   'INVALID_REFERRAL_CODE',
@@ -608,6 +631,12 @@ const cashSourceRecoveryJsonShape = {
 } as const;
 
 export const cashErrorRecoveryJsonSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('select-fixed-amount'),
+      allowedAmounts: z.array(positiveBigintString),
+    })
+    .strict(),
   z
     .object({
       ...cashSourceRecoveryJsonShape,
@@ -671,6 +700,7 @@ export const cashErrorJsonSchema = z
   })
   .strict();
 
+export type CashFillOptionsJson = z.infer<typeof cashFillOptionsJsonSchema>;
 export type CashOrderJson = z.infer<typeof cashOrderJsonSchema>;
 export type NearIntentsTokenJson = z.infer<typeof nearIntentsTokenJsonSchema>;
 export type NearIntentsQuoteInputJson = z.infer<typeof nearIntentsQuoteInputJsonSchema>;

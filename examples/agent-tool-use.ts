@@ -9,6 +9,7 @@
  */
 import { createCashClient, usdc, isCashError } from '@zkp2p/cash';
 import {
+  fillOptionsFromJson,
   buyerProfileToJson,
   capabilitiesToJson,
   estimateToJson,
@@ -86,6 +87,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       case 'cash_estimate':
         return estimateToJson(
           await cash.estimate({
+            ...fillOptionsFromJson(args),
             amount: BigInt(args.amount as string),
             currency: args.currency as never,
             ...(args.platform ? { platform: args.platform as string } : {}),
@@ -100,6 +102,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
         // calls finalizePreparedCashout(receipt), then prepareAccessPolicy()
         // once per listed method.
         const input = {
+          ...fillOptionsFromJson(args),
           amount: BigInt(args.amount as string),
           receive: args.receive as never,
         };

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CurrencyType } from '../sdk-types';
 import type { CashClient } from '../client/createCashClient';
+import type { CashFillOptions } from '../client/fillPolicy';
 import type { CashEstimate, EstimateInput } from '../client/estimate';
 
 interface EstimateIdentity {
@@ -9,10 +10,13 @@ interface EstimateIdentity {
   currency: CurrencyType;
   platform: string | null | undefined;
   source: EstimateInput['source'] | null | undefined;
+  fillMode: EstimateInput['fillMode'];
+  rangeMin: bigint | undefined;
+  rangeMax: bigint | undefined;
   includeEta: boolean;
 }
 
-export interface UseEstimateOptions {
+export type UseEstimateOptions = CashFillOptions & {
   client: CashClient | null;
   /** Amount to convert, USDC base units. Estimate is skipped while null/0. */
   amount: bigint | null | undefined;
@@ -25,7 +29,7 @@ export interface UseEstimateOptions {
   includeEta?: boolean;
   /** Re-fetch interval (ms) so the displayed rate tracks the market. 0 = no auto-refresh. */
   refreshIntervalMs?: number;
-}
+};
 
 /**
  * Market-rate estimate for a screen-1 display. The figure is a `≈` estimate;
@@ -38,9 +42,13 @@ export function useEstimate({
   currency,
   platform,
   source,
+  fillMode,
+  intentAmountRange,
   includeEta = true,
   refreshIntervalMs = 0,
 }: UseEstimateOptions) {
+  const rangeMin = intentAmountRange?.min;
+  const rangeMax = intentAmountRange?.max;
   const [estimate, setEstimate] = useState<CashEstimate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -65,7 +73,17 @@ export function useEstimate({
       }
       return;
     }
-    const identity: EstimateIdentity = { client, amount, currency, platform, source, includeEta };
+    const identity: EstimateIdentity = {
+      client,
+      amount,
+      currency,
+      platform,
+      source,
+      fillMode,
+      rangeMin,
+      rangeMax,
+      includeEta,
+    };
     if (isCurrent()) {
       loadingIdentityRef.current = identity;
       errorIdentityRef.current = null;
@@ -79,7 +97,11 @@ export function useEstimate({
           currency,
           ...(platform ? { platform } : {}),
           ...(source ? { source } : {}),
-        },
+          ...(fillMode !== undefined ? { fillMode } : {}),
+          ...(rangeMin !== undefined && rangeMax !== undefined
+            ? { intentAmountRange: { min: rangeMin, max: rangeMax } }
+            : {}),
+        } as EstimateInput,
         { includeEta },
       );
       if (isCurrent()) {
@@ -97,7 +119,7 @@ export function useEstimate({
     } finally {
       if (isCurrent()) setIsLoading(false);
     }
-  }, [client, currency, amount, platform, source, includeEta]);
+  }, [client, currency, amount, platform, source, fillMode, rangeMin, rangeMax, includeEta]);
 
   useEffect(() => {
     latestRequestRef.current += 1;
@@ -107,7 +129,7 @@ export function useEstimate({
     setEstimate(null);
     setIsLoading(false);
     setError(null);
-  }, [client, amount, currency, platform, source, includeEta]);
+  }, [client, amount, currency, platform, source, fillMode, rangeMin, rangeMax, includeEta]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -128,6 +150,9 @@ export function useEstimate({
     identity.currency === currency &&
     identity.platform === platform &&
     identity.source === source &&
+    identity.fillMode === fillMode &&
+    identity.rangeMin === rangeMin &&
+    identity.rangeMax === rangeMax &&
     identity.includeEta === includeEta;
 
   return {
