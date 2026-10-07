@@ -11,7 +11,7 @@ import type { CurrencyType } from '../sdk-types';
 import { USDC_DECIMALS } from '../engine/constants';
 import { isMarketRateSupported } from '../engine/marketRate';
 import { errors } from './errors';
-import { MIN_CASHOUT_AMOUNT } from './capabilities';
+import { resolveIntentAmountRange, type CashFillOptions } from './fillPolicy';
 import { readFillEta, type CashFillEta } from './fillEta';
 import {
   quoteRelayToBaseUsdc,
@@ -39,7 +39,7 @@ const CHAINLINK_LATEST_ROUND_ABI = [
   },
 ] as const;
 
-export interface EstimateInput {
+export type EstimateInput = CashFillOptions & {
   /**
    * Without `source`, Base USDC base units. With `source`, Relay interprets
    * this according to `tradeType`; default `EXACT_INPUT` uses source-token units.
@@ -47,7 +47,7 @@ export interface EstimateInput {
   amount: bigint;
   /** Target fiat currency. */
   currency: CurrencyType;
-  /** Optional payout platform for pair-specific ETA sampling. */
+  /** Payout platform for default sizing and pair-specific first-fill ETA sampling. */
   platform?: string;
   /** Optional Relay EVM source asset. Omit for the current Base USDC default path. */
   source?: RelaySourceInput & {
@@ -58,7 +58,7 @@ export interface EstimateInput {
     /** Relay amount mode. Omit for the recommended exact source-input estimate. */
     tradeType?: 'EXACT_INPUT' | 'EXACT_OUTPUT' | 'EXPECTED_OUTPUT';
   };
-}
+};
 
 export interface EstimateOptions {
   /**
@@ -77,6 +77,8 @@ export interface EstimateOptions {
 const DEFAULT_MAX_STALENESS_SECONDS = 86_400;
 
 export interface CashEstimate {
+  /** Resolved bounds when a platform or fill configuration is supplied; absent on older wire data. */
+  intentAmountRange?: { min: bigint; max: bigint };
   /** Always `'oracle-estimate'`; inspect `binding` for when it becomes a maker floor. */
   kind: 'oracle-estimate';
   /** When this estimate becomes the deposit's binding maker floor. */
@@ -136,9 +138,9 @@ export async function readEstimate(
       : undefined;
 
   const amount = relayQuote?.outputAmount ?? input.amount;
-  if (amount < MIN_CASHOUT_AMOUNT) {
-    throw errors.amountBelowMinimum(amount, MIN_CASHOUT_AMOUNT);
-  }
+  const intentAmountRange = resolveIntentAmountRange(amount, input, [
+    { platform: input.platform ?? '', currencies: [currency] },
+  ]);
 
   const feedConfig = CHAINLINK_ORACLE_FEEDS[currency];
   const asOf = Math.floor(Date.now() / 1000);
@@ -178,6 +180,11 @@ export async function readEstimate(
   const estimate: CashEstimate = {
     kind: 'oracle-estimate',
     binding: 'intent-signal',
+    ...(input.platform !== undefined ||
+    input.fillMode !== undefined ||
+    input.intentAmountRange !== undefined
+      ? { intentAmountRange }
+      : {}),
     currency,
     amount,
     rate,

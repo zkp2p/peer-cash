@@ -170,3 +170,5 @@ oracle availability and each platform's currency catalog. The exact INR/CNY
 corridor set in production, preproduction, and staging is UPI/INR, Wise/INR,
 Alipay/CNY, Wise/CNY, and Revolut/CNY. All five use zero-spread oracle pricing
 bound at intent signal; currencies without an oracle config remain unsupported.
+
+Fixed fill sizing (breaking, unreleased after 0.7.2): USD Venmo/PayPal/Cash App default to automatic presets when all legs qualify. Other payout sets stay flexible. Pass fillMode: flexible for arbitrary totals. Explicit fixed mode accepts minChunkSize in USDC base units; usdc(50) preserves the presets. Preview with the same platform and fill options. See docs/fixed-fill-mode.md for migration, presets, custom increments and funding rules.

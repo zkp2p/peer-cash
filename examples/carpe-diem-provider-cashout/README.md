@@ -15,6 +15,10 @@ Cash order. It is the provider-side continuation of Carpe Diem's existing
 Carpe Diem remains authoritative for earned revenue and its withdrawal. Do not
 start Peer Cash from an off-chain earnings figure or an unconfirmed withdrawal.
 
+The adapter selects `fillMode: 'flexible'` because the exact-input route can
+produce arbitrary USDC totals. See [fixed sizing](../../docs/fixed-fill-mode.md)
+for integrations that offer preset totals instead.
+
 ## Wire it into the provider dashboard
 
 Install `@zkp2p/cash` and call the adapter after the connected wallet's

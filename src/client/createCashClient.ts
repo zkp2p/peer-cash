@@ -42,6 +42,7 @@ import {
   CASH_RESTRICTED_PLATFORMS,
 } from '../engine/constants';
 import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
+import { resolveIntentAmountRange, type CashFillOptions } from './fillPolicy';
 import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
 import { derivePayouts } from '../engine/payouts';
 import { deriveBuyerProfile } from '../engine/buyerProfile';
@@ -214,7 +215,7 @@ export interface CashMultiCurrencyLeg {
 /** One payout leg of a cash-out - single-currency or multi-currency. */
 export type CashReceiveLeg = CashLeg | CashMultiCurrencyLeg;
 
-export interface CashoutInput {
+export type CashoutInput = CashFillOptions & {
   /**
    * Amount to cash out. Without `source`, this is Base USDC base units. With
    * `source`, Relay interprets it according to `tradeType`; the default
@@ -235,9 +236,7 @@ export interface CashoutInput {
    * for whether a corridor binds at intent signal or deposit preparation.
    */
   receive: CashReceiveLeg | readonly [CashReceiveLeg, ...CashReceiveLeg[]];
-  /** Per-order min/max override (USDC base units). */
-  intentAmountRange?: { min: bigint; max: bigint };
-}
+};
 
 export interface SignerOptions {
   /** Any viem WalletClient with a Base account, including a local or external EOA. */
@@ -306,6 +305,8 @@ export interface CashoutResult {
 }
 
 export interface PrepareResult {
+  /** Resolved bounds; absent only in results serialized by older SDKs. */
+  intentAmountRange?: { min: bigint; max: bigint };
   /**
    * Unsigned transactions in submission order: `[approve, createDeposit]`.
    * Submit with any signer - agent wallet, AA bundler, server key. Drop the
@@ -470,6 +471,8 @@ function orderFingerprint(order: CashOrder): string {
     order.returnedAmount,
     order.intentCount ?? 0,
     order.nextActions.join('+'),
+    order.intentAmountRange?.min,
+    order.intentAmountRange?.max,
   ].join('|');
 }
 
@@ -530,6 +533,8 @@ function cashoutAccessPolicyPaymentMethods(
 
 /** The indexer aggregate fields both deposit queries share. */
 type DepositAggregates = {
+  intentAmountMin?: string | number | null;
+  intentAmountMax?: string | number | null;
   remainingDeposits?: string | number | null;
   outstandingIntentAmount?: string | number | null;
   totalAmountTaken?: string | number | null;
@@ -546,12 +551,15 @@ type DepositAggregatesWithQuality = DepositAggregates & {
 
 /** Map raw indexer deposit aggregates to `deriveCashOrder` options. */
 function depositOrderOptions(deposit: DepositAggregatesWithQuality): DeriveCashOrderOptions {
+  const min = toBigIntOrUndefined(deposit.intentAmountMin);
+  const max = toBigIntOrUndefined(deposit.intentAmountMax);
   const remaining = toBigIntOrUndefined(deposit.remainingDeposits);
   const outstanding = toBigIntOrUndefined(deposit.outstandingIntentAmount);
   const taken = toBigIntOrUndefined(deposit.totalAmountTaken);
   const withdrawn = toBigIntOrUndefined(deposit.totalWithdrawn);
   const updatedAt = deposit.updatedAt != null ? Number(deposit.updatedAt) : undefined;
   return {
+    ...(min !== undefined && max !== undefined ? { intentAmountRange: { min, max } } : {}),
     ...(remaining !== undefined ? { remainingAmount: remaining } : {}),
     ...(outstanding !== undefined ? { outstandingAmount: outstanding } : {}),
     ...(taken !== undefined ? { takenAmount: taken } : {}),
@@ -701,18 +709,15 @@ export function createCashClient(options: CashClientOptions): CashClient {
     input: CashoutInput,
     payoutInput: Omit<CashDepositInput, 'amount'> = validatePayout(input),
   ): CashDepositInput {
-    if (amount < MIN_CASHOUT_AMOUNT) {
-      throw errors.amountBelowMinimum(amount, MIN_CASHOUT_AMOUNT);
-    }
-    const range = input.intentAmountRange;
-    if (range && (range.min <= 0n || range.max < range.min || range.max > amount)) {
-      throw errors.invalidIntentAmountRange(amount, range.min, range.max);
-    }
-    return {
+    const intentAmountRange = resolveIntentAmountRange(
       amount,
-      ...payoutInput,
-      ...(range ? { intentAmountRange: range } : {}),
-    };
+      input,
+      payoutInput.payouts.map((payout) => ({
+        platform: payout.processorName,
+        currencies: payout.currencies ?? [payout.currency],
+      })),
+    );
+    return { amount, ...payoutInput, intentAmountRange };
   }
 
   async function buildDepositParams(client: Zkp2pClient, depositInput: CashDepositInput) {
@@ -1287,9 +1292,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           },
           options.relay,
         );
-        if (relayQuote.outputAmount < MIN_CASHOUT_AMOUNT) {
-          throw errors.amountBelowMinimum(relayQuote.outputAmount, MIN_CASHOUT_AMOUNT);
-        }
         const cashoutAmount = relayQuote.outputAmount;
         const depositInput = validateDepositInput(cashoutAmount, input, payoutInput);
         const params = await buildDepositParams(client, depositInput);
@@ -1388,6 +1390,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
         );
         const order = deriveCashOrder(resolved.compositeId, [], {
           remainingAmount: depositInput.amount,
+          intentAmountRange: params.intentAmountRange,
           status: 'ACTIVE',
         });
 
@@ -1470,6 +1473,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       );
       const order = deriveCashOrder(resolved.compositeId, [], {
         remainingAmount: depositInput.amount,
+        intentAmountRange: params.intentAmountRange,
         status: 'ACTIVE',
       });
 
@@ -1532,6 +1536,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
           },
         ],
         register: { hashedOnchainIds },
+        intentAmountRange: params.intentAmountRange,
         accessPolicyRequired: accessPolicyPaymentMethods.length > 0,
         accessPolicyPaymentMethods,
       };

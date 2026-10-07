@@ -111,6 +111,8 @@ export function isFillLive(fill: CashFill, nowSeconds: number): boolean {
 }
 
 export interface DeriveCashOrderOptions {
+  /** Current on-chain bounds, when available. */
+  intentAmountRange?: { min: bigint; max: bigint };
   /** Original deposit amount, when already computed (else derived from the parts below). */
   totalAmount?: bigint;
   /** `remainingDeposits` - currently available, unlocked balance. */
@@ -276,6 +278,9 @@ export function deriveCashOrder(
 
   return withExplain({
     depositId,
+    ...(options.intentAmountRange !== undefined
+      ? { intentAmountRange: options.intentAmountRange }
+      : {}),
     state,
     fills,
     totalAmount: total,

@@ -9,6 +9,11 @@ export type CashErrorCode =
   | 'UNSUPPORTED_PLATFORM_CURRENCY'
   | 'AMOUNT_BELOW_MINIMUM'
   | 'INVALID_INTENT_AMOUNT_RANGE'
+  | 'INVALID_FILL_CONFIGURATION'
+  | 'FIXED_CURRENCY_UNSUPPORTED'
+  | 'FIXED_AMOUNT_NOT_PRESET'
+  | 'INVALID_MIN_CHUNK_SIZE'
+  | 'FIXED_AMOUNT_UNSPLITTABLE'
   | 'INVALID_PAYOUT_CURRENCIES'
   | 'INVALID_PAYOUT_PLATFORMS'
   | 'INVALID_REFERRAL_CODE'
@@ -68,6 +73,11 @@ interface CashSourceRecoveryBase {
 }
 
 export type CashErrorRecovery =
+  | {
+      kind: 'select-fixed-amount';
+      /** Accepted Base-USDC totals, encoded as decimal base-unit strings. */
+      allowedAmounts: string[];
+    }
   | (CashSourceRecoveryBase & {
       kind: 'retry-base-usdc-cashout';
     })
@@ -181,6 +191,44 @@ export const errors = {
       message: `Intent amount range ${min}-${max} is invalid for a ${amount} base-unit cash-out.`,
       retryable: false,
       remediation: `Use a positive minimum no greater than the maximum, and a maximum no greater than the cash-out amount.`,
+    }),
+  invalidFillConfiguration: () =>
+    new CashError({
+      code: 'INVALID_FILL_CONFIGURATION',
+      message: 'Use automatic fixed sizing or a flexible range, without conflicting fill options.',
+      retryable: false,
+      remediation:
+        "Use minChunkSize only with fillMode: 'fixed', without intentAmount or intentAmountRange. Flexible mode accepts an optional intentAmountRange.",
+    }),
+  fixedCurrencyUnsupported: () =>
+    new CashError({
+      code: 'FIXED_CURRENCY_UNSUPPORTED',
+      message: 'Fixed cash-outs require USD on every payout leg.',
+      retryable: false,
+      remediation: "Offer USD only, or select fillMode: 'flexible'.",
+    }),
+  invalidMinChunkSize: () =>
+    new CashError({
+      code: 'INVALID_MIN_CHUNK_SIZE',
+      message: 'minChunkSize must be a whole-USDC increment from 1 through 500 USDC.',
+      retryable: false,
+      remediation: "Use fillMode: 'fixed' with minChunkSize in USDC base units, e.g. 25000000n.",
+    }),
+  fixedAmountUnsplittable: (amount: bigint, minChunkSize: bigint) =>
+    new CashError({
+      code: 'FIXED_AMOUNT_UNSPLITTABLE',
+      message: `${amount} Base-USDC units cannot be split with a ${minChunkSize}-unit chunk increment.`,
+      retryable: false,
+      remediation:
+        'Choose an exact multiple of minChunkSize that splits into chunks up to 500 USDC, with at most 3 payments below 1000 USDC or 20 otherwise. The total cannot exceed 10000 USDC.',
+    }),
+  fixedAmountNotPreset: (amount: bigint, allowedAmounts: readonly bigint[]) =>
+    new CashError({
+      code: 'FIXED_AMOUNT_NOT_PRESET',
+      message: `${amount} Base-USDC units is not an allowed fixed cash-out total.`,
+      retryable: false,
+      remediation: 'Select a total from recovery.allowedAmounts. Amounts are never rounded.',
+      recovery: { kind: 'select-fixed-amount', allowedAmounts: allowedAmounts.map(String) },
     }),
   invalidPayoutCurrencies: (platform: string, reason: string) =>
     new CashError({

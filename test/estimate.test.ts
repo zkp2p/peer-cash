@@ -206,7 +206,7 @@ describe('readEstimate', () => {
 
     const est = await readEstimate(
       mockPublicClient(0n),
-      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { fillMode: 'flexible', amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
       { indexerClient: indexerClient as never, environment: 'staging' },
     );
 
@@ -221,7 +221,7 @@ describe('readEstimate', () => {
 
     const est = await readEstimate(
       mockPublicClient(0n),
-      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { fillMode: 'flexible', amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
       { environment: 'staging', etaReader, includeEta: false },
     );
 
@@ -270,7 +270,7 @@ describe('readEstimate', () => {
 
     const est = await readEstimate(
       mockPublicClient(0n),
-      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { fillMode: 'flexible', amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
       { indexerClient: indexerClient as never, environment: 'staging' },
     );
 
@@ -304,7 +304,7 @@ describe('readEstimate', () => {
 
     const est = await readEstimate(
       mockPublicClient(0n),
-      { amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
+      { fillMode: 'flexible', amount: 1_000_000n, currency: 'USD', platform: 'venmo' },
       { indexerClient: indexerClient as never, environment: 'staging' },
     );
 

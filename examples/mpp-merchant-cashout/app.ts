@@ -87,6 +87,7 @@ export function createApp(options: AppOptions) {
       reserved = true;
 
       const prepared = await cash.prepare({
+        fillMode: 'flexible',
         amount,
         receive: {
           currency: options.cashout.currency,

@@ -108,6 +108,8 @@ export interface CashPayoutInfo {
  * by `depositId` alone - survives a closed tab, new device, or wallet reconnect.
  */
 export interface CashOrder {
+  /** Current on-chain bounds; unavailable on old serialized data or a receipt-only result. */
+  intentAmountRange?: { min: bigint; max: bigint };
   /** Composite deposit id (`escrow_onchainId`) - the resume key. */
   depositId: string;
   state: CashOrderState;

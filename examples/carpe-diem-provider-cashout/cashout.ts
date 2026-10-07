@@ -32,6 +32,7 @@ export function createCarpeDiemProviderCashout(referralCode: string) {
     }): Promise<CashEstimate> {
       return cash.estimate(
         {
+          fillMode: 'flexible',
           amount: input.amountDiem,
           currency: input.currency,
           source: {
@@ -54,6 +55,7 @@ export function createCarpeDiemProviderCashout(referralCode: string) {
     }): Promise<CashoutResult> {
       return cash.cashout(
         {
+          fillMode: 'flexible',
           amount: input.amountDiem,
           source: DIEM_SOURCE,
           receive: input.receive,

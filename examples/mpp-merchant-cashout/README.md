@@ -4,6 +4,10 @@ This example accepts Base USDC for a paid MPP resource, counts successful
 settlements, and prepares an unsigned Peer Cash plan once confirmed revenue
 reaches a threshold.
 
+The planner selects `fillMode: 'flexible'` to cash out arbitrary settled
+revenue, including fractions. See [fixed sizing](../../docs/fixed-fill-mode.md)
+for integrations that offer preset totals instead.
+
 MPP owns the incoming machine payment. Peer Cash starts a separate seller-side
 operation after settlement. It is not an MPP payment method and does not change
 the payer flow.
