@@ -879,6 +879,9 @@ describe('fill option codecs', () => {
       fillMode: 'fixed',
     });
     expect(fillOptionsFromJson({})).toEqual({});
+    const fixed = { fillMode: 'fixed' as const, minChunkSize: 25_000_000n };
+    expect(fillOptionsToJson(fixed)).toEqual({ fillMode: 'fixed', minChunkSize: '25000000' });
+    expect(fillOptionsFromJson(fillOptionsToJson(fixed))).toEqual(fixed);
     const options = { intentAmountRange: { min: 1_000_000n, max: 10_000_000n } };
     expect(fillOptionsToJson(options)).toEqual({
       intentAmountRange: { min: '1000000', max: '10000000' },
@@ -890,7 +893,15 @@ describe('fill option codecs', () => {
     { fillMode: 'unknown' },
     { fillMode: 'fixed', intentAmountRange: { min: '1', max: '1' } },
     { fillMode: 'fixed', intentAmount: '300000000' },
+    { minChunkSize: '25000000' },
+    { fillMode: 'flexible', minChunkSize: '25000000' },
+    { fillMode: 'fixed', minChunkSize: 'not-a-number' },
+    { fillMode: 'fixed', minChunkSize: '0' },
     { intentAmountRange: { min: '10', max: '1' } },
+    { intentAmountRange: { min: 'not-a-number', max: '100' } },
+    { intentAmountRange: { min: '1', max: '1.5' } },
+    { intentAmountRange: { min: '01', max: '100' } },
+    { intentAmountRange: { min: '1', max: '0100' } },
   ])('rejects invalid wire options %#', (options) => {
     expect(cashFillOptionsJsonSchema.safeParse(options).success).toBe(false);
   });

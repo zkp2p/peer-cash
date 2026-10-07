@@ -135,14 +135,18 @@ bound at intent signal; currencies without an oracle config remain unsupported.
 
 See [the INR/CNY migration notes](docs/lifecycle-and-recovery.md#inrcny-oracle-migration-breaking) before upgrading an existing integration.
 
-## Fill sizing
+## Fill sizing (breaking change)
 
-USD Venmo, PayPal and Cash App now default to [automatic fixed presets](docs/fixed-fill-mode.md)
+**Unreleased; requires the next minor release after 0.7.2.** Read the
+[migration guide](docs/fixed-fill-mode.md#breaking-change-from-072) before upgrading.
+USD Venmo, PayPal and Cash App default to [automatic fixed presets](docs/fixed-fill-mode.md)
 when every offered leg uses those rails: 900 USDC → 3 × 300; 10,000 → 20 × 500.
-Unlisted totals such as 650 and 950 reject before funding. Pass
+At the default increment, unlisted totals such as 650 and 950 reject before funding. Pass
 `fillMode: 'flexible'` to retain arbitrary totals and the previous flexible
 range. Other payout sets retain flexible defaults; explicit ranges remain supported.
 Use the same platform and fill options in `estimate()` to preview the bounds.
+For custom automatic sizing, pass `fillMode: 'fixed', minChunkSize: usdc(25)`:
+950 becomes 2 × 475. Omitting the increment or setting it to `usdc(50)` keeps the presets.
 
 ## Pick the right SDK
 

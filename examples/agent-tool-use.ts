@@ -167,8 +167,11 @@ console.log(
 console.log('  method-scoped policies are reported by cash_cashout.accessPolicyPaymentMethods\n');
 
 const est = await executeTool('cash_estimate', {
-  amount: usdc(250).toString(),
-  currency: 'EUR',
+  amount: usdc(950).toString(),
+  currency: 'USD',
+  platform: 'venmo',
+  fillMode: 'fixed',
+  minChunkSize: usdc(25).toString(), // Automatic 2 × 475; omit for the default presets.
 });
 console.log('cash_estimate →', JSON.stringify(est), '\n');
 

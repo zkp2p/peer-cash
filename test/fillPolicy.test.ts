@@ -46,6 +46,9 @@ describe('fixed cash-out policy', () => {
       min: usdc(chunk),
       max: usdc(chunk),
     });
+    expect(
+      resolveIntentAmountRange(usdc(total), { fillMode: 'fixed', minChunkSize: usdc(50) }, venmo),
+    ).toEqual({ min: usdc(chunk), max: usdc(chunk) });
   });
 
   it('rejects every unlisted $50 step, including mathematically divisible totals', () => {
@@ -141,9 +144,83 @@ describe('fixed cash-out policy', () => {
     { fillMode: 'unknown' },
     { fillMode: 'fixed', intentAmountRange: { min: 1n, max: 1n } },
     { fillMode: 'fixed', intentAmount: usdc(300) },
+    { minChunkSize: usdc(25) },
+    { fillMode: 'flexible', minChunkSize: usdc(25) },
   ])('rejects invalid configuration %# from JavaScript callers', (options) => {
     expect(() => resolveIntentAmountRange(usdc(900), options as CashFillOptions, venmo)).toThrow(
       expect.objectContaining({ code: 'INVALID_FILL_CONFIGURATION' }),
     );
   });
+});
+
+describe('custom fixed chunk increments', () => {
+  it.each([
+    [25, 25, 25],
+    [75, 25, 75],
+    [525, 25, 175],
+    [650, 25, 325],
+    [900, 25, 450],
+    [950, 25, 475],
+    [10000, 25, 500],
+    [600, 100, 300],
+    [900, 75, 450],
+    [1500, 300, 300],
+    [10000, 500, 500],
+  ])('sizes $%i with a $%i increment into $%i chunks', (total, increment, chunk) => {
+    expect(
+      resolveIntentAmountRange(
+        usdc(total),
+        {
+          fillMode: 'fixed',
+          minChunkSize: usdc(increment),
+        },
+        venmo,
+      ),
+    ).toEqual({ min: usdc(chunk), max: usdc(chunk) });
+  });
+
+  it.each([0n, 24_000_000n, 575_000_000n, 950_000_001n, 10_500_000_000n])(
+    'rejects %s rather than rounding or producing too many payments',
+    (amount) => {
+      expect(() =>
+        resolveIntentAmountRange(
+          amount,
+          {
+            fillMode: 'fixed',
+            minChunkSize: usdc(25),
+          },
+          venmo,
+        ),
+      ).toThrow(expect.objectContaining({ code: 'FIXED_AMOUNT_UNSPLITTABLE' }));
+    },
+  );
+
+  it('does not relax the default presets when 50 is explicitly supplied', () => {
+    expect(() =>
+      resolveIntentAmountRange(
+        usdc(950),
+        {
+          fillMode: 'fixed',
+          minChunkSize: usdc(50),
+        },
+        venmo,
+      ),
+    ).toThrow(expect.objectContaining({ code: 'FIXED_AMOUNT_NOT_PRESET' }));
+  });
+
+  it.each([0n, -1n, 25_000_001n, 501_000_000n, null, '25000000', 25])(
+    'rejects invalid increment %s',
+    (minChunkSize) => {
+      expect(() =>
+        resolveIntentAmountRange(
+          usdc(900),
+          {
+            fillMode: 'fixed',
+            minChunkSize,
+          } as CashFillOptions,
+          venmo,
+        ),
+      ).toThrow(expect.objectContaining({ code: 'INVALID_MIN_CHUNK_SIZE' }));
+    },
+  );
 });

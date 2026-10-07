@@ -51,6 +51,7 @@ leg qualifies; other payout sets remain flexible. Use the same platform and
 fill options in `estimate()`, and inspect `intentAmountRange` before signing.
 Small smoke tests and arbitrary totals require `fillMode: 'flexible'`.
 Read [the preset and recovery reference](../../docs/fixed-fill-mode.md).
+Explicit fixed mode accepts `minChunkSize` in USDC base units; `usdc(50)` preserves the presets.
 
 ## 2. Decision tree - entry point by runtime
 

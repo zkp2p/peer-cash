@@ -484,6 +484,55 @@ describe('@zkp2p/cash/react', () => {
 });
 
 describe('fixed fill previews', () => {
+  it('discards a pending preview after the minimum chunk increment changes', async () => {
+    const defaultPreview = deferred<CashEstimate>();
+    const customPreview = deferred<CashEstimate>();
+    const estimateMock = vi
+      .fn()
+      .mockReturnValueOnce(defaultPreview.promise)
+      .mockReturnValueOnce(customPreview.promise);
+    const client = { estimate: estimateMock } as unknown as CashClient;
+    let current: ReturnType<typeof useEstimate> | undefined;
+    let renderer: ReactTestRenderer;
+    function Harness(props: UseEstimateOptions) {
+      current = useEstimate(props);
+      return null;
+    }
+    const common = {
+      client,
+      amount: 900_000_000n,
+      currency: 'USD' as const,
+      platform: 'venmo',
+      fillMode: 'fixed' as const,
+    };
+    await act(async () => {
+      renderer = create(createElement(Harness, common));
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, { ...common, minChunkSize: 25_000_000n }));
+    });
+    expect(current?.estimate).toBeNull();
+    expect(estimateMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fillMode: 'fixed',
+        minChunkSize: 25_000_000n,
+      }),
+      { includeEta: true },
+    );
+    const customRange = { min: 450_000_000n, max: 450_000_000n };
+    await act(async () => {
+      customPreview.resolve({ ...estimate(900_000_000n), intentAmountRange: customRange });
+    });
+    await act(async () => {
+      defaultPreview.resolve({
+        ...estimate(900_000_000n),
+        intentAmountRange: { min: 300_000_000n, max: 300_000_000n },
+      });
+    });
+    expect(current?.estimate?.intentAmountRange).toEqual(customRange);
+    await act(async () => renderer.unmount());
+  });
+
   it('invalidates a same-amount preview when fill mode or range changes', async () => {
     const fixed = deferred<CashEstimate>();
     const flexible = deferred<CashEstimate>();

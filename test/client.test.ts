@@ -3283,6 +3283,44 @@ describe('typed errors', () => {
 });
 
 describe('automatic fixed sizing', () => {
+  it('uses a custom increment consistently and rejects unsplittable totals before funding', async () => {
+    const cash = client();
+    const fill = { fillMode: 'fixed' as const, minChunkSize: 25_000_000n };
+    const receive = { platform: 'venmo', currency: 'USD' as const, payee: '@seller' };
+    await expect(
+      cash.cashout({ amount: 575_000_000n, receive, ...fill }, { signer }),
+    ).rejects.toMatchObject({ code: 'FIXED_AMOUNT_UNSPLITTABLE' });
+    expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+    expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+
+    const amount = 950_000_000n;
+    const range = { min: 475_000_000n, max: 475_000_000n };
+    mockInstance.prepareCreateDeposit.mockResolvedValue({
+      prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
+    });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+    expect(
+      (
+        await cash.estimate(
+          { amount, currency: 'USD', platform: 'venmo', ...fill },
+          { includeEta: false },
+        )
+      ).intentAmountRange,
+    ).toEqual(range);
+    expect((await cash.prepare({ amount, receive, ...fill })).intentAmountRange).toEqual(range);
+    expect(
+      (await cash.cashout({ amount, receive, ...fill }, { signer })).order.intentAmountRange,
+    ).toEqual(range);
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ amount, intentAmountRange: range }),
+    );
+  });
+
   it.each(['venmo', 'paypal', 'cashapp'])(
     'uses the same $900 plan for %s estimate, prepare and signed cashout',
     async (platform) => {

@@ -11,6 +11,7 @@ interface EstimateIdentity {
   platform: string | null | undefined;
   source: EstimateInput['source'] | null | undefined;
   fillMode: EstimateInput['fillMode'];
+  minChunkSize: bigint | undefined;
   rangeMin: bigint | undefined;
   rangeMax: bigint | undefined;
   includeEta: boolean;
@@ -43,6 +44,7 @@ export function useEstimate({
   platform,
   source,
   fillMode,
+  minChunkSize,
   intentAmountRange,
   includeEta = true,
   refreshIntervalMs = 0,
@@ -80,6 +82,7 @@ export function useEstimate({
       platform,
       source,
       fillMode,
+      minChunkSize,
       rangeMin,
       rangeMax,
       includeEta,
@@ -98,6 +101,7 @@ export function useEstimate({
           ...(platform ? { platform } : {}),
           ...(source ? { source } : {}),
           ...(fillMode !== undefined ? { fillMode } : {}),
+          ...(minChunkSize !== undefined ? { minChunkSize } : {}),
           ...(rangeMin !== undefined && rangeMax !== undefined
             ? { intentAmountRange: { min: rangeMin, max: rangeMax } }
             : {}),
@@ -119,7 +123,18 @@ export function useEstimate({
     } finally {
       if (isCurrent()) setIsLoading(false);
     }
-  }, [client, currency, amount, platform, source, fillMode, rangeMin, rangeMax, includeEta]);
+  }, [
+    client,
+    currency,
+    amount,
+    platform,
+    source,
+    fillMode,
+    minChunkSize,
+    rangeMin,
+    rangeMax,
+    includeEta,
+  ]);
 
   useEffect(() => {
     latestRequestRef.current += 1;
@@ -129,7 +144,18 @@ export function useEstimate({
     setEstimate(null);
     setIsLoading(false);
     setError(null);
-  }, [client, amount, currency, platform, source, fillMode, rangeMin, rangeMax, includeEta]);
+  }, [
+    client,
+    amount,
+    currency,
+    platform,
+    source,
+    fillMode,
+    minChunkSize,
+    rangeMin,
+    rangeMax,
+    includeEta,
+  ]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -151,6 +177,7 @@ export function useEstimate({
     identity.platform === platform &&
     identity.source === source &&
     identity.fillMode === fillMode &&
+    identity.minChunkSize === minChunkSize &&
     identity.rangeMin === rangeMin &&
     identity.rangeMax === rangeMax &&
     identity.includeEta === includeEta;

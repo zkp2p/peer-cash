@@ -13,7 +13,7 @@ export const nonNegativeBigintString = z
 
 const positiveBigintString = z
   .string()
-  .regex(/^[1-9]\d*$/, 'expected a positive decimal bigint string');
+  .regex(/^[1-9]\d*$/, { message: 'expected a positive decimal bigint string', abort: true });
 export const cashIntentAmountRangeJsonSchema = z
   .object({ min: positiveBigintString, max: positiveBigintString })
   .refine((range) => BigInt(range.min) <= BigInt(range.max), 'min must not exceed max');
@@ -21,11 +21,13 @@ export const cashIntentAmountRangeJsonSchema = z
 export const cashFillOptionsJsonSchema = z.discriminatedUnion('fillMode', [
   z.object({
     fillMode: z.literal('fixed'),
+    minChunkSize: positiveBigintString.optional(),
     intentAmountRange: z.never().optional(),
     intentAmount: z.never().optional(),
   }),
   z.object({
     fillMode: z.literal('flexible').optional(),
+    minChunkSize: z.never().optional(),
     intentAmountRange: cashIntentAmountRangeJsonSchema.optional(),
     intentAmount: z.never().optional(),
   }),
@@ -583,6 +585,8 @@ const CASH_ERROR_CODES = defineCashErrorCodes([
   'INVALID_FILL_CONFIGURATION',
   'FIXED_CURRENCY_UNSUPPORTED',
   'FIXED_AMOUNT_NOT_PRESET',
+  'INVALID_MIN_CHUNK_SIZE',
+  'FIXED_AMOUNT_UNSPLITTABLE',
   'INVALID_PAYOUT_CURRENCIES',
   'INVALID_PAYOUT_PLATFORMS',
   'INVALID_REFERRAL_CODE',

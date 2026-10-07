@@ -87,6 +87,7 @@ legs qualify. Pass the platform to `estimate()` and inspect `intentAmountRange`.
 Unlisted totals reject before funding; use `fillMode: 'flexible'` for arbitrary
 amounts and small smoke tests. Other payout sets keep flexible defaults.
 See [the preset table and recovery rules](docs/fixed-fill-mode.md).
+Custom fixed increments use `minChunkSize` in USDC base units; `usdc(50)` preserves the presets.
 
 ## The loop
 

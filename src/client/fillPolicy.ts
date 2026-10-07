@@ -4,8 +4,17 @@ import { errors } from './errors';
 
 /** Fixed sizing is automatic; raw ranges belong to flexible mode only. */
 export type CashFillOptions =
-  | { fillMode: 'fixed'; intentAmountRange?: never }
-  | { fillMode?: 'flexible'; intentAmountRange?: { min: bigint; max: bigint } };
+  | {
+      fillMode: 'fixed';
+      /** Minimum chunk and chunk increment in USDC base units. Defaults to 50 USDC. */
+      minChunkSize?: bigint;
+      intentAmountRange?: never;
+    }
+  | {
+      fillMode?: 'flexible';
+      minChunkSize?: never;
+      intentAmountRange?: { min: bigint; max: bigint };
+    };
 
 const DEFAULT_FIXED_PLATFORMS = new Set(['venmo', 'paypal', 'cashapp']);
 const USDC = 1_000_000n;
@@ -37,6 +46,7 @@ export function resolveIntentAmountRange(
       options.fillMode !== 'fixed' &&
       options.fillMode !== 'flexible') ||
     'intentAmount' in options ||
+    (options.minChunkSize !== undefined && options.fillMode !== 'fixed') ||
     (options.fillMode === 'fixed' && options.intentAmountRange !== undefined)
   ) {
     throw errors.invalidFillConfiguration();
@@ -55,6 +65,28 @@ export function resolveIntentAmountRange(
   if (fixed) {
     if (payouts.some((payout) => payout.currencies.some((currency) => currency !== 'USD'))) {
       throw errors.fixedCurrencyUnsupported();
+    }
+    const minChunkSize = options.minChunkSize === undefined ? 50n * USDC : options.minChunkSize;
+    if (
+      typeof minChunkSize !== 'bigint' ||
+      minChunkSize <= 0n ||
+      minChunkSize > 500n * USDC ||
+      minChunkSize % USDC !== 0n
+    ) {
+      throw errors.invalidMinChunkSize();
+    }
+    if (minChunkSize !== 50n * USDC) {
+      if (amount >= minChunkSize && amount <= 10_000n * USDC) {
+        const maxPayments = amount < 1_000n * USDC ? 3n : 20n;
+        for (let payments = 1n; payments <= maxPayments; payments++) {
+          if (amount % payments !== 0n) continue;
+          const chunk = amount / payments;
+          if (chunk <= 500n * USDC && chunk % minChunkSize === 0n) {
+            return { min: chunk, max: chunk };
+          }
+        }
+      }
+      throw errors.fixedAmountUnsplittable(amount, minChunkSize);
     }
     const chunk = FIXED_CHUNK_BY_TOTAL.get(amount);
     if (chunk === undefined) {

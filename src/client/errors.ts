@@ -12,6 +12,8 @@ export type CashErrorCode =
   | 'INVALID_FILL_CONFIGURATION'
   | 'FIXED_CURRENCY_UNSUPPORTED'
   | 'FIXED_AMOUNT_NOT_PRESET'
+  | 'INVALID_MIN_CHUNK_SIZE'
+  | 'FIXED_AMOUNT_UNSPLITTABLE'
   | 'INVALID_PAYOUT_CURRENCIES'
   | 'INVALID_PAYOUT_PLATFORMS'
   | 'INVALID_REFERRAL_CODE'
@@ -193,10 +195,10 @@ export const errors = {
   invalidFillConfiguration: () =>
     new CashError({
       code: 'INVALID_FILL_CONFIGURATION',
-      message: 'Use automatic fixed sizing or a flexible range, without an intentAmount override.',
+      message: 'Use automatic fixed sizing or a flexible range, without conflicting fill options.',
       retryable: false,
       remediation:
-        "Pass fillMode: 'fixed' without a range, or fillMode: 'flexible' with an optional intentAmountRange.",
+        "Use minChunkSize only with fillMode: 'fixed', without intentAmount or intentAmountRange. Flexible mode accepts an optional intentAmountRange.",
     }),
   fixedCurrencyUnsupported: () =>
     new CashError({
@@ -204,6 +206,21 @@ export const errors = {
       message: 'Fixed cash-outs require USD on every payout leg.',
       retryable: false,
       remediation: "Offer USD only, or select fillMode: 'flexible'.",
+    }),
+  invalidMinChunkSize: () =>
+    new CashError({
+      code: 'INVALID_MIN_CHUNK_SIZE',
+      message: 'minChunkSize must be a whole-USDC increment from 1 through 500 USDC.',
+      retryable: false,
+      remediation: "Use fillMode: 'fixed' with minChunkSize in USDC base units, e.g. 25000000n.",
+    }),
+  fixedAmountUnsplittable: (amount: bigint, minChunkSize: bigint) =>
+    new CashError({
+      code: 'FIXED_AMOUNT_UNSPLITTABLE',
+      message: `${amount} Base-USDC units cannot be split with a ${minChunkSize}-unit chunk increment.`,
+      retryable: false,
+      remediation:
+        'Choose an exact multiple of minChunkSize that splits into chunks up to 500 USDC, with at most 3 payments below 1000 USDC or 20 otherwise. The total cannot exceed 10000 USDC.',
     }),
   fixedAmountNotPreset: (amount: bigint, allowedAmounts: readonly bigint[]) =>
     new CashError({

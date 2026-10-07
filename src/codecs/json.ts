@@ -110,6 +110,9 @@ function rangeFromJson(range: { min: string; max: string }) {
 export function fillOptionsToJson(options: CashFillOptions): CashFillOptionsJson {
   return cashFillOptionsJsonSchema.parse({
     ...options,
+    ...(options.minChunkSize !== undefined
+      ? { minChunkSize: options.minChunkSize.toString() }
+      : {}),
     ...(options.intentAmountRange !== undefined
       ? { intentAmountRange: rangeToJson(options.intentAmountRange) }
       : {}),
@@ -118,7 +121,12 @@ export function fillOptionsToJson(options: CashFillOptions): CashFillOptionsJson
 
 export function fillOptionsFromJson(json: unknown): CashFillOptions {
   const parsed = cashFillOptionsJsonSchema.parse(json);
-  if (parsed.fillMode === 'fixed') return { fillMode: 'fixed' };
+  if (parsed.fillMode === 'fixed') {
+    return {
+      fillMode: 'fixed',
+      ...(parsed.minChunkSize !== undefined ? { minChunkSize: BigInt(parsed.minChunkSize) } : {}),
+    };
+  }
   return {
     ...(parsed.fillMode !== undefined ? { fillMode: parsed.fillMode } : {}),
     ...(parsed.intentAmountRange !== undefined

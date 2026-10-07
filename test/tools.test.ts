@@ -111,11 +111,15 @@ it('exposes fixed mode and forbids a fixed-mode range in both planning tools', (
     expect(schema).toMatchObject({
       properties: {
         fillMode: { enum: ['fixed', 'flexible'] },
+        minChunkSize: { type: 'string', pattern: '^[1-9][0-9]*$' },
         intentAmountRange: { required: ['min', 'max'] },
       },
       not: {
         properties: { fillMode: { const: 'fixed' } },
         required: ['fillMode', 'intentAmountRange'],
+      },
+      dependencies: {
+        minChunkSize: { properties: { fillMode: { const: 'fixed' } }, required: ['fillMode'] },
       },
     });
   }
