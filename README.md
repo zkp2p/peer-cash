@@ -152,6 +152,9 @@ arbitrary protocol operations.
 
 | Verb                                                           | What it does                                                                                                                    |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `prepareXMoneyConnect(payee, { returnUrl }?)`                  | Register an X username and prepare its hosted receipt-inbox link                                                                |
+| `openXMoneyConnect(identity)`                                  | Browser popup/tab; call directly from a click with the prepared identity                                                        |
+| `isXMoneyConnected(payeeDetails)`                              | Read whether an active Gmail, Outlook or iCloud receipt credential exists                                                       |
 | `prepareVenmoGmailConnect(payee, { returnUrl }?)`              | Optional Venmo handle registration; returns the payee hash and hosted URL, with an optional app callback                        |
 | `openVenmoGmailConnect(payeeDetails)`                          | Optional browser popup/tab; call directly from a click                                                                          |
 | `isVenmoGmailConnected(payeeDetails)`                          | Read whether an active Gmail, Outlook or iCloud Mail receipt credential exists                                                  |
@@ -192,6 +195,24 @@ Order reads fail closed against the same active catalog. If any method on an
 indexed deposit is unsupported, `orders()` excludes the whole deposit and
 `order()` returns `ORDER_NOT_FOUND`; Peer Cash never partially reclassifies a
 mixed historical deposit.
+
+## Optional X Money receipt linking
+
+`prepareXMoneyConnect(handle, { returnUrl }?)` registers an X username and returns
+`{ payeeDetails, payeeUsername, url }`. From a separate click, call
+`openXMoneyConnect(link)`. Native apps open `link.url` themselves. Re-check
+`isXMoneyConnected(link.payeeDetails)` on return or dismissal; only an active
+Gmail, Outlook or iCloud Mail credential counts as linked. Status errors reject.
+
+The hosted `/connect/xmoney` page must be deployed before enabling the flow.
+Enable X Money email notifications and receive a payment before connecting.
+The signed receipt must match the registered X account. Account identity stays
+in the URL fragment; partners never receive mailbox tokens or passwords.
+`XMoneyConnectError.code` preserves hosted errors. Configure branding through
+`createCashClient({ environment, xmoney: { appearance, popup } })`.
+Re-prepare when the username changes. Cash-out does not require linking.
+Prepared links and results have `preparedXMoneyConnectToJson/FromJson` and
+`xMoneyConnectResultToJson/FromJson` codecs.
 
 ## Optional Venmo receipt linking
 

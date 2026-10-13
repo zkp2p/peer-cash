@@ -3,7 +3,7 @@
  * as decimal strings; `parse*` validates with the zod schema and re-attaches
  * derived behavior (`order.explain()`).
  */
-import type { VenmoGmailConnectResult } from '@zkp2p/sdk';
+import type { VenmoGmailConnectResult, XMoneyConnectResult } from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction } from '../sdk-types';
 import type { CashBuyerProfile, CashFill, CashOrder } from '../engine/types';
 import { withExplain, type CashOrderData } from '../engine/orderState';
@@ -32,6 +32,7 @@ import type {
 import { CashError, type CashErrorRecovery, type CashErrorShape } from '../client/errors';
 import type {
   PreparedVenmoGmailConnect,
+  PreparedXMoneyConnect,
   CashPreparedStep,
   CashoutResult,
   PrepareResult,
@@ -40,6 +41,10 @@ import type {
 } from '../client/createCashClient';
 import {
   preparedVenmoGmailConnectJsonSchema,
+  preparedXMoneyConnectJsonSchema,
+  xMoneyConnectResultJsonSchema,
+  type PreparedXMoneyConnectJson,
+  type XMoneyConnectResultJson,
   venmoGmailConnectResultJsonSchema,
   type PreparedVenmoGmailConnectJson,
   type VenmoGmailConnectResultJson,
@@ -777,4 +782,21 @@ export function venmoGmailConnectResultToJson(
 export function venmoGmailConnectResultFromJson(json: unknown): VenmoGmailConnectResult {
   const parsed = venmoGmailConnectResultJsonSchema.parse(json);
   return { payeeDetails: parsed.payeeDetails as VenmoGmailConnectResult['payeeDetails'] };
+}
+
+export function preparedXMoneyConnectToJson(
+  value: PreparedXMoneyConnect,
+): PreparedXMoneyConnectJson {
+  return preparedXMoneyConnectJsonSchema.parse(value);
+}
+export function preparedXMoneyConnectFromJson(json: unknown): PreparedXMoneyConnect {
+  const parsed = preparedXMoneyConnectJsonSchema.parse(json);
+  return { ...parsed, payeeDetails: parsed.payeeDetails as PreparedXMoneyConnect['payeeDetails'] };
+}
+export function xMoneyConnectResultToJson(value: XMoneyConnectResult): XMoneyConnectResultJson {
+  return xMoneyConnectResultJsonSchema.parse(value);
+}
+export function xMoneyConnectResultFromJson(json: unknown): XMoneyConnectResult {
+  const parsed = xMoneyConnectResultJsonSchema.parse(json);
+  return { payeeDetails: parsed.payeeDetails as XMoneyConnectResult['payeeDetails'] };
 }

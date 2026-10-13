@@ -12,6 +12,16 @@
 
 Key facts:
 
+- Optional X Money receipt linking: prepareXMoneyConnect(handle, { returnUrl }?)
+  returns { payeeDetails, payeeUsername, url }; call openXMoneyConnect(link)
+  from a separate click, or open link.url in a native browser. Re-check
+  isXMoneyConnected(link.payeeDetails) after return or dismissal. Only an
+  active Gmail, Outlook or iCloud receipt credential is linked; errors reject.
+  X Money email notifications and a signed received-payment receipt are required.
+  Partners receive no mailbox credentials. Deploy /connect/xmoney before use.
+  Branding uses xmoney: { appearance, popup }; errors use XMoneyConnectError.
+  Re-prepare after a username change; cash-out itself does not require linking.
+
 - Optional Venmo receipt linking: prepareVenmoGmailConnect(handle) registers
   the selected handle and returns { payeeDetails, url }. From a separate click,
   openVenmoGmailConnect(payeeDetails) opens the environment's hosted flow.
@@ -64,7 +74,7 @@ Key facts:
 - X Money supports USD with `platform: 'xmoney'`. Raw payees such as
   '@YourHandle' become 'yourhandle'; structured offchainId values must already
   be normalized. The receiving account must have X Money enabled; registration
-  does not verify account existence or enrollment. No identity attestation or
+  verifies X account existence, but not X Money enrollment. No identity attestation or
   Peer Pay merchant policy is required.
 - UPI/INR is available without feature flags. For example, use
   `createCashClient({ environment: 'preproduction' })`.

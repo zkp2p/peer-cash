@@ -189,7 +189,7 @@ merchant payments are unsupported.
 X Money accepts `receive: { platform: 'xmoney', currency: 'USD', payee: '@YourHandle' }`.
 Raw handles normalize to the bare lowercase username. Structured payee data must
 already use `offchainId: 'yourhandle'`. Confirm that the receiving account has
-X Money enabled: registration does not verify account existence or enrollment.
+X Money enabled: registration verifies X account existence, but not X Money enrollment.
 No identity attestation or Peer Pay merchant policy is required.
 
 ## 4. Order management - indexer-native
@@ -283,6 +283,24 @@ using the intended live Base RPC. Require a positive finite rate,
 old and not in the future. Record the observation time and selected chain,
 then stop before funding if the read fails. Unit-test fixtures prove routing,
 not live availability. Use the pinned SDK oracle feed catalog for the feed address.
+
+## Optional X Money receipt linking
+
+`prepareXMoneyConnect(handle, { returnUrl }?)` registers an X username and returns
+`{ payeeDetails, payeeUsername, url }`. From a separate click, call
+`openXMoneyConnect(link)`. Native apps open `link.url` themselves. Re-check
+`isXMoneyConnected(link.payeeDetails)` on return or dismissal; only an active
+Gmail, Outlook or iCloud Mail credential counts as linked. Status errors reject.
+
+The hosted `/connect/xmoney` page must be deployed before enabling the flow.
+Enable X Money email notifications and receive a payment before connecting.
+The signed receipt must match the registered X account. Account identity stays
+in the URL fragment; partners never receive mailbox tokens or passwords.
+`XMoneyConnectError.code` preserves hosted errors. Configure branding through
+`createCashClient({ environment, xmoney: { appearance, popup } })`.
+Re-prepare when the username changes. Cash-out does not require linking.
+Prepared links and results have `preparedXMoneyConnectToJson/FromJson` and
+`xMoneyConnectResultToJson/FromJson` codecs.
 
 ## Optional Venmo receipt linking
 
