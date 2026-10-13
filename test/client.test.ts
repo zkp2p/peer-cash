@@ -23,6 +23,7 @@ const mockInstance = {
     readContract: vi.fn(),
     waitForTransactionReceipt: vi.fn(),
   },
+  attributionQuery: vi.fn(),
   indexer: {
     getDeposits: vi.fn(),
     getDepositsWithRelations: vi.fn(),
@@ -50,6 +51,9 @@ vi.mock('@zkp2p/sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@zkp2p/sdk')>();
   return {
     ...actual,
+    IndexerClient: vi.fn(function MockIndexerClient() {
+      return { query: mockInstance.attributionQuery };
+    }),
     Zkp2pClient: vi.fn(function MockZkp2pClient() {
       return mockInstance;
     }),
@@ -203,6 +207,7 @@ describe('isUserRejectedError()', () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockInstance.attributionQuery.mockResolvedValue({ Deposit: [] });
   mockInstance.escrowV2Address = undefined;
   mockInstance.escrowAddress = undefined;
   mockInstance.escrowV2Abi = DEPOSIT_RECEIVED_ABI;
