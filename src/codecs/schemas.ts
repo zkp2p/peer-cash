@@ -712,3 +712,13 @@ export const preparedVenmoGmailConnectJsonSchema = venmoGmailConnectResultJsonSc
 });
 export type VenmoGmailConnectResultJson = z.infer<typeof venmoGmailConnectResultJsonSchema>;
 export type PreparedVenmoGmailConnectJson = z.infer<typeof preparedVenmoGmailConnectJsonSchema>;
+
+export const xMoneyConnectResultJsonSchema = z.object({
+  payeeDetails: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+});
+export const preparedXMoneyConnectJsonSchema = xMoneyConnectResultJsonSchema.extend({
+  payeeUsername: z.string().min(1),
+  url: z.string().url(),
+});
+export type XMoneyConnectResultJson = z.infer<typeof xMoneyConnectResultJsonSchema>;
+export type PreparedXMoneyConnectJson = z.infer<typeof preparedXMoneyConnectJsonSchema>;

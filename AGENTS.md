@@ -64,7 +64,7 @@ deposit-level integration share instead of applying maker L1/L2.
 - **X Money supports USD.** Use `platform: 'xmoney'` and a receiving X username
   with X Money enabled. Raw string payees accept a leading `@` and normalize to
   the bare lowercase handle; structured `offchainId` values must already be
-  normalized. Curator does not verify account existence or X Money enrollment.
+  normalized. Curator verifies X account existence, but not X Money enrollment.
   No identity attestation or Peer Pay merchant policy is required.
 
 - **Wise, PayPal, and Alipay** carry `requiresIdentityAttestation: true`. A new curator
@@ -344,6 +344,24 @@ The SDK feed catalog supplies the addresses and determines oracle availability;
 Cash adds no currency exceptions. Estimates read through the normal Base
 `transport` / `rpcUrl`; deposits float until each buyer signals an intent.
 UPI is available in production, preproduction, and staging without a feature flag.
+
+## Optional X Money receipt linking
+
+`prepareXMoneyConnect(handle, { returnUrl }?)` registers an X username and returns
+`{ payeeDetails, payeeUsername, url }`. From a separate click, call
+`openXMoneyConnect(link)`. Native apps open `link.url` themselves. Re-check
+`isXMoneyConnected(link.payeeDetails)` on return or dismissal; only an active
+Gmail, Outlook or iCloud Mail credential counts as linked. Status errors reject.
+
+The hosted `/connect/xmoney` page must be deployed before enabling the flow.
+Enable X Money email notifications and receive a payment before connecting.
+The signed receipt must match the registered X account. Account identity stays
+in the URL fragment; partners never receive mailbox tokens or passwords.
+`XMoneyConnectError.code` preserves hosted errors. Configure branding through
+`createCashClient({ environment, xmoney: { appearance, popup } })`.
+Re-prepare when the username changes. Cash-out does not require linking.
+Prepared links and results have `preparedXMoneyConnectToJson/FromJson` and
+`xMoneyConnectResultToJson/FromJson` codecs.
 
 ## Optional Venmo receipt linking
 

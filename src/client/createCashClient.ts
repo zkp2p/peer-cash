@@ -27,6 +27,9 @@ import {
   appendAttributionToCalldata,
   createCompositeDepositId,
   getVenmoGmailConnectUrl,
+  getXMoneyConnectUrl,
+  openXMoneyConnect,
+  type XMoneyConnectResult,
   isMailboxSellerCredentialType,
   openVenmoGmailConnect,
   type VenmoGmailConnectResult,
@@ -143,6 +146,12 @@ export interface PreparedVenmoGmailConnect {
   url: string;
 }
 
+export interface PreparedXMoneyConnect {
+  payeeDetails: Hash;
+  payeeUsername: string;
+  url: string;
+}
+
 const ERC20_APPROVE_ABI = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
 ]);
@@ -168,6 +177,11 @@ export interface CashClientOptions {
   peerOrigin?: string;
   /** Optional branding shared by prepared URLs and browser linking. Never affects cash-out. */
   venmoGmail?: {
+    appearance?: VenmoGmailAppearance;
+    popup?: VenmoGmailPopupOptions;
+  };
+  /** Branding for X Money receipt linking. */
+  xmoney?: {
     appearance?: VenmoGmailAppearance;
     popup?: VenmoGmailPopupOptions;
   };
@@ -350,6 +364,17 @@ export interface OrdersOptions {
 }
 
 export interface CashClient {
+  /** Register an X username and prepare the hosted receipt-inbox connection. */
+  prepareXMoneyConnect(
+    payee: string,
+    options?: { returnUrl?: string },
+  ): Promise<PreparedXMoneyConnect>;
+  /** Call directly from a click handler using the prepared identity. */
+  openXMoneyConnect(
+    identity: Pick<PreparedXMoneyConnect, 'payeeDetails' | 'payeeUsername'>,
+  ): Promise<XMoneyConnectResult>;
+  /** True only for an active Gmail, Outlook or iCloud receipt credential. */
+  isXMoneyConnected(payeeDetails: Hash): Promise<boolean>;
   /** Register a Venmo handle and prepare a hosted URL, optionally returning to a native app. No deposit. */
   prepareVenmoGmailConnect(
     payee: string,
@@ -1154,6 +1179,20 @@ export function createCashClient(options: CashClientOptions): CashClient {
     return hashes;
   }
 
+  async function isMailboxConnected(
+    processorName: 'venmo' | 'xmoney',
+    payeeDetails: Hash,
+  ): Promise<boolean> {
+    const { responseObject } = await readClient.getSellerCredentialStatus({
+      processorName,
+      payeeDetails,
+    });
+    return (
+      responseObject.status === 'active' &&
+      isMailboxSellerCredentialType(responseObject.credentialType)
+    );
+  }
+
   return {
     async prepareVenmoGmailConnect(
       payee: string,
@@ -1181,15 +1220,42 @@ export function createCashClient(options: CashClientOptions): CashClient {
       });
     },
 
-    async isVenmoGmailConnected(payeeDetails: Hash): Promise<boolean> {
-      const { responseObject } = await readClient.getSellerCredentialStatus({
-        processorName: 'venmo',
-        payeeDetails,
+    isVenmoGmailConnected(payeeDetails: Hash): Promise<boolean> {
+      return isMailboxConnected('venmo', payeeDetails);
+    },
+
+    async prepareXMoneyConnect(
+      payee: string,
+      connectOptions?: { returnUrl?: string },
+    ): Promise<PreparedXMoneyConnect> {
+      const payeeData = normalizeCashPayee('xmoney', payee);
+      const { hashedOnchainIds } = await readClient.registerPayeeDetails({
+        processorNames: ['xmoney'],
+        payeeData: [payeeData],
       });
-      return (
-        responseObject.status === 'active' &&
-        isMailboxSellerCredentialType(responseObject.credentialType)
-      );
+      const payeeDetails = hashedOnchainIds[0] as Hash;
+      const payeeUsername = payeeData.offchainId;
+      const url = getXMoneyConnectUrl({
+        ...options.xmoney,
+        ...connectOptions,
+        payeeDetails,
+        payeeUsername,
+        peerOrigin: options.peerOrigin ?? DEFAULT_PEER_ORIGINS[environment],
+      });
+      return { payeeDetails, payeeUsername, url };
+    },
+
+    openXMoneyConnect({ payeeDetails, payeeUsername }): Promise<XMoneyConnectResult> {
+      return openXMoneyConnect({
+        ...options.xmoney,
+        payeeDetails,
+        payeeUsername,
+        peerOrigin: options.peerOrigin ?? DEFAULT_PEER_ORIGINS[environment],
+      });
+    },
+
+    isXMoneyConnected(payeeDetails: Hash): Promise<boolean> {
+      return isMailboxConnected('xmoney', payeeDetails);
     },
 
     capabilities,

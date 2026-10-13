@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Hash } from 'viem';
+import { keccak256, stringToBytes, type Hash } from 'viem';
 
 const mocks = vi.hoisted(() => ({
   registerPayeeDetails: vi.fn(),
@@ -15,12 +15,17 @@ vi.mock('@zkp2p/sdk', async (importOriginal) => {
       return mocks;
     }),
     openVenmoGmailConnect: mocks.open,
+    openXMoneyConnect: mocks.open,
   };
 });
 
 import { Zkp2pClient } from '@zkp2p/sdk';
 import {
   createCashClient,
+  preparedXMoneyConnectFromJson,
+  preparedXMoneyConnectToJson,
+  xMoneyConnectResultFromJson,
+  xMoneyConnectResultToJson,
   VenmoGmailConnectError,
   preparedVenmoGmailConnectFromJson,
   preparedVenmoGmailConnectToJson,
@@ -197,5 +202,62 @@ describe('optional Venmo receipt linking', () => {
     ).toEqual({ payeeDetails });
     expect(() => preparedVenmoGmailConnectFromJson({ ...link, payeeDetails: 'alice' })).toThrow();
     expect(() => venmoGmailConnectResultFromJson({ payeeDetails: '0xabc' })).toThrow();
+  });
+});
+
+describe('X Money receipt linking', () => {
+  it.each(['production', 'preproduction', 'staging'] as const)(
+    'registers and opens the normalized account in %s',
+    async (environment) => {
+      const hash = keccak256(stringToBytes('alice'));
+      mocks.registerPayeeDetails.mockResolvedValue({ hashedOnchainIds: [hash] });
+      const cash = createCashClient({ environment });
+      const link = await cash.prepareXMoneyConnect(' @Alice ', { returnUrl: 'partner://linked' });
+      expect(mocks.registerPayeeDetails).toHaveBeenCalledWith({
+        processorNames: ['xmoney'],
+        payeeData: [{ offchainId: 'alice' }],
+      });
+      const url = new URL(link.url);
+      expect(url.pathname).toBe('/connect/xmoney');
+      expect(url.searchParams.get('returnUrl')).toBe('partner://linked');
+      expect(Object.fromEntries(new URLSearchParams(url.hash.slice(1)))).toEqual({
+        payeeDetails: hash,
+        payeeUsername: 'alice',
+      });
+      const result = cash.openXMoneyConnect(link);
+      expect(mocks.open).toHaveBeenCalledWith({
+        payeeDetails: hash,
+        payeeUsername: 'alice',
+        peerOrigin: url.origin,
+      });
+      await result;
+      expect(preparedXMoneyConnectFromJson(preparedXMoneyConnectToJson(link))).toEqual(link);
+      expect(
+        xMoneyConnectResultFromJson(xMoneyConnectResultToJson({ payeeDetails: hash })),
+      ).toEqual({ payeeDetails: hash });
+    },
+  );
+  it.each(['google_oauth', 'microsoft_oauth', 'icloud_mail', 'session_cookie'])(
+    'checks active mailbox status for %s',
+    async (credentialType) => {
+      mocks.getSellerCredentialStatus.mockResolvedValue({
+        responseObject: { status: 'active', credentialType },
+      });
+      const cash = createCashClient({ environment: 'production' });
+      await expect(cash.isXMoneyConnected(payeeDetails)).resolves.toBe(
+        credentialType !== 'session_cookie',
+      );
+      expect(mocks.getSellerCredentialStatus).toHaveBeenCalledWith({
+        processorName: 'xmoney',
+        payeeDetails,
+      });
+    },
+  );
+  it('preserves status errors and rejects inconsistent registration identity', async () => {
+    const cash = createCashClient({ environment: 'production' });
+    const error = new Error('Unavailable');
+    mocks.getSellerCredentialStatus.mockRejectedValue(error);
+    await expect(cash.isXMoneyConnected(payeeDetails)).rejects.toBe(error);
+    await expect(cash.prepareXMoneyConnect('alice')).rejects.toThrow('registered payee hash');
   });
 });

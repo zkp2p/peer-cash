@@ -19,6 +19,7 @@ export type {
   CashClient,
   CashClientOptions,
   PreparedVenmoGmailConnect,
+  PreparedXMoneyConnect,
   CashLeg,
   CashMultiCurrencyLeg,
   CashReceiveLeg,
@@ -114,10 +115,11 @@ export type {
   RuntimeEnv,
 } from './sdk-types';
 
-// Optional hosted Venmo linking errors and result; no mailbox credentials enter Cash.
-export { VenmoGmailConnectError } from '@zkp2p/sdk';
+// Hosted receipt linking errors and results; no mailbox credentials enter Cash.
+export { VenmoGmailConnectError, XMoneyConnectError } from '@zkp2p/sdk';
 export type {
   VenmoGmailConnectResult,
+  XMoneyConnectResult,
   VenmoGmailAppearance,
   VenmoGmailPopupOptions,
 } from '@zkp2p/sdk';
