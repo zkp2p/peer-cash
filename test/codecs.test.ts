@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ZodError } from 'zod';
 import { deriveCashOrder } from '../src/engine/orderState';
 import {
   capabilitiesFromJson,
@@ -527,6 +528,28 @@ describe('prepared tx + result codecs', () => {
     );
   });
 
+  it('strips retired access-policy fields from a 0.7.x prepared result', () => {
+    const json = prepareResultToJson({
+      txs: [tx, tx],
+      steps: [
+        { kind: 'approve', description: 'Approve Base USDC.' },
+        { kind: 'createDeposit', description: 'Create the order.' },
+      ],
+      register: { hashedOnchainIds: ['0x1'] },
+    });
+    const legacy = {
+      ...json,
+      accessPolicyRequired: true,
+      accessPolicyPaymentMethods: ['0xmethod'],
+    };
+
+    const restored = prepareResultFromJson(JSON.parse(JSON.stringify(legacy)));
+
+    expect(restored).not.toHaveProperty('accessPolicyRequired');
+    expect(restored).not.toHaveProperty('accessPolicyPaymentMethods');
+    expect(prepareResultToJson(restored)).toEqual(json);
+  });
+
   it('cashoutResult round-trips including the nested order', () => {
     const result = {
       depositId: '0xescrow_1',
@@ -550,6 +573,37 @@ describe('prepared tx + result codecs', () => {
     expect(restored.source?.transactions).toEqual(result.source.transactions);
     expect(restored.order.state).toBe(order.state);
     expect(restored.order.explain()).toBe(order.explain());
+  });
+
+  it('strips retired access-policy hashes from a 0.7.x cashout result', () => {
+    const json = cashoutResultToJson({
+      depositId: '0xescrow_1',
+      txHash: '0xt',
+      escrowAddress: '0xescrow',
+      onchainDepositId: 1n,
+      order,
+      source: {
+        amount: 1_000_000n,
+        requestId: 'relay-request',
+        txHashes: ['0xrelay'],
+        transactions: {
+          origin: [{ hash: '0xorigin', chainId: 10 }],
+          destination: [{ hash: '0xdestination', chainId: 8453 }],
+        },
+      },
+    });
+    const legacy = {
+      ...json,
+      accessPolicyTxHash: '0xaccess',
+      accessPolicyTxHashes: ['0xaccess', '0xaccess2'],
+    };
+
+    const restored = cashoutResultFromJson(JSON.parse(JSON.stringify(legacy)));
+
+    expect(restored).not.toHaveProperty('accessPolicyTxHash');
+    expect(restored).not.toHaveProperty('accessPolicyTxHashes');
+    expect(restored.order.explain()).toBe(order.explain());
+    expect(cashoutResultToJson(restored)).toEqual(json);
   });
 
   it('accepts 0.1.3 source results that predate chain-aware transactions', () => {
@@ -586,6 +640,26 @@ describe('prepared tx + result codecs', () => {
 });
 
 describe('capabilities codec', () => {
+  it('strips retired access-policy flags from 0.7.x platforms', () => {
+    const caps = buildCapabilities('staging');
+    const json = capabilitiesToJson(caps);
+    const legacy = {
+      ...json,
+      platforms: json.platforms.map((platform) => ({
+        ...platform,
+        requiresAtomicAccessPolicy: ['venmo', 'paypal'].includes(platform.platform),
+      })),
+    };
+
+    const restored = capabilitiesFromJson(JSON.parse(JSON.stringify(legacy)));
+
+    for (const platform of restored.platforms) {
+      expect(platform).not.toHaveProperty('requiresAtomicAccessPolicy');
+    }
+    expect(restored).toEqual(caps);
+    expect(capabilitiesToJson(restored)).toEqual(json);
+  });
+
   it.each([
     ['upi', 'INR'],
     ['alipay', 'CNY'],
@@ -646,6 +720,30 @@ describe('CashError codec', () => {
   it('rejects error codes outside the public CashError contract', () => {
     const json = errors.sourceQuoteFailed().toJSON();
     expect(cashErrorJsonSchema.safeParse({ ...json, code: 'UNKNOWN_ERROR' }).success).toBe(false);
+  });
+
+  it.each(['ATOMIC_ACCESS_POLICY_REQUIRED', 'ACCESS_POLICY_CONFIGURATION_FAILED'])(
+    'rejects the retired %s error code',
+    (code) => {
+      const json = cashErrorToJson(errors.sourceQuoteFailed());
+
+      expect(() => cashErrorFromJson({ ...json, code })).toThrow(ZodError);
+    },
+  );
+
+  it('rejects the retired configure-cashout-access-policy recovery kind', () => {
+    const json = cashErrorToJson(errors.sourceQuoteFailed());
+
+    expect(() =>
+      cashErrorFromJson({
+        ...json,
+        recovery: {
+          kind: 'configure-cashout-access-policy',
+          depositId: '0xescrow_1',
+          groupIds: ['0xpeerpay'],
+        },
+      }),
+    ).toThrow(ZodError);
   });
 
   it('round-trips recovery data and restores CashError behavior', () => {
