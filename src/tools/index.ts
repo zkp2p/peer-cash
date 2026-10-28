@@ -280,7 +280,7 @@ const builtInCashTools = [
   {
     name: 'cash_cashout',
     description:
-      'Start a Base-USDC cash-out using the custody-separated prepare path. Returns UNSIGNED transactions plus same-index steps [approve, createDeposit]; signing and ordered submission stay host-side. If any payout leg is Venmo or PayPal, accessPolicyPaymentMethods lists every method-scoped Peer Pay policy required after createDeposit confirms. Cash App is non-chargebackable, stays public, and does not require stake. The host adapter must call CashClient.finalizePreparedCashout(receipt), then prepare and confirm CashClient.prepareAccessPolicy(depositId, paymentMethod) for each listed method with the depositor. These receipt/signing methods are not separate built-in tools. For another source asset, complete cash_source_quote and cash_source_status first, then pass the guaranteed Base USDC output amount here.',
+      'Start a Base-USDC cash-out using the custody-separated prepare path. Returns UNSIGNED transactions plus same-index steps [approve, createDeposit]; signing and ordered submission stay host-side. Cash-outs never configure a whitelist or group, including Venmo and PayPal. Cash App is non-chargebackable and does not require dispute-protection stake. The host adapter must call CashClient.finalizePreparedCashout(receipt) after createDeposit confirms and persist depositId. Receipt finalization is not a separate built-in tool. For another source asset, complete cash_source_quote and cash_source_status first, then pass the guaranteed Base USDC output amount here.',
     inputSchema: {
       type: 'object',
       properties: {

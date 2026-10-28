@@ -149,23 +149,16 @@ but the host or a signer-backed client must execute the route before
 transaction confirms, call `finalizePreparedCashout(receipt)` to decode it with
 the environment-correct escrow ABI and obtain the resumable `CashoutResult`.
 
-The deprecated `requiresAtomicAccessPolicy` capability is always `false`:
-policy attachment is sequential, not atomic. If any payout leg uses Venmo or
-PayPal, the cash-out restricts intent signaling to the Peer Pay
-merchant group for that payment method. Signed `cashout()` confirms the
-deposit before submitting and confirming every required policy with the same
-viem wallet, so a brief open-to-all-takers interval exists. Method-scoped
-dispute protection is already default-on for these rails; do not preflight its
-readiness or submit a redundant enable transaction. For `prepare()`, iterate
-`accessPolicyPaymentMethods` and call
-`prepareAccessPolicy(depositId, paymentMethod)` after finalizing the confirmed
-deposit receipt. Any viem `WalletClient`, including an EOA, can submit it;
-Privy is not required. Cash App is non-chargebackable, stays public, and does
-not require dispute-protection stake.
-If the follow-up fails, the deposit already exists. Never repeat the cash-out.
-When `ACCESS_POLICY_CONFIGURATION_FAILED.recovery.transactionHash` is present,
-inspect it before preparing another policy; resubmit only when that transaction
-is absent or confirmed reverted.
+Cash-outs never configure a whitelist or group, including Venmo and PayPal.
+Signed `cashout()` returns after the deposit confirms. Prepared integrations
+submit the returned transactions in order, finalize the confirmed receipt, and
+persist `depositId`. Any viem `WalletClient`, including an EOA, works; Privy is
+not required. Venmo and PayPal retain the protocol's default dispute protection
+without a group-based staking exemption. Cash App is non-chargebackable and
+does not require dispute-protection stake.
+
+See the [migration guide](migration.md) for the breaking removal of policy APIs
+and recovery instructions for deposits created by older versions.
 
 There is no static source allowlist in Peer Cash. Relay decides its source
 support through metadata and quote execution, filtered to the viem/EVM surface
@@ -406,7 +399,6 @@ explicit override.
 | `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal/Alipay payee needs an attestation from Peer web and its TEE browser extension; an existing registration can be reused.     |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
-| `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code. Current SDK flows never emit it.                                                                              |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                        |
 | `SOURCE_CAPABILITIES_FAILED`            | yes       | Relay source discovery failed. Retry or use Base USDC.                                                                                       |
@@ -425,7 +417,6 @@ explicit override.
 | `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | A Base mutation returned no hash but may have broadcast. Inspect wallet/protocol state and its recovery action before any retry.             |
 | `TRANSACTION_STATUS_UNKNOWN`            | no        | A transaction was submitted but its receipt is unknown. Inspect `recovery.transactionHash` before resubmitting.                              |
 | `DEPOSIT_RESOLUTION_FAILED`             | no        | Base tx succeeded but no `DepositReceived` was decoded. Inspect its logs and recover the composite id.                                       |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | The deposit exists but its required policy was not confirmed. Inspect `transactionHash` if present; attach the policy if still needed.       |
 | `INVALID_DEPOSIT_ID`                    | no        | The id is not `escrowAddress_onchainId`. A bare number cannot cold-hydrate; use the value returned by `cashout()`.                           |
 | `ORDER_NOT_FOUND`                       | yes       | Unknown id or immediate indexer lag. Verify the id and retry shortly after creation.                                                         |
 | `INDEXER_LAG`                           | yes       | Indexer trails the chain. Retry the read shortly.                                                                                            |

@@ -95,20 +95,6 @@ export function createApp(options: AppOptions) {
         },
       });
 
-      if (prepared.accessPolicyPaymentMethods.length > 0) {
-        revenue.release(amount);
-        reserved = false;
-        return context.json(
-          {
-            error:
-              'this minimal planner does not automate the post-deposit access-policy transaction required by this payout platform',
-            remediation:
-              'use an unrestricted platform or extend the host to finalize the confirmed deposit and call prepareAccessPolicy once per returned payment method',
-          },
-          400,
-        );
-      }
-
       return context.json({
         amountUsdc: formatUsdc(amount),
         note: 'Unsigned only. Persist settlement, reservation, and confirmed cash-out state in production.',

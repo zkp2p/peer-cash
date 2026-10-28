@@ -72,8 +72,6 @@ in memory so a second request cannot prepare the same revenue again. A
 production service must persist settlement, reservation, transaction, and
 deposit state before exposing an equivalent operator endpoint.
 
-The minimal planner fails closed when a platform requires the restricted-rail
-access-policy follow-up. A production host can support those platforms by
-waiting for the deposit receipt, calling `finalizePreparedCashout`, then calling
-`prepareAccessPolicy` once per `accessPolicyPaymentMethods` entry and submitting
-each method-scoped transaction.
+After the deposit confirms, call `finalizePreparedCashout(receipt)` and persist
+the returned `depositId`. Cash-outs never configure a whitelist or group,
+including Venmo and PayPal.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ZodError } from 'zod';
 import { deriveCashOrder } from '../src/engine/orderState';
 import {
   capabilitiesFromJson,
@@ -521,24 +522,32 @@ describe('prepared tx + result codecs', () => {
         { kind: 'createDeposit' as const, description: 'Create the order.' },
       ],
       register: { hashedOnchainIds: ['0x1'] },
-      accessPolicyRequired: true,
-      accessPolicyPaymentMethods: ['0xmethod' as const],
     };
     expect(prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(result))))).toEqual(
       result,
     );
   });
 
-  it('preserves an optional-policy prepared plan', () => {
-    const result = {
-      txs: [preparedTxToJson(tx)],
-      steps: [{ kind: 'createDeposit' as const, description: 'Create the order.' }],
+  it('strips retired access-policy fields from a 0.7.x prepared result', () => {
+    const json = prepareResultToJson({
+      txs: [tx, tx],
+      steps: [
+        { kind: 'approve', description: 'Approve Base USDC.' },
+        { kind: 'createDeposit', description: 'Create the order.' },
+      ],
       register: { hashedOnchainIds: ['0x1'] },
-      accessPolicyRequired: false,
+    });
+    const legacy = {
+      ...json,
+      accessPolicyRequired: true,
+      accessPolicyPaymentMethods: ['0xmethod'],
     };
 
-    expect(prepareResultFromJson(result).accessPolicyRequired).toBe(false);
-    expect(prepareResultFromJson(result).accessPolicyPaymentMethods).toEqual([]);
+    const restored = prepareResultFromJson(JSON.parse(JSON.stringify(legacy)));
+
+    expect(restored).not.toHaveProperty('accessPolicyRequired');
+    expect(restored).not.toHaveProperty('accessPolicyPaymentMethods');
+    expect(prepareResultToJson(restored)).toEqual(json);
   });
 
   it('cashoutResult round-trips including the nested order', () => {
@@ -548,8 +557,6 @@ describe('prepared tx + result codecs', () => {
       escrowAddress: '0xescrow',
       onchainDepositId: 1n,
       order,
-      accessPolicyTxHash: '0xaccess' as const,
-      accessPolicyTxHashes: ['0xaccess' as const],
       source: {
         amount: 1_000_000n,
         requestId: 'relay-request',
@@ -563,11 +570,40 @@ describe('prepared tx + result codecs', () => {
     const restored = cashoutResultFromJson(JSON.parse(JSON.stringify(cashoutResultToJson(result))));
     expect(restored.onchainDepositId).toBe(1n);
     expect(restored.source?.amount).toBe(1_000_000n);
-    expect(restored.accessPolicyTxHash).toBe('0xaccess');
-    expect(restored.accessPolicyTxHashes).toEqual(['0xaccess']);
     expect(restored.source?.transactions).toEqual(result.source.transactions);
     expect(restored.order.state).toBe(order.state);
     expect(restored.order.explain()).toBe(order.explain());
+  });
+
+  it('strips retired access-policy hashes from a 0.7.x cashout result', () => {
+    const json = cashoutResultToJson({
+      depositId: '0xescrow_1',
+      txHash: '0xt',
+      escrowAddress: '0xescrow',
+      onchainDepositId: 1n,
+      order,
+      source: {
+        amount: 1_000_000n,
+        requestId: 'relay-request',
+        txHashes: ['0xrelay'],
+        transactions: {
+          origin: [{ hash: '0xorigin', chainId: 10 }],
+          destination: [{ hash: '0xdestination', chainId: 8453 }],
+        },
+      },
+    });
+    const legacy = {
+      ...json,
+      accessPolicyTxHash: '0xaccess',
+      accessPolicyTxHashes: ['0xaccess', '0xaccess2'],
+    };
+
+    const restored = cashoutResultFromJson(JSON.parse(JSON.stringify(legacy)));
+
+    expect(restored).not.toHaveProperty('accessPolicyTxHash');
+    expect(restored).not.toHaveProperty('accessPolicyTxHashes');
+    expect(restored.order.explain()).toBe(order.explain());
+    expect(cashoutResultToJson(restored)).toEqual(json);
   });
 
   it('accepts 0.1.3 source results that predate chain-aware transactions', () => {
@@ -604,6 +640,26 @@ describe('prepared tx + result codecs', () => {
 });
 
 describe('capabilities codec', () => {
+  it('strips retired access-policy flags from 0.7.x platforms', () => {
+    const caps = buildCapabilities('staging');
+    const json = capabilitiesToJson(caps);
+    const legacy = {
+      ...json,
+      platforms: json.platforms.map((platform) => ({
+        ...platform,
+        requiresAtomicAccessPolicy: ['venmo', 'paypal'].includes(platform.platform),
+      })),
+    };
+
+    const restored = capabilitiesFromJson(JSON.parse(JSON.stringify(legacy)));
+
+    for (const platform of restored.platforms) {
+      expect(platform).not.toHaveProperty('requiresAtomicAccessPolicy');
+    }
+    expect(restored).toEqual(caps);
+    expect(capabilitiesToJson(restored)).toEqual(json);
+  });
+
   it.each([
     ['upi', 'INR'],
     ['alipay', 'CNY'],
@@ -645,26 +701,6 @@ describe('capabilities codec', () => {
       });
     },
   );
-
-  it('normalizes legacy atomic-policy capabilities to false', () => {
-    const json = capabilitiesToJson(buildCapabilities('staging'));
-    const legacy = {
-      ...json,
-      platforms: json.platforms.map(({ requiresAtomicAccessPolicy: _, ...platform }) => ({
-        ...platform,
-        ...(platform.platform === 'venmo' ? { requiresAtomicAccessPolicy: true } : {}),
-      })),
-    };
-
-    const restored = capabilitiesFromJson(legacy);
-
-    expect(restored.platforms.find((platform) => platform.platform === 'venmo')).toMatchObject({
-      requiresAtomicAccessPolicy: false,
-    });
-    expect(restored.platforms.find((platform) => platform.platform === 'chime')).toMatchObject({
-      requiresAtomicAccessPolicy: false,
-    });
-  });
 });
 
 describe('CashError codec', () => {
@@ -686,6 +722,30 @@ describe('CashError codec', () => {
     expect(cashErrorJsonSchema.safeParse({ ...json, code: 'UNKNOWN_ERROR' }).success).toBe(false);
   });
 
+  it.each(['ATOMIC_ACCESS_POLICY_REQUIRED', 'ACCESS_POLICY_CONFIGURATION_FAILED'])(
+    'rejects the retired %s error code',
+    (code) => {
+      const json = cashErrorToJson(errors.sourceQuoteFailed());
+
+      expect(() => cashErrorFromJson({ ...json, code })).toThrow(ZodError);
+    },
+  );
+
+  it('rejects the retired configure-cashout-access-policy recovery kind', () => {
+    const json = cashErrorToJson(errors.sourceQuoteFailed());
+
+    expect(() =>
+      cashErrorFromJson({
+        ...json,
+        recovery: {
+          kind: 'configure-cashout-access-policy',
+          depositId: '0xescrow_1',
+          groupIds: ['0xpeerpay'],
+        },
+      }),
+    ).toThrow(ZodError);
+  });
+
   it('round-trips recovery data and restores CashError behavior', () => {
     const error = errors.sourceRouteCompletedCashoutFailed({
       amount: 975_000n,
@@ -700,37 +760,6 @@ describe('CashError codec', () => {
     const restored = cashErrorFromJson(JSON.parse(JSON.stringify(cashErrorToJson(error))));
 
     expect(isCashError(restored)).toBe(true);
-    expect(restored.toJSON()).toEqual(error.toJSON());
-  });
-
-  it('continues to decode the deprecated atomic-policy error code', () => {
-    const error = errors.atomicAccessPolicyRequired(['venmo']);
-
-    expect(cashErrorFromJson(cashErrorToJson(error)).toJSON()).toEqual(error.toJSON());
-  });
-
-  it('round-trips access-policy recovery without losing the deposit or Relay source', () => {
-    const error = errors.accessPolicyConfigurationFailed(
-      '0xescrow_7',
-      ['0xplus', '0xpro', '0xmakers', '0xpeerpay'],
-      {
-        cause: new Error('receipt unavailable'),
-        paymentMethod: '0xmethod',
-        transactionHash: '0xpolicy',
-        source: {
-          amount: 975_000n,
-          requestId: 'relay-request',
-          txHashes: ['0xorigin'],
-          transactions: {
-            origin: [{ hash: '0xorigin', chainId: 10 }],
-            destination: [],
-          },
-        },
-      },
-    );
-
-    const restored = cashErrorFromJson(cashErrorToJson(error));
-
     expect(restored.toJSON()).toEqual(error.toJSON());
   });
 

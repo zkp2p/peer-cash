@@ -24,10 +24,8 @@ can withdraw an unmatched deposit.
    (`{ to, data, value, chainId }`) plus same-index `steps[]` labels; inspect
    the plan, submit the transactions in order, and wait for each receipt. After
    `createDeposit` confirms, pass its receipt to `finalizePreparedCashout()` and
-   persist the returned `depositId`. If the original plan set
-   a non-empty `accessPolicyPaymentMethods`, submit and confirm
-   `prepareAccessPolicy(depositId, paymentMethod)` with the depositor for each
-   returned method.
+   persist the returned `depositId`. Cash-outs never configure a whitelist or
+   group; no policy follow-up is required.
 3. **You are a tool-use host** (MCP server, CLI) → import the manifest from
    `@zkp2p/cash/tools` and map the tool names to the verbs above. Base-USDC
    mutating tools return unsigned transactions. `cash_source_quote` is a quote,
@@ -46,26 +44,19 @@ deposit-level integration share instead of applying maker L1/L2.
 
 **Platform caveats:**
 
-- **Venmo and PayPal restrict who can signal intents by default.**
-  Signed `cashout()` confirms `createDeposit`, then submits and confirms a
-  method-scoped Peer Pay merchant policy for every restricted payout leg using
-  the same viem wallet. This is a deliberate non-atomic follow-up with a brief
-  open-to-all-takers interval. Method-scoped dispute protection is already
-  default-on for these rails; do not readiness-gate deposit creation or submit
-  a redundant `setDisputeProtectionEnabled(true)` transaction. For `prepare()`,
-  read `accessPolicyPaymentMethods`; after `createDeposit` confirms, finalize
-  its receipt and submit
-  `prepareAccessPolicy(depositId, paymentMethod)` for every returned method.
-  Any viem EOA works; Privy is not required.
+- **Cash-outs never configure a whitelist or group**, including Venmo and
+  PayPal. Signed `cashout()` returns after the deposit confirms. For `prepare()`,
+  submit the returned transactions and finalize the confirmed deposit receipt.
+  Any viem EOA works; Privy is not required. Venmo and PayPal retain the
+  protocol's default dispute protection without a group-based staking exemption.
 
-- **Cash App is non-chargebackable.** Cash App cash-outs stay public, do not
-  attach a Peer Pay merchant policy, and never require dispute-protection stake.
+- **Cash App is non-chargebackable** and does not require dispute-protection stake.
 
 - **X Money supports USD.** Use `platform: 'xmoney'` and a receiving X username
   with X Money enabled. Raw string payees accept a leading `@` and normalize to
   the bare lowercase handle; structured `offchainId` values must already be
   normalized. Curator verifies X account existence, but not X Money enrollment.
-  No identity attestation or Peer Pay merchant policy is required.
+  No identity attestation is required.
 
 - **Wise, PayPal, and Alipay** carry `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
@@ -246,10 +237,6 @@ const route = await cash.nearIntentsStatus({
   broadcast; follow its recovery action and inspect wallet/protocol state.
   `TRANSACTION_STATUS_UNKNOWN` means the returned hash may already have
   succeeded. Inspect `err.recovery.transactionHash` first.
-- **Never repeat a cash-out after an access-policy failure.** The deposit
-  already exists. If `recovery.transactionHash` is present, inspect that policy
-  transaction first; prepare another policy transaction only when the previous
-  one is absent or confirmed reverted.
 - **`ORDER_NOT_FOUND` seconds after `cashout()` is indexer lag**, not a lost
   deposit. The tx receipt you hold is the truth. Retry; `watch()` absorbs
   this automatically.
@@ -274,51 +261,49 @@ const route = await cash.nearIntentsStatus({
 
 Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 
-| Code                                    | Retryable | Agent action                                                                               |
-| --------------------------------------- | --------- | ------------------------------------------------------------------------------------------ |
-| `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Re-pick currency from `capabilities()`                                                     |
-| `ORACLE_READ_FAILED`                    | yes       | Retry the read through a healthy Base RPC; do not present a cached value as live           |
-| `UNSUPPORTED_PLATFORM`                  | no        | Re-pick platform from `capabilities()`                                                     |
-| `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | Use a currency listed for that platform                                                    |
-| `AMOUNT_BELOW_MINIMUM`                  | no        | Raise amount (hard floor $0.01, recommended at least 1 USDC)                               |
-| `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount                       |
-| `INVALID_PAYOUT_CURRENCIES`             | no        | Pass one or more unique currencies listed for the platform                                 |
-| `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                         |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | Use Peer web + TEE extension for new Wise/PayPal/Alipay; reuse registered handles          |
-| `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                                   |
-| `ATOMIC_ACCESS_POLICY_REQUIRED`         | no        | Deprecated compatibility code; current SDK flows never emit it                             |
-| `ACCESS_POLICY_CONFIGURATION_FAILED`    | no        | Deposit exists; inspect policy tx first, attach only if needed; never repeat the cash-out. |
-| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                        |
-| `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                                   |
-| `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                                  |
-| `SOURCE_QUOTE_FAILED`                   | yes       | Refresh capabilities and request a new canonical Base-USDC quote                           |
-| `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; recreate the source signer with viem's `nonceManager`, then quote again         |
-| `SOURCE_EXECUTION_FAILED`               | no        | Inspect source transactions and Relay status before any retry                              |
-| `SOURCE_DEPOSIT_SUBMISSION_FAILED`      | yes       | Retry only the 1Click notification; never resend source funds                              |
-| `SOURCE_STATUS_FAILED`                  | yes       | Retry only the status read                                                                 |
-| `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Do not route again; retry Base-only with `recovery.amount`                                 |
-| `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`     | no        | Inspect Base activity and orders; prove no deposit exists before retrying                  |
-| `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Inspect `recovery.depositTxHash`; do not resubmit while its receipt is unknown             |
-| `INSUFFICIENT_TOKEN_BALANCE`            | no        | Fund the required token amount, then retry                                                 |
-| `ALLOWANCE_NOT_VISIBLE`                 | yes       | Approval mined but a stale RPC hid it; retry after it becomes visible                      |
-| `TRANSACTION_REJECTED`                  | yes       | Retry when ready and approve the wallet request                                            |
-| `TRANSACTION_FAILED`                    | no        | Inspect the failed/reverted call before another action                                     |
-| `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | Inspect Base wallet/protocol state and the recovery action before any resubmission         |
-| `TRANSACTION_STATUS_UNKNOWN`            | no        | Inspect `recovery.transactionHash` before resubmitting                                     |
-| `DEPOSIT_RESOLUTION_FAILED`             | no        | Inspect the confirmed Base receipt and recover the id from `DepositReceived`               |
-| `INVALID_DEPOSIT_ID`                    | no        | Use the exact id returned by `cashout()`                                                   |
-| `ORDER_NOT_FOUND`                       | yes       | Retry through immediate indexer lag; otherwise verify the id                               |
-| `INDEXER_LAG`                           | yes       | Retry after a few seconds                                                                  |
-| `INDEXER_UNAVAILABLE`                   | yes       | Retry only the failed read; keep the id/owner and never repeat a transaction               |
-| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`       | yes       | Wait for fill/expiry, or withdraw only the unlocked amount                                 |
-| `INSUFFICIENT_AVAILABLE_FUNDS`          | yes       | Lower the partial withdrawal amount                                                        |
-| `NOTHING_TO_WITHDRAW`                   | no        | Order is terminal; reconcile records                                                       |
-| `ORDER_NOT_ACTIVE`                      | no        | Start a new cashout instead of topping up                                                  |
-| `SIGNER_REQUIRED`                       | no        | Provide a signer or use a Base-USDC prepare path                                           |
-| `SIGNER_CHAIN_MISMATCH`                 | no        | Switch to the required chain and refresh any Relay quote before retrying                   |
-| `SIGNER_CHAIN_UNAVAILABLE`              | yes       | Reconnect the wallet and prove its chain before retrying                                   |
-| `WATCH_TIMEOUT`                         | yes       | Resume `watch(depositId)` later                                                            |
-| `ESCROW_PAUSED`                         | yes       | Back off; existing funds remain withdrawable                                               |
+| Code                                    | Retryable | Agent action                                                                       |
+| --------------------------------------- | --------- | ---------------------------------------------------------------------------------- |
+| `ORACLE_UNSUPPORTED_CURRENCY`           | no        | Re-pick currency from `capabilities()`                                             |
+| `ORACLE_READ_FAILED`                    | yes       | Retry the read through a healthy Base RPC; do not present a cached value as live   |
+| `UNSUPPORTED_PLATFORM`                  | no        | Re-pick platform from `capabilities()`                                             |
+| `UNSUPPORTED_PLATFORM_CURRENCY`         | no        | Use a currency listed for that platform                                            |
+| `AMOUNT_BELOW_MINIMUM`                  | no        | Raise amount (hard floor $0.01, recommended at least 1 USDC)                       |
+| `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount               |
+| `INVALID_PAYOUT_CURRENCIES`             | no        | Pass one or more unique currencies listed for the platform                         |
+| `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                 |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | Use Peer web + TEE extension for new Wise/PayPal/Alipay; reuse registered handles  |
+| `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                           |
+| `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                |
+| `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                           |
+| `SOURCE_CAPABILITIES_FAILED`            | yes       | Retry discovery or fall back to Base USDC                                          |
+| `SOURCE_QUOTE_FAILED`                   | yes       | Refresh capabilities and request a new canonical Base-USDC quote                   |
+| `SOURCE_NONCE_MANAGER_REQUIRED`         | no        | Preflight; recreate the source signer with viem's `nonceManager`, then quote again |
+| `SOURCE_EXECUTION_FAILED`               | no        | Inspect source transactions and Relay status before any retry                      |
+| `SOURCE_DEPOSIT_SUBMISSION_FAILED`      | yes       | Retry only the 1Click notification; never resend source funds                      |
+| `SOURCE_STATUS_FAILED`                  | yes       | Retry only the status read                                                         |
+| `SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED` | no        | Do not route again; retry Base-only with `recovery.amount`                         |
+| `SOURCE_CASHOUT_SUBMISSION_UNKNOWN`     | no        | Inspect Base activity and orders; prove no deposit exists before retrying          |
+| `SOURCE_CASHOUT_STATUS_UNKNOWN`         | no        | Inspect `recovery.depositTxHash`; do not resubmit while its receipt is unknown     |
+| `INSUFFICIENT_TOKEN_BALANCE`            | no        | Fund the required token amount, then retry                                         |
+| `ALLOWANCE_NOT_VISIBLE`                 | yes       | Approval mined but a stale RPC hid it; retry after it becomes visible              |
+| `TRANSACTION_REJECTED`                  | yes       | Retry when ready and approve the wallet request                                    |
+| `TRANSACTION_FAILED`                    | no        | Inspect the failed/reverted call before another action                             |
+| `TRANSACTION_SUBMISSION_UNKNOWN`        | no        | Inspect Base wallet/protocol state and the recovery action before any resubmission |
+| `TRANSACTION_STATUS_UNKNOWN`            | no        | Inspect `recovery.transactionHash` before resubmitting                             |
+| `DEPOSIT_RESOLUTION_FAILED`             | no        | Inspect the confirmed Base receipt and recover the id from `DepositReceived`       |
+| `INVALID_DEPOSIT_ID`                    | no        | Use the exact id returned by `cashout()`                                           |
+| `ORDER_NOT_FOUND`                       | yes       | Retry through immediate indexer lag; otherwise verify the id                       |
+| `INDEXER_LAG`                           | yes       | Retry after a few seconds                                                          |
+| `INDEXER_UNAVAILABLE`                   | yes       | Retry only the failed read; keep the id/owner and never repeat a transaction       |
+| `ACTIVE_INTENT_BLOCKS_WITHDRAWAL`       | yes       | Wait for fill/expiry, or withdraw only the unlocked amount                         |
+| `INSUFFICIENT_AVAILABLE_FUNDS`          | yes       | Lower the partial withdrawal amount                                                |
+| `NOTHING_TO_WITHDRAW`                   | no        | Order is terminal; reconcile records                                               |
+| `ORDER_NOT_ACTIVE`                      | no        | Start a new cashout instead of topping up                                          |
+| `SIGNER_REQUIRED`                       | no        | Provide a signer or use a Base-USDC prepare path                                   |
+| `SIGNER_CHAIN_MISMATCH`                 | no        | Switch to the required chain and refresh any Relay quote before retrying           |
+| `SIGNER_CHAIN_UNAVAILABLE`              | yes       | Reconnect the wallet and prove its chain before retrying                           |
+| `WATCH_TIMEOUT`                         | yes       | Resume `watch(depositId)` later                                                    |
+| `ESCROW_PAUSED`                         | yes       | Back off; existing funds remain withdrawable                                       |
 
 `isCashError(err)` narrows unknown errors; `err.toJSON()` is safe for logs
 and tool results.
@@ -328,8 +313,7 @@ and tool results.
 Prove your integration against `environment: 'staging'` with a funded test
 wallet. Never wait on a buyer - buyer-side is out of your scope:
 
-1. `cashout()` a small amount (1–2 USDC) → capture `depositId` and, for a
-   restricted payout, every entry in `accessPolicyTxHashes`.
+1. `cashout()` a small amount (1–2 USDC) → capture `depositId` and `txHash`.
 2. `order(depositId)` shows `awaiting-buyer` (retry through indexer lag).
 3. `orders(owner)` includes the deposit.
 4. `withdraw(depositId)` → transaction succeeds.

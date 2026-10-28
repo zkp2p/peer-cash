@@ -34,13 +34,12 @@ protocol-held funds and no custodial off-ramp provider.
   `estimate().binding` and `capabilities().platforms[].pricing`.
 - **Custody story.** Funds are held by the protocol contract only. An unmatched
   deposit is withdrawable by the maker at any time. The SDK never holds keys.
-- **Restricted intent signaling.** If any payout leg uses Venmo or PayPal, a
-  method-scoped Peer Pay merchant policy attaches after the deposit
-  confirms. Signed `cashout()` handles every sequential follow-up with the same
-  viem wallet. Prepared hosts must finish them explicitly; any EOA works.
-  Method-scoped dispute protection is already default-on, so Cash does not
-  readiness-gate creation or submit an explicit enable transaction. Cash App
-  is non-chargebackable, stays public, and does not require stake.
+- **Cash-outs never configure a whitelist or group**, including Venmo and
+  PayPal. Signed `cashout()` returns after deposit confirmation. Prepared hosts
+  finalize the confirmed receipt and persist `depositId`; any EOA works.
+  Venmo and PayPal retain the protocol's default dispute protection without a
+  group-based staking exemption. Cash App is non-chargebackable and does not
+  require dispute-protection stake.
 - **Honest ETA.** Use `estimate().eta`: `{ seconds, label }` backed by rolling
   30-day indexer data from zero-spread (`spreadBps: 0`) market-rate deposits in
   the same payout corridor, measured from deposit creation to first fill. Do
@@ -80,13 +79,10 @@ const res = await cash.cashout(
   },
   { signer },
 );
-const { txs, steps, accessPolicyPaymentMethods } = await cash.prepare({/* same input */}); // 2b unsigned plan
+const { txs, steps } = await cash.prepare({/* same input */}); // 2b unsigned plan
 // Submit txs in order. After createDeposit confirms:
 const prepared = cash.finalizePreparedCashout(createDepositReceipt);
-for (const paymentMethod of accessPolicyPaymentMethods) {
-  const policyTx = cash.prepareAccessPolicy(prepared.depositId, paymentMethod);
-  await hostSubmitAndConfirm(policyTx);
-}
+persist({ depositId: prepared.depositId });
 const order = await cash.order(res.depositId); // 3 observe
 const mine = await cash.orders(ownerAddress, { inFlight: true }); // 4 list
 for await (const o of cash.watch(res.depositId)) {
@@ -153,8 +149,8 @@ first; use signed `cashout({ source }, { signer, sourceSigner })`, or execute
 and confirm Relay in the host before preparing a Base-USDC cashout.
 `cash_source_quote` and `cash_source_status` are quote/read tools, not a
 host-side execution path. The built-in tool manifest also does not expose
-receipt finalization or access-policy submission as separate tools; the host
-adapter calls those `CashClient` methods after its signer confirms
+receipt finalization as a separate tool; the host adapter calls
+`CashClient.finalizePreparedCashout(receipt)` after its signer confirms
 `createDeposit`.
 Every protocol transaction carries ERC-8021 attribution. To receive the
 deposit-level integration share, copy the six-character code from your Peer
@@ -190,7 +186,7 @@ X Money accepts `receive: { platform: 'xmoney', currency: 'USD', payee: '@YourHa
 Raw handles normalize to the bare lowercase username. Structured payee data must
 already use `offchainId: 'yourhandle'`. Confirm that the receiving account has
 X Money enabled: registration verifies X account existence, but not X Money enrollment.
-No identity attestation or Peer Pay merchant policy is required.
+No identity attestation is required.
 
 ## 4. Order management - indexer-native
 
@@ -231,10 +227,6 @@ those, don't re-derive. The recovery boundaries that matter most in practice:
 - `TRANSACTION_SUBMISSION_UNKNOWN` = a Base mutation returned no hash but may
   have broadcast. Follow `error.recovery`, inspect Base wallet/protocol state,
   and do not retry until absence is proven.
-- `ACCESS_POLICY_CONFIGURATION_FAILED` = the deposit exists but its required
-  policy was not confirmed. Never cash out again. Inspect
-  `error.recovery.transactionHash` when present; prepare another policy only
-  if that transaction is absent or confirmed reverted.
 - `INDEXER_UNAVAILABLE` / `ORACLE_READ_FAILED` = retry the read only. Do not
   repeat the transaction that produced the id or balance being inspected.
 - `SIGNER_CHAIN_MISMATCH` = switch to the required chain and obtain a fresh
@@ -251,8 +243,7 @@ Run against `environment: 'staging'` with a small funded wallet.
 
 Prove both routes without waiting for a buyer:
 
-1. Create a real 1–2 USDC Base-USDC deposit; retain `depositId`, the Base tx,
-   and every `accessPolicyTxHashes` entry when using Venmo or PayPal.
+1. Create a real 1–2 USDC Base-USDC deposit; retain `depositId` and the Base tx.
 2. Retry through indexer lag until `order(depositId)` is `awaiting-buyer`, and
    assert `orders(owner)` contains it.
 3. Withdraw it; assert `returned` and the Base USDC balance is restored minus

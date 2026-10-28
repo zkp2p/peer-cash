@@ -68,12 +68,6 @@ export interface CashPlatformCapability {
    * `PAYEE_VERIFICATION_REQUIRED`.
    */
   requiresIdentityAttestation: boolean;
-  /**
-   * @deprecated Always false. This does not report the sequential restricted-
-   * platform policy; prepared hosts must inspect
-   * `PrepareResult.accessPolicyPaymentMethods`.
-   */
-  requiresAtomicAccessPolicy: boolean;
 }
 
 export interface CashCapabilities {
@@ -125,7 +119,6 @@ export function buildCapabilities(environment: RuntimeEnv): CashCapabilities {
         ),
         payeeHint: PAYEE_HINTS[platform] ?? 'Your payment handle for this platform',
         requiresIdentityAttestation: IDENTITY_ATTESTATION_PLATFORMS.has(platform),
-        requiresAtomicAccessPolicy: false,
       };
     })
     .filter((p) => p.currencies.length > 0)

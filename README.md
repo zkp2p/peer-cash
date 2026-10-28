@@ -40,15 +40,15 @@ const fillStats = await cash.fillStats();
 const pairStats = fillStats['venmo:USD'];
 const multiCurrencyStats = fillStats['revolut:EUR+GBP+USD'];
 
-const { depositId, accessPolicyTxHashes } = await cash.cashout(
+const { depositId } = await cash.cashout(
   {
     amount: usdc(1000),
     receive: { platform: 'venmo', currency: 'USD', payee: '@you' },
   },
   { signer }, // any viem WalletClient on Base, including an EOA
 );
-// Venmo and PayPal return only after their access policy confirms.
-console.log(depositId, accessPolicyTxHashes);
+// Returns after the deposit confirms.
+console.log(depositId);
 
 // One method can offer several currencies. The buyer chooses the fill
 // currency, and each option resolves at its own live oracle rate.
@@ -167,9 +167,8 @@ arbitrary protocol operations.
 | `quoteNearIntentsSource(input)`                                | Signed 1Click quote with an origin-chain deposit address and optional memo                                                      |
 | `submitNearIntentsDeposit(input)` / `nearIntentsStatus(input)` | Optionally register an origin tx, then track 1Click delivery/refund evidence                                                    |
 | `estimate({ amount, currency, platform? }, { includeEta? })`   | Base USDC market-rate estimate with an explicit `binding`; optionally skip historical ETA                                       |
-| `cashout(input, { signer })`                                   | Creates the order with any viem wallet; restricted methods then attach the Peer Pay merchant policy                             |
-| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing, resolve the deposit, then iterate `accessPolicyPaymentMethods` for follow-ups                         |
-| `prepareAccessPolicy(depositId, paymentMethod)`                | Prepare one post-deposit, method-scoped Peer Pay merchant policy transaction                                                    |
+| `cashout(input, { signer })`                                   | Creates and confirms the order with any viem wallet                                                                             |
+| `prepare(input)` / `finalizePreparedCashout(receipt)`          | Prepare external signing and resolve the confirmed deposit                                                                      |
 | `order(depositId)` / `orders(owner)`                           | Resume any order from its id alone; list all orders for a wallet                                                                |
 | `watch(depositId)`                                             | Async iterator: yields on every state change until terminal, abort, or timeout                                                  |
 | `withdraw(depositId, { signer, amount? })`                     | The ONE unwind verb - partial with an `amount` (live intents don't block it), full close without (prunes expired intents first) |
@@ -352,17 +351,19 @@ consent, account selection, or receipt verification.
 
 See the [full appearance options](https://www.npmjs.com/package/@zkp2p/sdk#popup-customization).
 
-## Payout rails and access policies
+## Payout rails
 
-| Payout rail           | Access-policy behavior                                                     | New payee registration                                                                 |
-| --------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Venmo                 | Peer Pay merchant policy attaches for that payment method                  | Curator validates the live handle                                                      |
-| PayPal                | Same method-scoped Peer Pay follow-up                                      | Requires a Peer TEE browser-extension identity attestation                             |
-| Cash App              | No access-policy follow-up; non-chargebackable and no stake required       | Curator validates the live handle                                                      |
-| X Money (USD)         | No access-policy follow-up                                                 | Bare lowercase X username; X Money must be enabled on the receiving account            |
-| Wise                  | No access-policy follow-up                                                 | Requires a Peer TEE browser-extension identity attestation                             |
-| UPI                   | No access-policy follow-up                                                 | Any valid UPI ID; no account connection or identity attestation                        |
-| Other supported rails | No access-policy follow-up; use `capabilities()` for currencies and format | Follow the `payeeHint`; live-validation behavior is described in the integration guide |
+Cash-outs never configure a whitelist or group, for any payout rail or environment.
+
+| Payout rail           | New payee registration                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| Venmo                 | Curator validates the live handle                                                              |
+| PayPal                | Requires a Peer TEE browser-extension identity attestation                                     |
+| Cash App              | Curator validates the live handle; non-chargebackable and no dispute-protection stake required |
+| X Money (USD)         | Bare lowercase X username; X Money must be enabled on the receiving account                    |
+| Wise                  | Requires a Peer TEE browser-extension identity attestation                                     |
+| UPI                   | Any valid UPI ID; no account connection or identity attestation                                |
+| Other supported rails | Follow the `payeeHint`; use `capabilities()` for currencies and format                         |
 
 Use `receive: { platform: 'xmoney', currency: 'USD', payee: '@YourHandle' }`
 for X Money. Raw handles are trimmed, lowercased, and stripped of a leading `@`;
@@ -370,30 +371,15 @@ structured payee data must already use `offchainId: 'yourhandle'`. Registration
 normalizes the handle but does not verify that the X account exists or can receive
 X Money. Confirm that the receiving account has X Money enabled before cashing out.
 
-No platform requires an atomic access-policy flow. `cashout()` and `prepare()`
-work with any viem `WalletClient`, including a local or externally connected
-EOA; no Privy wallet or signer API is required. The deprecated
-`requiresAtomicAccessPolicy` capability remains for wire compatibility and is
-always `false`.
+`cashout()` works with any viem `WalletClient`, including a local or externally
+connected EOA; no Privy wallet or signer API is required. It returns after
+`createDeposit` confirms. Prepared integrations submit the returned transactions
+in order, then call `finalizePreparedCashout(receipt)` and persist `depositId`.
+Venmo and PayPal retain the protocol's default dispute protection without a
+group-based staking exemption.
 
-Venmo and PayPal cash-outs restrict intent signaling to the Peer Pay
-merchant group by default. Each restricted payout method gets its own policy.
-Signed `cashout()` creates the deposit first, then uses the same wallet to
-submit and confirm every required policy transaction; this intentionally
-leaves a brief interval where any taker can signal. Method-scoped dispute
-protection is already default-on for these rails, so Cash neither
-readiness-gates deposit creation nor submits
-`setDisputeProtectionEnabled(true)`. Prepared integrations receive
-`accessPolicyPaymentMethods`; after confirming `createDeposit`, call
-`finalizePreparedCashout(receipt)`, then submit
-`prepareAccessPolicy(depositId, paymentMethod)` once for every returned method.
-Other platforms do not need the follow-up.
-
-If policy attachment fails, `ACCESS_POLICY_CONFIGURATION_FAILED.recovery`
-identifies the existing deposit and any submitted policy transaction. Never
-create another cash-out. When `recovery.transactionHash` is present, inspect
-that transaction before resubmitting; otherwise prepare the policy again with
-the same depositor wallet.
+This is a breaking API change. See the [migration guide](docs/migration.md)
+for removed methods, fields, and error codes and the required minor release.
 
 `capabilities()` presents Zelle as one platform. A cashout with
 `receive.platform: 'zelle'` attaches only the generic Zelle payment method to
@@ -423,7 +409,7 @@ discovered and quoted by `@relayprotocol/relay-sdk`, not a static token
 allowlist.
 
 ```ts
-const { depositId, accessPolicyTxHashes, source } = await cash.cashout(
+const { depositId, source } = await cash.cashout(
   {
     amount: 10_000_000n, // exact input: 10 USDC in source-token base units
     source: {
@@ -440,7 +426,6 @@ const { depositId, accessPolicyTxHashes, source } = await cash.cashout(
 // amount deposited into the cash-out order. It is not the route's actual output.
 console.log(source?.amount, source?.requestId);
 console.log(source?.transactions?.origin, source?.transactions?.destination);
-console.log(accessPolicyTxHashes); // one entry because this example uses Venmo
 ```
 
 Routes that submit more than one source-chain transaction (approve, then
@@ -530,12 +515,6 @@ they are available. A source-routed result includes both a flat
 - `TRANSACTION_SUBMISSION_UNKNOWN`: a Base-only cashout or another mutation
   returned no hash. Treat it as potentially broadcast. Inspect recent Base
   wallet activity and the supplied recovery action before any retry.
-- `ACCESS_POLICY_CONFIGURATION_FAILED`: the deposit exists, but its required
-  Venmo or PayPal policy was not confirmed. Do not cash out again;
-  inspect `recovery.transactionHash` when present, then retry
-  `prepareAccessPolicy(error.recovery.depositId, error.recovery.paymentMethod)`
-  only if the prior policy
-  transaction did not succeed.
 
 Wallet clients pinned to the wrong chain fail with `SIGNER_CHAIN_MISMATCH`
 before a quote or transaction is submitted. Chainless wallets are checked
@@ -613,11 +592,9 @@ analytics-only ERC-8021 codes such as `acme-app`.
   before signing, then submit the matching `txs[]` in order.
 - Mutating tool calls return unsigned transactions by default; signing stays
   with the host that owns custody, policy, and user approval.
-- After a prepared restricted cash-out confirms, the host adapter must call
-  `finalizePreparedCashout(receipt)` and submit
-  `prepareAccessPolicy(depositId, paymentMethod)` for every value in
-  `accessPolicyPaymentMethods`; these receipt/signing operations are
-  `CashClient` methods, not built-in tool calls.
+- After a prepared cash-out confirms, the host adapter calls
+  `finalizePreparedCashout(receipt)` and persists the returned `depositId`.
+  Receipt finalization is a `CashClient` method, not a built-in tool call.
 - Every error carries `code`, `retryable`, and a `remediation` sentence.
 - Every order carries `nextActions: ('wait' | 'withdraw')[]` - no heuristics.
 - Every wire type has a zod schema + JSON codec - state crosses process

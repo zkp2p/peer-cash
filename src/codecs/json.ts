@@ -517,8 +517,6 @@ export function cashoutResultToJson(result: CashoutResult): CashoutResultJson {
     escrowAddress: result.escrowAddress,
     onchainDepositId: result.onchainDepositId.toString(),
     order: orderToJson(result.order),
-    accessPolicyTxHash: result.accessPolicyTxHash,
-    accessPolicyTxHashes: result.accessPolicyTxHashes,
     source: result.source
       ? {
           ...result.source,
@@ -536,8 +534,6 @@ export function cashoutResultFromJson(json: unknown): CashoutResult {
     escrowAddress: parsed.escrowAddress,
     onchainDepositId: BigInt(parsed.onchainDepositId),
     order: orderFromJson(parsed.order),
-    accessPolicyTxHash: parsed.accessPolicyTxHash as CashoutResult['accessPolicyTxHash'],
-    accessPolicyTxHashes: parsed.accessPolicyTxHashes as CashoutResult['accessPolicyTxHashes'],
     source: parsed.source
       ? {
           ...parsed.source,
@@ -554,8 +550,6 @@ export function prepareResultToJson(result: PrepareResult): PrepareResultJson {
     txs: result.txs.map(preparedTxToJson),
     steps: result.steps.map(preparedStepToJson),
     register: result.register,
-    accessPolicyRequired: result.accessPolicyRequired,
-    accessPolicyPaymentMethods: result.accessPolicyPaymentMethods,
   };
 }
 
@@ -565,8 +559,6 @@ export function prepareResultFromJson(json: unknown): PrepareResult {
     txs: parsed.txs.map(preparedTxFromJson),
     steps: parsed.steps.map(preparedStepFromJson),
     register: parsed.register,
-    accessPolicyRequired: parsed.accessPolicyRequired,
-    accessPolicyPaymentMethods: (parsed.accessPolicyPaymentMethods ?? []) as `0x${string}`[],
   };
 }
 
@@ -615,10 +607,6 @@ export function topUpResultFromJson(json: unknown): TopUpResult {
 export function capabilitiesToJson(caps: CashCapabilities): CashCapabilitiesJson {
   return {
     ...caps,
-    platforms: caps.platforms.map((platform) => ({
-      ...platform,
-      requiresAtomicAccessPolicy: false,
-    })),
     amount: {
       min: caps.amount.min.toString(),
       recommendedMin: caps.amount.recommendedMin.toString(),
@@ -647,7 +635,6 @@ export function capabilitiesFromJson(json: unknown): CashCapabilities {
             { kind: 'oracle-at-intent-signal' as const, spreadBps: 0 as const },
           ]),
         ),
-      requiresAtomicAccessPolicy: false,
     })),
     currencies: parsed.currencies as CurrencyType[],
     amount: {
@@ -679,32 +666,6 @@ export function cashErrorFromJson(json: unknown): CashError {
         kind: parsed.recovery.kind,
         transactionHash: parsed.recovery.transactionHash,
         operation: parsed.recovery.operation,
-      };
-    } else if (parsed.recovery.kind === 'configure-cashout-access-policy') {
-      recovery = {
-        kind: parsed.recovery.kind,
-        depositId: parsed.recovery.depositId,
-        groupIds: parsed.recovery.groupIds,
-        ...(parsed.recovery.paymentMethod !== undefined
-          ? { paymentMethod: parsed.recovery.paymentMethod }
-          : {}),
-        ...(parsed.recovery.transactionHash !== undefined
-          ? { transactionHash: parsed.recovery.transactionHash }
-          : {}),
-        ...(parsed.recovery.source !== undefined
-          ? {
-              source: {
-                amount: parsed.recovery.source.amount,
-                txHashes: parsed.recovery.source.txHashes,
-                ...(parsed.recovery.source.requestId !== undefined
-                  ? { requestId: parsed.recovery.source.requestId }
-                  : {}),
-                ...(parsed.recovery.source.transactions !== undefined
-                  ? { transactions: parsed.recovery.source.transactions }
-                  : {}),
-              },
-            }
-          : {}),
       };
     } else if (parsed.recovery.kind === 'inspect-base-operation-submission') {
       recovery = {

@@ -37,7 +37,6 @@ describe('buildCapabilities', () => {
       for (const platform of caps.platforms) {
         expect(platform.currencies.length).toBeGreaterThan(0);
         expect(platform.payeeHint.length).toBeGreaterThan(0);
-        expect(platform.requiresAtomicAccessPolicy).toBe(false);
         for (const currency of platform.currencies) {
           expect(isMarketRateSupported(currency)).toBe(true);
           expect(platform.pricing[currency]).toBeDefined();
@@ -82,7 +81,6 @@ describe('buildCapabilities', () => {
           payeeHint:
             'X username with X Money enabled, with or without the leading @ (e.g. @andrew)',
           requiresIdentityAttestation: false,
-          requiresAtomicAccessPolicy: false,
         },
       );
     },
