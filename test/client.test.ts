@@ -887,8 +887,9 @@ describe('cashout()', () => {
         );
 
         expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
-        expect(mockInstance.createDeposit.mock.calls[0]![0]).not.toHaveProperty(
+        expect(mockInstance.createDeposit.mock.calls[0]![0]).toHaveProperty(
           'enableTrustedGroupBypass',
+          false,
         );
         expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenCalledExactlyOnceWith(
           { hash: '0xhash' },
@@ -1155,8 +1156,9 @@ describe('cashout()', () => {
       );
 
       expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
-      expect(mockInstance.createDeposit.mock.calls[0]![0]).not.toHaveProperty(
+      expect(mockInstance.createDeposit.mock.calls[0]![0]).toHaveProperty(
         'enableTrustedGroupBypass',
+        false,
       );
       expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenCalledExactlyOnceWith({
         hash: '0xdeposit',
@@ -1286,6 +1288,7 @@ describe('cashout()', () => {
     expect(sameChainSigner.transport.request).toHaveBeenCalledTimes(3);
     expect(mockInstance.createDeposit).toHaveBeenCalledWith(
       expect.objectContaining({
+        enableTrustedGroupBypass: false,
         txOverrides: expect.not.objectContaining({ nonce: expect.anything() }),
       }),
     );

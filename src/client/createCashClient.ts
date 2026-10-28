@@ -1278,8 +1278,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
           );
         }
 
+        // Cash never opts into the SDK's trusted-group whitelist; do not rely on its default.
         const attributedParams = {
           ...params,
+          enableTrustedGroupBypass: false,
           txOverrides: attribution,
         };
         // Submit the deposit; one retry for the replica-lag case the allowance
@@ -1348,8 +1350,10 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const escrow = client.escrowV2Address ?? client.escrowAddress;
       await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
 
+      // Cash never opts into the SDK's trusted-group whitelist; do not rely on its default.
       const attributedParams = {
         ...params,
+        enableTrustedGroupBypass: false,
         txOverrides: attribution,
       };
       // Submit the deposit; one retry for the replica-lag case the allowance

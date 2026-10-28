@@ -46,7 +46,8 @@ is judged at the API surface, not the dependency tree.
   never attach it, recreate it, manage its membership, or use membership as a
   staking exemption. Venmo and PayPal retain the protocol's default dispute
   protection. Cash App is non-chargebackable and does not require
-  dispute-protection stake.
+  dispute-protection stake. `createDeposit` calls pass
+  `enableTrustedGroupBypass: false` explicitly rather than relying on the SDK default.
 - **Environment owns curator routing.** Preproduction defaults to
   `https://api-preprod.zkp2p.xyz`, staging to
   `https://api-staging.zkp2p.xyz`; retain explicit `curatorUrl` overrides.

@@ -46,4 +46,6 @@ This change requires a minor release under this repository's pre-1.0 semver
 convention: `0.8.0` after `0.7.3` (or a `0.8.0-rc.N` candidate). The version
 bump belongs in the separate version-only release PR described in `CLAUDE.md`.
 The dependency remains pinned to `@zkp2p/sdk` `0.15.0-rc.2`, whose
-`createDeposit()` enables trusted-group bypass only on an explicit `true`.
+`createDeposit()` enables trusted-group bypass only on an explicit `true`;
+Cash passes `enableTrustedGroupBypass: false` explicitly rather than relying
+on the SDK default.
