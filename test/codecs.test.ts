@@ -521,24 +521,10 @@ describe('prepared tx + result codecs', () => {
         { kind: 'createDeposit' as const, description: 'Create the order.' },
       ],
       register: { hashedOnchainIds: ['0x1'] },
-      accessPolicyRequired: true,
-      accessPolicyPaymentMethods: ['0xmethod' as const],
     };
     expect(prepareResultFromJson(JSON.parse(JSON.stringify(prepareResultToJson(result))))).toEqual(
       result,
     );
-  });
-
-  it('preserves an optional-policy prepared plan', () => {
-    const result = {
-      txs: [preparedTxToJson(tx)],
-      steps: [{ kind: 'createDeposit' as const, description: 'Create the order.' }],
-      register: { hashedOnchainIds: ['0x1'] },
-      accessPolicyRequired: false,
-    };
-
-    expect(prepareResultFromJson(result).accessPolicyRequired).toBe(false);
-    expect(prepareResultFromJson(result).accessPolicyPaymentMethods).toEqual([]);
   });
 
   it('cashoutResult round-trips including the nested order', () => {
@@ -548,8 +534,6 @@ describe('prepared tx + result codecs', () => {
       escrowAddress: '0xescrow',
       onchainDepositId: 1n,
       order,
-      accessPolicyTxHash: '0xaccess' as const,
-      accessPolicyTxHashes: ['0xaccess' as const],
       source: {
         amount: 1_000_000n,
         requestId: 'relay-request',
@@ -563,8 +547,6 @@ describe('prepared tx + result codecs', () => {
     const restored = cashoutResultFromJson(JSON.parse(JSON.stringify(cashoutResultToJson(result))));
     expect(restored.onchainDepositId).toBe(1n);
     expect(restored.source?.amount).toBe(1_000_000n);
-    expect(restored.accessPolicyTxHash).toBe('0xaccess');
-    expect(restored.accessPolicyTxHashes).toEqual(['0xaccess']);
     expect(restored.source?.transactions).toEqual(result.source.transactions);
     expect(restored.order.state).toBe(order.state);
     expect(restored.order.explain()).toBe(order.explain());
@@ -645,26 +627,6 @@ describe('capabilities codec', () => {
       });
     },
   );
-
-  it('normalizes legacy atomic-policy capabilities to false', () => {
-    const json = capabilitiesToJson(buildCapabilities('staging'));
-    const legacy = {
-      ...json,
-      platforms: json.platforms.map(({ requiresAtomicAccessPolicy: _, ...platform }) => ({
-        ...platform,
-        ...(platform.platform === 'venmo' ? { requiresAtomicAccessPolicy: true } : {}),
-      })),
-    };
-
-    const restored = capabilitiesFromJson(legacy);
-
-    expect(restored.platforms.find((platform) => platform.platform === 'venmo')).toMatchObject({
-      requiresAtomicAccessPolicy: false,
-    });
-    expect(restored.platforms.find((platform) => platform.platform === 'chime')).toMatchObject({
-      requiresAtomicAccessPolicy: false,
-    });
-  });
 });
 
 describe('CashError codec', () => {
@@ -700,37 +662,6 @@ describe('CashError codec', () => {
     const restored = cashErrorFromJson(JSON.parse(JSON.stringify(cashErrorToJson(error))));
 
     expect(isCashError(restored)).toBe(true);
-    expect(restored.toJSON()).toEqual(error.toJSON());
-  });
-
-  it('continues to decode the deprecated atomic-policy error code', () => {
-    const error = errors.atomicAccessPolicyRequired(['venmo']);
-
-    expect(cashErrorFromJson(cashErrorToJson(error)).toJSON()).toEqual(error.toJSON());
-  });
-
-  it('round-trips access-policy recovery without losing the deposit or Relay source', () => {
-    const error = errors.accessPolicyConfigurationFailed(
-      '0xescrow_7',
-      ['0xplus', '0xpro', '0xmakers', '0xpeerpay'],
-      {
-        cause: new Error('receipt unavailable'),
-        paymentMethod: '0xmethod',
-        transactionHash: '0xpolicy',
-        source: {
-          amount: 975_000n,
-          requestId: 'relay-request',
-          txHashes: ['0xorigin'],
-          transactions: {
-            origin: [{ hash: '0xorigin', chainId: 10 }],
-            destination: [],
-          },
-        },
-      },
-    );
-
-    const restored = cashErrorFromJson(cashErrorToJson(error));
-
     expect(restored.toJSON()).toEqual(error.toJSON());
   });
 

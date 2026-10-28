@@ -30,8 +30,8 @@ persist({ depositId: result.depositId });
 ```
 
 The signer must be the wallet that owns the Base USDC and will own the Peer
-deposit. For Venmo or PayPal, `cashout()` also confirms the method-scoped access
-policy before returning.
+deposit. `cashout()` returns after the deposit confirms; it never configures
+a whitelist or group.
 
 ### Signing stays in a custody or approval system
 
@@ -48,15 +48,12 @@ persist({
   reservationId,
   steps: prepared.steps,
   txs: prepared.txs,
-  accessPolicyPaymentMethods: prepared.accessPolicyPaymentMethods,
 });
 ```
 
 Submit each transaction in order and wait for its receipt. After
 `createDeposit` confirms, call `finalizePreparedCashout(receipt)` and persist
-the returned `depositId`. If `accessPolicyPaymentMethods` is non-empty, call
-`prepareAccessPolicy(depositId, paymentMethod)` once for each returned method
-and confirm those transactions with the depositor wallet.
+the returned `depositId`. No policy follow-up is required.
 
 ### An agent host prepares transactions
 
@@ -87,8 +84,7 @@ The production shape is:
    the cash-out.
 3. Persist the reservation and prepared transaction plan before returning it
    to the signer.
-4. Submit the plan in order, finalize the confirmed deposit receipt, and attach
-   any returned access policies.
+4. Submit the plan in order and finalize the confirmed deposit receipt.
 5. Persist the `depositId` and drive the order from `nextActions`.
 6. Release or reconcile the reservation only from confirmed transaction and
    protocol state.
@@ -119,7 +115,6 @@ one origin send, then wait for `SUCCESS` and reconcile the Base destination.
 - Prepared `steps[]` and `txs[]`
 - Submitted transaction hashes and receipts
 - `depositId` and depositor wallet
-- Required payment-method access policies and their transaction hashes
 
 Do not infer completion from a wallet balance or an HTTP timeout. A missing
 transaction hash or unknown receipt may still mean a transaction was

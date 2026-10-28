@@ -41,15 +41,12 @@ is judged at the API surface, not the dependency tree.
   identity attestation for a new registration. The SDK accepts but does not
   mint it; first-party Peer web obtains it through the Peer TEE browser
   extension. A previously registered bare handle can be reused.
-- **Restricted cash-outs finish sequentially.** If any payout leg uses Venmo or
-  PayPal, attach the Peer Pay merchant policy to each restricted
-  payment method after the deposit confirms. Preserve
-  `accessPolicyPaymentMethods`, `depositId`, and every policy hash. Never repeat
-  the cash-out after a policy failure; inspect an existing policy transaction
-  before resubmitting. Dispute protection is already default-on for these
-  method-scoped deposits, so Cash must not readiness-gate creation or submit an
-  explicit enable transaction. Cash App is non-chargebackable, stays public,
-  and does not require dispute-protection stake.
+- **Cash-outs never configure a whitelist or group.** This applies to every
+  payout platform and environment. The Peer Pay merchant group is retired;
+  never attach it, recreate it, manage its membership, or use membership as a
+  staking exemption. Venmo and PayPal retain the protocol's default dispute
+  protection. Cash App is non-chargebackable and does not require
+  dispute-protection stake.
 - **Environment owns curator routing.** Preproduction defaults to
   `https://api-preprod.zkp2p.xyz`, staging to
   `https://api-staging.zkp2p.xyz`; retain explicit `curatorUrl` overrides.

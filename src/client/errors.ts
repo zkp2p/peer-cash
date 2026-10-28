@@ -24,7 +24,6 @@ export type CashErrorCode =
   | 'ORDER_NOT_FOUND'
   | 'PAYEE_REGISTRATION_FAILED'
   | 'PAYEE_VERIFICATION_REQUIRED'
-  | 'ATOMIC_ACCESS_POLICY_REQUIRED'
   | 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE'
   | 'SOURCE_RECIPIENT_MISMATCH'
   | 'SOURCE_CAPABILITIES_FAILED'
@@ -37,7 +36,6 @@ export type CashErrorCode =
   | 'SOURCE_CASHOUT_SUBMISSION_UNKNOWN'
   | 'SOURCE_CASHOUT_STATUS_UNKNOWN'
   | 'DEPOSIT_RESOLUTION_FAILED'
-  | 'ACCESS_POLICY_CONFIGURATION_FAILED'
   | 'ALLOWANCE_NOT_VISIBLE'
   | 'SIGNER_REQUIRED'
   | 'SIGNER_CHAIN_MISMATCH'
@@ -93,15 +91,6 @@ export type CashErrorRecovery =
       kind: 'inspect-base-transaction';
       transactionHash: string;
       operation: string;
-    }
-  | {
-      kind: 'configure-cashout-access-policy';
-      depositId: string;
-      groupIds: string[];
-      paymentMethod?: string;
-      transactionHash?: string;
-      /** Present when Relay funded the already-created deposit. */
-      source?: CashSourceRecoveryBase;
     };
 
 export class CashError extends Error implements CashErrorShape {
@@ -298,14 +287,6 @@ export const errors = {
       },
       { cause },
     ),
-  /** @deprecated Cash-outs no longer require an atomic access-policy flow. */
-  atomicAccessPolicyRequired: (platforms: readonly string[]) =>
-    new CashError({
-      code: 'ATOMIC_ACCESS_POLICY_REQUIRED',
-      message: `Atomic access-policy enforcement for ${platforms.join(', ')} is deprecated.`,
-      retryable: false,
-      remediation: `Upgrade @zkp2p/cash; current cash-out flows do not require atomic access-policy configuration.`,
-    }),
   sourceRouteUnsupportedInPrepare: () =>
     new CashError({
       code: 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE',
@@ -584,49 +565,6 @@ export const errors = {
         },
       },
       { cause },
-    ),
-  accessPolicyConfigurationFailed: (
-    depositId: string,
-    groupIds: readonly string[],
-    context: {
-      cause?: unknown;
-      paymentMethod?: string;
-      transactionHash?: string;
-      source?: {
-        amount: bigint;
-        requestId?: string;
-        txHashes: string[];
-        transactions?: CashSourceRecoveryBase['transactions'];
-      };
-    } = {},
-  ) =>
-    new CashError(
-      {
-        code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-        message: `Cash-out deposit ${depositId} was created, but its access policy could not be confirmed.`,
-        retryable: false,
-        remediation: `Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId, recovery.paymentMethod) with the same depositor wallet.`,
-        recovery: {
-          kind: 'configure-cashout-access-policy',
-          depositId,
-          groupIds: [...groupIds],
-          ...(context.paymentMethod ? { paymentMethod: context.paymentMethod } : {}),
-          ...(context.transactionHash ? { transactionHash: context.transactionHash } : {}),
-          ...(context.source
-            ? {
-                source: {
-                  amount: context.source.amount.toString(),
-                  ...(context.source.requestId ? { requestId: context.source.requestId } : {}),
-                  txHashes: context.source.txHashes,
-                  ...(context.source.transactions
-                    ? { transactions: context.source.transactions }
-                    : {}),
-                },
-              }
-            : {}),
-        },
-      },
-      { cause: context.cause },
     ),
   escrowPaused: () =>
     new CashError({

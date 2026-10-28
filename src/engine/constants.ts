@@ -8,28 +8,13 @@
  * user's crypto. The protocol is reused in its existing direction - no proof
  * inversion, no sell-side quote.
  */
-import type { Hex } from 'viem';
-import type { IntentStatus, RuntimeEnv } from '../sdk-types';
+import type { IntentStatus } from '../sdk-types';
 
 /** Base chain id - Peer Cash settles in Base USDC. */
 export const BASE_CHAIN_ID = 8453;
 
 /** Canonical USDC on Base (6 decimals). The deposit asset for every cash-out. */
 export const BASE_USDC_ADDRESS = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' as const;
-
-/** Platforms whose cash-outs attach the Peer Pay merchant group after deposit creation. */
-export const CASH_RESTRICTED_PLATFORMS = new Set(['venmo', 'paypal']);
-
-/**
- * Canonical Peer Pay merchant group for each contract environment.
- * Preproduction uses the production Base contracts; staging has its own
- * registry and cohort.
- */
-export const CASH_ACCESS_GROUP_IDS: Record<RuntimeEnv, readonly Hex[]> = {
-  production: ['0x174b8a29536721a3eae290bfd55651b85a53fc334b971d993fa93ed8dde15e48'],
-  preproduction: ['0x174b8a29536721a3eae290bfd55651b85a53fc334b971d993fa93ed8dde15e48'],
-  staging: ['0xc82c20c00033046a2f017b65532d7148a337282f17c73296663a530e49ba00f7'],
-};
 
 /** USDC has 6 decimals. */
 export const USDC_DECIMALS = 6;

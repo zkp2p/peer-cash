@@ -476,8 +476,6 @@ export const cashoutResultJsonSchema = z.object({
   escrowAddress: z.string(),
   onchainDepositId: nonNegativeBigintString,
   order: cashOrderJsonSchema,
-  accessPolicyTxHash: z.string().optional(),
-  accessPolicyTxHashes: z.array(z.string()).optional(),
   source: z
     .object({
       amount: nonNegativeBigintString,
@@ -492,8 +490,6 @@ export const prepareResultJsonSchema = z.object({
   txs: z.array(preparedTransactionJsonSchema),
   steps: z.array(cashPreparedStepJsonSchema),
   register: z.object({ hashedOnchainIds: z.array(z.string()) }),
-  accessPolicyRequired: z.boolean(),
-  accessPolicyPaymentMethods: z.array(z.string()).optional(),
 });
 
 export const withdrawResultJsonSchema = z.object({
@@ -535,7 +531,6 @@ export const cashCapabilitiesJsonSchema = z.object({
         )
         .optional(),
       requiresIdentityAttestation: z.boolean(),
-      requiresAtomicAccessPolicy: z.boolean().optional(),
     }),
   ),
   currencies: z.array(z.string()),
@@ -575,7 +570,6 @@ const CASH_ERROR_CODES = defineCashErrorCodes([
   'ORDER_NOT_FOUND',
   'PAYEE_REGISTRATION_FAILED',
   'PAYEE_VERIFICATION_REQUIRED',
-  'ATOMIC_ACCESS_POLICY_REQUIRED',
   'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE',
   'SOURCE_RECIPIENT_MISMATCH',
   'SOURCE_CAPABILITIES_FAILED',
@@ -588,7 +582,6 @@ const CASH_ERROR_CODES = defineCashErrorCodes([
   'SOURCE_CASHOUT_SUBMISSION_UNKNOWN',
   'SOURCE_CASHOUT_STATUS_UNKNOWN',
   'DEPOSIT_RESOLUTION_FAILED',
-  'ACCESS_POLICY_CONFIGURATION_FAILED',
   'ALLOWANCE_NOT_VISIBLE',
   'SIGNER_REQUIRED',
   'SIGNER_CHAIN_MISMATCH',
@@ -647,16 +640,6 @@ export const cashErrorRecoveryJsonSchema = z.discriminatedUnion('kind', [
       kind: z.literal('inspect-base-transaction'),
       transactionHash: z.string(),
       operation: z.string(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('configure-cashout-access-policy'),
-      depositId: z.string(),
-      groupIds: z.array(z.string()),
-      paymentMethod: z.string().optional(),
-      transactionHash: z.string().optional(),
-      source: z.object(cashSourceRecoveryJsonShape).strict().optional(),
     })
     .strict(),
 ]);

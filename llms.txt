@@ -74,8 +74,7 @@ Key facts:
 - X Money supports USD with `platform: 'xmoney'`. Raw payees such as
   '@YourHandle' become 'yourhandle'; structured offchainId values must already
   be normalized. The receiving account must have X Money enabled; registration
-  verifies X account existence, but not X Money enrollment. No identity attestation or
-  Peer Pay merchant policy is required.
+  verifies X account existence, but not X Money enrollment. No identity attestation is required.
 - UPI/INR is available without feature flags. For example, use
   `createCashClient({ environment: 'preproduction' })`.
   Any valid UPI ID from any bank can receive without a seller login,
@@ -125,16 +124,13 @@ Key facts:
 - Wise, PayPal, and Alipay require attestation for a new payee registration. The SDK
   accepts but does not mint it; first-party Peer web obtains it through the
   Peer TEE browser extension. A previously registered bare handle can be reused.
-- Venmo and PayPal attach a method-scoped Peer Pay merchant policy
-  after the deposit confirms, restricting which takers can signal an intent.
-  The follow-ups are intentionally non-atomic; `cashout()` submits each with
-  the same viem wallet, while prepared hosts iterate
-  `accessPolicyPaymentMethods`. Method-scoped dispute protection is already
-  default-on, so Cash does not readiness-gate creation or submit an explicit
-  enable transaction. Cash App is non-chargebackable, stays public, and does
-  not require dispute-protection stake. Any EOA works; Privy is not required. On
-  ACCESS_POLICY_CONFIGURATION_FAILED, never repeat the cashout; inspect
-  recovery.transactionHash before resubmitting a policy.
+- Cash-outs never configure a whitelist or group, including Venmo and PayPal.
+  Signed cashout() returns after the deposit confirms; prepared hosts finalize
+  the confirmed receipt and persist depositId. Venmo and PayPal retain the
+  protocol's default dispute protection without a group-based staking exemption.
+  Cash App is non-chargebackable and does not require dispute-protection stake.
+  Any EOA works; Privy is not required. See docs/migration.md for the breaking
+  removal of policy methods, fields, and error codes.
 - Preproduction uses https://api-preprod.zkp2p.xyz by default; staging uses
   https://api-staging.zkp2p.xyz. curatorUrl can override either.
 

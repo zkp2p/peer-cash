@@ -54,9 +54,6 @@ console.log(
 // 2 - Cash out.
 const result = await cash.cashout({ amount: usdc(1), receive }, { signer });
 console.log(`deposit created: ${result.depositId} (tx ${result.txHash})`);
-for (const hash of result.accessPolicyTxHashes ?? []) {
-  console.log(`access policy attached: ${hash}`);
-}
 // Persist this in YOUR system: userId → result.depositId
 
 // 3/5 - Track it. A real service would watch until terminal; the demo bails

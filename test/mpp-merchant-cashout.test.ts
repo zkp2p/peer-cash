@@ -32,70 +32,44 @@ describe('MPP merchant cash-out example', () => {
     expect(revenue.snapshot().available).toBe(usdc('7'));
   });
 
-  it('prepares one unsigned plan from confirmed MPP revenue', async () => {
-    const amounts: bigint[] = [];
-    const { adminApp, revenue } = createApp({
-      ...appOptions,
-      cash: {
-        async prepare(input) {
-          amounts.push(input.amount);
-          return {
-            accessPolicyRequired: false,
-            accessPolicyPaymentMethods: [],
-            register: { hashedOnchainIds: [] },
-            steps: [],
-            txs: [],
-          };
+  it.each(['revolut', 'venmo', 'paypal'])(
+    'prepares one unsigned %s plan from confirmed MPP revenue',
+    async (platform) => {
+      const amounts: bigint[] = [];
+      const { adminApp, revenue } = createApp({
+        ...appOptions,
+        cashout: { ...appOptions.cashout, platform },
+        cash: {
+          async prepare(input) {
+            amounts.push(input.amount);
+            return {
+              register: { hashedOnchainIds: [] },
+              steps: [],
+              txs: [],
+            };
+          },
         },
-      },
-    });
-    revenue.record('0xsettlement', usdc('10'));
+      });
+      revenue.record('0xsettlement', usdc('10'));
 
-    const response = await adminApp.request('http://localhost/cashout', {
-      body: JSON.stringify({}),
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
+      const response = await adminApp.request('http://localhost/cashout', {
+        body: JSON.stringify({}),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
 
-    expect(response.status).toBe(200);
-    expect(amounts).toEqual([usdc('10')]);
-    expect((await response.json()).revenue.availableUsdc).toBe('0');
+      expect(response.status).toBe(200);
+      expect(amounts).toEqual([usdc('10')]);
+      expect((await response.json()).revenue.availableUsdc).toBe('0');
 
-    const duplicate = await adminApp.request('http://localhost/cashout', {
-      body: JSON.stringify({}),
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-    expect(duplicate.status).toBe(409);
-  });
-
-  it('releases revenue when a payout needs an unsupported follow-up', async () => {
-    const { adminApp, revenue } = createApp({
-      ...appOptions,
-      cashout: { ...appOptions.cashout, platform: 'venmo' },
-      cash: {
-        async prepare() {
-          return {
-            accessPolicyRequired: true,
-            accessPolicyPaymentMethods: [`0x${'01'.repeat(32)}`],
-            register: { hashedOnchainIds: [] },
-            steps: [],
-            txs: [],
-          };
-        },
-      },
-    });
-    revenue.record('0xsettlement', usdc('10'));
-
-    const response = await adminApp.request('http://localhost/cashout', {
-      body: JSON.stringify({}),
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-
-    expect(response.status).toBe(400);
-    expect(revenue.snapshot().available).toBe(usdc('10'));
-  });
+      const duplicate = await adminApp.request('http://localhost/cashout', {
+        body: JSON.stringify({}),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+      expect(duplicate.status).toBe(409);
+    },
+  );
 
   it('returns an MPP payment challenge for the protected resource', async () => {
     const { publicApp } = createApp({

@@ -95,10 +95,8 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       case 'cash_cashout': {
         // Tool/prepare path: Base USDC only. The host must complete Relay or
         // NEAR Intents source routing first, then call this tool with the
-        // confirmed Base USDC amount. Persist
-        // accessPolicyPaymentMethods: after createDeposit confirms, the host
-        // calls finalizePreparedCashout(receipt), then prepareAccessPolicy()
-        // once per listed method.
+        // confirmed Base USDC amount. After createDeposit confirms, the host
+        // calls finalizePreparedCashout(receipt) and persists depositId.
         const input = {
           amount: BigInt(args.amount as string),
           receive: args.receive as never,
@@ -153,7 +151,6 @@ const caps = (await executeTool('cash_capabilities', {})) as {
     currencies: string[];
     payeeHint: string;
     requiresIdentityAttestation: boolean;
-    requiresAtomicAccessPolicy: boolean;
   }[];
 };
 const venmo = caps.platforms.find((p) => p.platform === 'venmo');
@@ -161,7 +158,6 @@ console.log(`agent sees ${caps.platforms.length} platforms; venmo capability:`);
 console.log(
   `  hint="${venmo?.payeeHint}" identityAttestation=${venmo?.requiresIdentityAttestation}`,
 );
-console.log('  method-scoped policies are reported by cash_cashout.accessPolicyPaymentMethods\n');
 
 const est = await executeTool('cash_estimate', {
   amount: usdc(250).toString(),

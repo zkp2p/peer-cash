@@ -37,13 +37,7 @@ import {
   type VenmoGmailPopupOptions,
 } from '@zkp2p/sdk';
 import type { CurrencyType, PreparedTransaction, RuntimeEnv, TxOverrides } from '../sdk-types';
-import {
-  BASE_CHAIN_ID,
-  BASE_USDC_ADDRESS,
-  CASH_ACCESS_GROUP_IDS,
-  CASH_ORDER_STATUSES,
-  CASH_RESTRICTED_PLATFORMS,
-} from '../engine/constants';
+import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, CASH_ORDER_STATUSES } from '../engine/constants';
 import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
 import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
 import { derivePayouts } from '../engine/payouts';
@@ -57,10 +51,7 @@ import {
   MIN_CASHOUT_AMOUNT,
   type CashCapabilities,
 } from './capabilities';
-import {
-  getCashPaymentMethodsCatalog,
-  resolveCashPaymentMethodHash,
-} from '../engine/paymentMethodCatalog';
+import { getCashPaymentMethodsCatalog } from '../engine/paymentMethodCatalog';
 import {
   readEstimate,
   type CashEstimate,
@@ -304,10 +295,6 @@ export interface CashoutResult {
   onchainDepositId: bigint;
   /** Optimistic snapshot (`awaiting-buyer`); poll `order(depositId)` for live state. */
   order: CashOrder;
-  /** Last confirmed access-policy transaction. Retained for single-policy compatibility. */
-  accessPolicyTxHash?: Hash;
-  /** Confirmed method-scoped policy transactions for restricted payout legs. */
-  accessPolicyTxHashes?: Hash[];
   /** Present when `cashout()` first routed a source asset through Relay. */
   source?: {
     /** Conservative Base USDC amount deposited (Relay's guaranteed minimum output). */
@@ -330,10 +317,6 @@ export interface PrepareResult {
   steps: CashPreparedStep[];
   /** Curator payee registration output - the payee hashes now live on the deposit params. */
   register: { hashedOnchainIds: string[] };
-  /** Whether the host must submit and confirm the policy after `createDeposit` confirms. */
-  accessPolicyRequired: boolean;
-  /** Method hashes that each require a post-deposit Peer Pay policy transaction. */
-  accessPolicyPaymentMethods: Hex[];
 }
 
 /** Confirmed createDeposit receipt from an externally executed prepare() plan. */
@@ -438,8 +421,6 @@ export interface CashClient {
   prepare(input: CashoutInput): Promise<PrepareResult>;
   /** Resolve an externally executed createDeposit receipt into resumable cash-out state. */
   finalizePreparedCashout(receipt: PreparedCashoutReceipt): CashoutResult;
-  /** Prepare one method-scoped Peer Pay follow-up for a restricted cash-out. */
-  prepareAccessPolicy(depositId: string, paymentMethod: Hex): PreparedTransaction;
   /** 3 - Observe: resumable from `depositId` alone; no session state anywhere. */
   order(depositId: string): Promise<CashOrder>;
   /**
@@ -537,20 +518,6 @@ function isKnownPreBroadcastFailure(mapped: CashError): boolean {
     mapped.code === 'ALLOWANCE_NOT_VISIBLE' ||
     mapped.code === 'ESCROW_PAUSED'
   );
-}
-
-function cashoutAccessPolicyPaymentMethods(
-  depositInput: CashDepositInput,
-  environment: RuntimeEnv,
-): Hex[] {
-  const catalog = getCashPaymentMethodsCatalog(environment);
-  return [
-    ...new Set(
-      depositInput.payouts
-        .filter((payout) => CASH_RESTRICTED_PLATFORMS.has(payout.processorName.toLowerCase()))
-        .map((payout) => resolveCashPaymentMethodHash(payout.processorName, catalog)),
-    ),
-  ];
 }
 
 /** The indexer aggregate fields both deposit queries share. */
@@ -1094,91 +1061,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
     throw new Error(`Signer provider did not observe Relay nonce ${afterRelay - 1}`);
   }
 
-  function prepareCashoutAccess(
-    depositId: string,
-    paymentMethod: Hex,
-    client: Zkp2pClient = readClient,
-    source?: CashoutResult['source'],
-  ): PreparedTransaction {
-    const { compositeId, escrowAddress, onchainDepositId } = parseDepositId(depositId);
-    const groupIds = CASH_ACCESS_GROUP_IDS[environment];
-    try {
-      const prepared = client.accessPolicy.prepareConfigurePeerPayMerchantDeposit({
-        escrow: escrowAddress as Address,
-        depositId: onchainDepositId,
-        paymentMethod,
-        txOverrides: attribution,
-      });
-      return {
-        to: prepared.to,
-        data: prepared.data,
-        value: prepared.value,
-        chainId: prepared.chainId,
-      };
-    } catch (err) {
-      throw errors.accessPolicyConfigurationFailed(compositeId, groupIds, {
-        cause: err,
-        paymentMethod,
-        ...(source ? { source } : {}),
-      });
-    }
-  }
-
-  async function configureCashoutAccess(
-    client: Zkp2pClient,
-    signer: WalletClient,
-    depositInput: CashDepositInput,
-    depositId: string,
-    source?: CashoutResult['source'],
-  ): Promise<Hash[]> {
-    const groupIds = CASH_ACCESS_GROUP_IDS[environment];
-    const paymentMethods = cashoutAccessPolicyPaymentMethods(depositInput, environment);
-    const hashes: Hash[] = [];
-
-    for (const paymentMethod of paymentMethods) {
-      const prepared = prepareCashoutAccess(depositId, paymentMethod, client, source);
-
-      let hash: Hash;
-      try {
-        hash = await signer.sendTransaction({
-          account: signer.account!,
-          chain: signer.chain,
-          to: prepared.to,
-          data: prepared.data,
-          value: prepared.value,
-        });
-      } catch (err) {
-        throw errors.accessPolicyConfigurationFailed(depositId, groupIds, {
-          cause: err,
-          paymentMethod,
-          ...(source ? { source } : {}),
-        });
-      }
-
-      let receipt;
-      try {
-        receipt = await client.publicClient.waitForTransactionReceipt({ hash });
-      } catch (err) {
-        throw errors.accessPolicyConfigurationFailed(depositId, groupIds, {
-          cause: err,
-          paymentMethod,
-          transactionHash: hash,
-          ...(source ? { source } : {}),
-        });
-      }
-      if (receipt.status === 'reverted') {
-        throw errors.accessPolicyConfigurationFailed(depositId, groupIds, {
-          cause: errors.transactionFailed(hash),
-          paymentMethod,
-          transactionHash: hash,
-          ...(source ? { source } : {}),
-        });
-      }
-      hashes.push(hash);
-    }
-    return hashes;
-  }
-
   async function isMailboxConnected(
     processorName: 'venmo' | 'xmoney',
     payeeDetails: Hash,
@@ -1396,11 +1278,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
           );
         }
 
-        // Cash attaches the Peer Pay merchant policy itself after the deposit.
         const attributedParams = {
           ...params,
           txOverrides: attribution,
-          enableTrustedGroupBypass: false,
         };
         // Submit the deposit; one retry for the replica-lag case the allowance
         // visibility loop cannot fully rule out. All other failures map to typed
@@ -1445,13 +1325,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
         const abi = client.escrowV2Abi ?? client.escrowAbi;
         const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
         if (!resolved) throw errors.depositResolutionFailed(hash);
-        const accessPolicyTxHashes = await configureCashoutAccess(
-          client,
-          opts.signer,
-          depositInput,
-          resolved.compositeId,
-          routedSource,
-        );
         const order = deriveCashOrder(resolved.compositeId, [], {
           remainingAmount: depositInput.amount,
           status: 'ACTIVE',
@@ -1463,12 +1336,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           escrowAddress: resolved.escrowAddress,
           onchainDepositId: resolved.onchainDepositId,
           order,
-          ...(accessPolicyTxHashes.length > 0
-            ? {
-                accessPolicyTxHash: accessPolicyTxHashes.at(-1)!,
-                accessPolicyTxHashes,
-              }
-            : {}),
           source: routedSource,
         };
       }
@@ -1481,11 +1348,9 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const escrow = client.escrowV2Address ?? client.escrowAddress;
       await settleAllowance(client, params.token, owner, escrow, depositInput.amount);
 
-      // Cash attaches the Peer Pay merchant policy itself after the deposit.
       const attributedParams = {
         ...params,
         txOverrides: attribution,
-        enableTrustedGroupBypass: false,
       };
       // Submit the deposit; one retry for the replica-lag case the allowance
       // visibility loop cannot fully rule out. All other failures map to typed
@@ -1528,12 +1393,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
       const abi = client.escrowV2Abi ?? client.escrowAbi;
       const resolved = resolveCashDepositId({ logs: receipt.logs, abi });
       if (!resolved) throw errors.depositResolutionFailed(hash);
-      const accessPolicyTxHashes = await configureCashoutAccess(
-        client,
-        opts.signer,
-        depositInput,
-        resolved.compositeId,
-      );
       const order = deriveCashOrder(resolved.compositeId, [], {
         remainingAmount: depositInput.amount,
         status: 'ACTIVE',
@@ -1545,12 +1404,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
         escrowAddress: resolved.escrowAddress,
         onchainDepositId: resolved.onchainDepositId,
         order,
-        ...(accessPolicyTxHashes.length > 0
-          ? {
-              accessPolicyTxHash: accessPolicyTxHashes.at(-1)!,
-              accessPolicyTxHashes,
-            }
-          : {}),
       };
     },
 
@@ -1580,11 +1433,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
 
       const hashedOnchainIds = (params.paymentMethodDataOverride ?? []).map((d) => d.payeeDetails);
 
-      const accessPolicyPaymentMethods = cashoutAccessPolicyPaymentMethods(
-        depositInput,
-        environment,
-      );
-
       return {
         txs: [approve, prepared],
         steps: [
@@ -1598,8 +1446,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           },
         ],
         register: { hashedOnchainIds },
-        accessPolicyRequired: accessPolicyPaymentMethods.length > 0,
-        accessPolicyPaymentMethods,
       };
     },
 
@@ -1630,10 +1476,6 @@ export function createCashClient(options: CashClientOptions): CashClient {
           status: 'ACTIVE',
         }),
       };
-    },
-
-    prepareAccessPolicy(depositId: string, paymentMethod: Hex) {
-      return prepareCashoutAccess(depositId, paymentMethod);
     },
 
     async order(depositId: string): Promise<CashOrder> {

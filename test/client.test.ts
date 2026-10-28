@@ -34,9 +34,6 @@ const mockInstance = {
   registerPayeeDetails: vi.fn(),
   createDeposit: vi.fn(),
   prepareCreateDeposit: vi.fn(),
-  accessPolicy: {
-    prepareConfigurePeerPayMerchantDeposit: vi.fn(),
-  },
   getDisputeProtectionReadiness: vi.fn(),
   setDisputeProtectionEnabled: Object.assign(vi.fn(), { prepare: vi.fn() }),
   ensureAllowance: vi.fn(),
@@ -75,13 +72,12 @@ import {
   toCashReferralAttributionCode,
 } from '../src/client/createCashClient';
 import { isCashError, isUserRejectedError } from '../src/client/errors';
-import { BASE_USDC_ADDRESS, CASH_ACCESS_GROUP_IDS } from '../src/engine/constants';
+import { BASE_USDC_ADDRESS } from '../src/engine/constants';
 
 const NOW = Math.floor(Date.now() / 1000);
 const ESCROW = '0x1111111111111111111111111111111111111111';
 const DEPOSIT_ID = `${ESCROW}_5`;
 const UNKNOWN_PAYMENT_METHOD_HASH = `0x${'11'.repeat(32)}`;
-const VENMO_PAYMENT_METHOD = getPaymentMethodsCatalog(8453, 'staging')['venmo']!.paymentMethodHash;
 
 const DEPOSIT_RECEIVED_ABI: Abi = [
   {
@@ -216,13 +212,6 @@ beforeEach(() => {
     hashedOnchainIds: ['0xpayeehash'],
   });
   mockInstance.ensureAllowance.mockResolvedValue({ hadAllowance: true });
-  mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit.mockReturnValue({
-    to: '0x3333333333333333333333333333333333333333',
-    data: '0xaccess',
-    value: 0n,
-    chainId: 8453,
-  });
-  vi.mocked(signer.sendTransaction).mockResolvedValue('0xaccess');
 });
 
 describe('environment routing', () => {
@@ -616,9 +605,6 @@ describe('cashout()', () => {
           ],
         }),
       );
-      expect(
-        mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit,
-      ).not.toHaveBeenCalled();
     },
   );
 
@@ -842,8 +828,6 @@ describe('cashout()', () => {
     expect(result.depositId).toBe(`${ESCROW}_5`);
     expect(result.onchainDepositId).toBe(5n);
     expect(result.txHash).toBe('0xhash');
-    expect(result.accessPolicyTxHash).toBeUndefined();
-    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).not.toHaveBeenCalled();
     expect(signer.sendTransaction).not.toHaveBeenCalled();
     expect(result.order.state).toBe('awaiting-buyer');
   });
@@ -863,211 +847,70 @@ describe('cashout()', () => {
       { signer: eoaSigner },
     );
 
-    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).not.toHaveBeenCalled();
     expect(mockInstance.getDisputeProtectionReadiness).not.toHaveBeenCalled();
     expect(mockInstance.setDisputeProtectionEnabled.prepare).not.toHaveBeenCalled();
     expect(eoaSigner.sendTransaction).not.toHaveBeenCalled();
-    expect(result.accessPolicyTxHash).toBeUndefined();
-    expect(result.accessPolicyTxHashes).toBeUndefined();
+    expect(result.depositId).toBe(DEPOSIT_ID);
   });
 
-  it.each(['venmo', 'paypal'])(
-    'supports %s with a generic EOA signer, attaches the canonical access group, and relies on default-on protection',
-    async (platform) => {
-      mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-        status: 'success',
-        logs: [depositReceivedLog(5n)],
-      });
+  for (const environment of ['production', 'preproduction', 'staging'] as const) {
+    it.each(['venmo', 'paypal', 'mixed'])(
+      `${environment}: creates a %s cash-out without whitelist follow-ups`,
+      async (platform) => {
+        const venmo = {
+          platform: 'venmo',
+          currency: 'USD' as const,
+          payee: { offchainId: '@seller' },
+        };
+        const paypal = {
+          platform: 'paypal',
+          currency: 'USD' as const,
+          payee: { offchainId: 'seller@example.com' },
+        };
+        const receive =
+          platform === 'mixed'
+            ? ([venmo, paypal] as const)
+            : ([platform === 'venmo' ? venmo : paypal] as const);
+        mockInstance.registerPayeeDetails.mockResolvedValue({
+          depositDetails: receive.map(() => ({})),
+          hashedOnchainIds: receive.map((payout) => `0x${payout.platform}`),
+        });
+        mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+        mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+          status: 'success',
+          logs: [depositReceivedLog(5n)],
+        });
 
-      const result = await client().cashout(
-        {
-          amount: 5_000_000n,
-          receive: {
-            platform,
-            currency: 'USD',
-            payee: { offchainId: platform === 'paypal' ? 'seller@example.com' : '@seller' },
-          },
-        },
-        { signer: eoaSigner },
-      );
+        const result = await createCashClient({ environment }).cashout(
+          { amount: 5_000_000n, receive },
+          { signer: eoaSigner },
+        );
 
-      expect(Zkp2pClient).toHaveBeenCalledWith(
-        expect.objectContaining({ walletClient: eoaSigner }),
-      );
-      expect(mockInstance.createDeposit).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ enableTrustedGroupBypass: false }),
-      );
-      expect(mockInstance.createDeposit.mock.invocationCallOrder[0]).toBeLessThan(
-        vi.mocked(eoaSigner.sendTransaction).mock.invocationCallOrder[0]!,
-      );
-      expect(
-        mockInstance.publicClient.waitForTransactionReceipt.mock.invocationCallOrder[0],
-      ).toBeLessThan(vi.mocked(eoaSigner.sendTransaction).mock.invocationCallOrder[0]!);
-      expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).toHaveBeenCalledWith(
-        {
-          escrow: ESCROW,
-          depositId: 5n,
-          paymentMethod: getPaymentMethodsCatalog(8453, 'staging')[platform]!.paymentMethodHash,
-          txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
-        },
-      );
-      expect(eoaSigner.sendTransaction).toHaveBeenCalledWith({
-        account: eoaSigner.account,
-        chain: eoaSigner.chain,
-        to: '0x3333333333333333333333333333333333333333',
-        data: '0xaccess',
-        value: 0n,
-      });
-      expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenLastCalledWith({
-        hash: '0xaccess',
-      });
-      expect(mockInstance.getDisputeProtectionReadiness).not.toHaveBeenCalled();
-      expect(mockInstance.setDisputeProtectionEnabled.prepare).not.toHaveBeenCalled();
-      expect(result).toMatchObject({
-        depositId: `${ESCROW}_5`,
-        txHash: '0xhash',
-        onchainDepositId: 5n,
-        accessPolicyTxHash: '0xaccess',
-        accessPolicyTxHashes: ['0xaccess'],
-      });
-    },
-  );
-
-  it('configures every restricted payout method and returns every policy hash', async () => {
-    mockInstance.registerPayeeDetails.mockResolvedValue({
-      depositDetails: [{}, {}],
-      hashedOnchainIds: ['0xvenmo-payee', '0xpaypal-payee'],
-    });
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-      status: 'success',
-      logs: [depositReceivedLog(5n)],
-    });
-    vi.mocked(eoaSigner.sendTransaction)
-      .mockResolvedValueOnce('0xpolicy1')
-      .mockResolvedValueOnce('0xpolicy2');
-
-    const result = await client().cashout(
-      {
-        amount: 5_000_000n,
-        receive: [
-          {
-            platform: 'venmo',
-            currency: 'USD',
-            payee: { offchainId: '@seller' },
-          },
-          {
-            platform: 'paypal',
-            currency: 'USD',
-            payee: { offchainId: 'seller@example.com' },
-          },
-        ],
+        expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
+        expect(mockInstance.createDeposit.mock.calls[0]![0]).not.toHaveProperty(
+          'enableTrustedGroupBypass',
+        );
+        expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenCalledExactlyOnceWith(
+          { hash: '0xhash' },
+        );
+        expect(eoaSigner.sendTransaction).not.toHaveBeenCalled();
+        expect(mockInstance.getDisputeProtectionReadiness).not.toHaveBeenCalled();
+        expect(mockInstance.setDisputeProtectionEnabled.prepare).not.toHaveBeenCalled();
+        expect(Object.keys(result).sort()).toEqual([
+          'depositId',
+          'escrowAddress',
+          'onchainDepositId',
+          'order',
+          'txHash',
+        ]);
+        expect(result).toMatchObject({
+          depositId: DEPOSIT_ID,
+          txHash: '0xhash',
+          onchainDepositId: 5n,
+        });
       },
-      { signer: eoaSigner },
     );
-
-    const catalog = getPaymentMethodsCatalog(8453, 'staging');
-    expect(
-      mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit,
-    ).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ paymentMethod: catalog['venmo']!.paymentMethodHash }),
-    );
-    expect(
-      mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit,
-    ).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ paymentMethod: catalog['paypal']!.paymentMethodHash }),
-    );
-    expect(result.accessPolicyTxHash).toBe('0xpolicy2');
-    expect(result.accessPolicyTxHashes).toEqual(['0xpolicy1', '0xpolicy2']);
-  });
-
-  it('returns the created deposit id when access-policy signing is rejected', async () => {
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-      status: 'success',
-      logs: [depositReceivedLog(5n)],
-    });
-    vi.mocked(signer.sendTransaction).mockRejectedValueOnce(new Error('User rejected request'));
-
-    await expect(
-      client().cashout(
-        {
-          amount: 5_000_000n,
-          receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@seller' } },
-        },
-        { signer },
-      ),
-    ).rejects.toMatchObject({
-      code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-      retryable: false,
-      recovery: {
-        kind: 'configure-cashout-access-policy',
-        depositId: `${ESCROW}_5`,
-        groupIds: CASH_ACCESS_GROUP_IDS.staging,
-        paymentMethod: VENMO_PAYMENT_METHOD,
-      },
-    });
-  });
-
-  it('returns the policy hash when access-policy confirmation is unavailable', async () => {
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-    mockInstance.publicClient.waitForTransactionReceipt
-      .mockResolvedValueOnce({ status: 'success', logs: [depositReceivedLog(5n)] })
-      .mockRejectedValueOnce(new Error('RPC unavailable'));
-
-    const error = await client()
-      .cashout(
-        {
-          amount: 5_000_000n,
-          receive: {
-            platform: 'paypal',
-            currency: 'USD',
-            payee: { offchainId: 'seller@example.com' },
-          },
-        },
-        { signer },
-      )
-      .catch((err: unknown) => err);
-
-    expect(error).toMatchObject({
-      code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-      recovery: {
-        kind: 'configure-cashout-access-policy',
-        depositId: `${ESCROW}_5`,
-        transactionHash: '0xaccess',
-      },
-    });
-    expect(isCashError(error) && error.remediation).toBe(
-      'Do not create another cash-out. If recovery.transactionHash is present, inspect that policy transaction first. Otherwise, or if it is confirmed reverted, submit and confirm prepareAccessPolicy(recovery.depositId, recovery.paymentMethod) with the same depositor wallet.',
-    );
-  });
-
-  it('does not report success when the access-policy transaction reverts', async () => {
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
-    mockInstance.publicClient.waitForTransactionReceipt
-      .mockResolvedValueOnce({ status: 'success', logs: [depositReceivedLog(5n)] })
-      .mockResolvedValueOnce({ status: 'reverted', logs: [] });
-
-    await expect(
-      client().cashout(
-        {
-          amount: 5_000_000n,
-          receive: { platform: 'paypal', currency: 'USD', payee: 'paypal.me/seller' },
-        },
-        { signer },
-      ),
-    ).rejects.toMatchObject({
-      code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-      recovery: {
-        kind: 'configure-cashout-access-policy',
-        depositId: `${ESCROW}_5`,
-        transactionHash: '0xaccess',
-      },
-    });
-  });
+  }
 
   it('creates a signed Zelle cashout with only the generic method', async () => {
     const payeeHashes = ['0xzelle'];
@@ -1105,7 +948,6 @@ describe('cashout()', () => {
         ),
       }),
     );
-    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).not.toHaveBeenCalled();
   });
 
   it('does not invite duplicate Base cashouts when submission returns no hash', async () => {
@@ -1254,82 +1096,83 @@ describe('cashout()', () => {
     });
   });
 
-  it('preserves Relay evidence when the post-deposit access policy fails', async () => {
-    const relayQuote = {
-      details: {
-        sender: '0xmaker',
-        recipient: '0xmaker',
-        currencyIn: {
-          amount: '1000000',
-          currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
-        },
-        currencyOut: {
-          amount: '4900000',
-          currency: {
-            chainId: 8453,
-            address: BASE_USDC_ADDRESS,
-            symbol: 'USDC',
-            decimals: 6,
+  it.each(['venmo', 'paypal'])(
+    'preserves Relay evidence for %s without whitelist follow-ups',
+    async (platform) => {
+      const relayQuote = {
+        details: {
+          sender: '0xmaker',
+          recipient: '0xmaker',
+          currencyIn: {
+            amount: '1000000',
+            currency: { chainId: 10, address: '0xsource', symbol: 'USDC', decimals: 6 },
+          },
+          currencyOut: {
+            amount: '4900000',
+            currency: {
+              chainId: 8453,
+              address: BASE_USDC_ADDRESS,
+              symbol: 'USDC',
+              decimals: 6,
+            },
           },
         },
-      },
-      steps: [],
-    };
-    const relayClient = {
-      chains: [{ id: 10 }],
-      actions: {
-        getQuote: vi.fn(async () => relayQuote),
-        execute: vi.fn(async () => ({
-          data: {
-            steps: [
-              {
-                requestId: 'relay-request',
-                items: [{ status: 'complete', txHashes: [{ txHash: '0xrelay', chainId: 10 }] }],
-              },
-            ],
-          },
-          abortController: new AbortController(),
-        })),
-      },
-    };
-    mockInstance.createDeposit.mockResolvedValue({ hash: '0xdeposit' });
-    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
-      status: 'success',
-      logs: [depositReceivedLog(5n)],
-    });
-    vi.mocked(signer.sendTransaction).mockRejectedValueOnce(new Error('wallet unavailable'));
+        steps: [],
+      };
+      const relayClient = {
+        chains: [{ id: 10 }],
+        actions: {
+          getQuote: vi.fn(async () => relayQuote),
+          execute: vi.fn(async () => ({
+            data: {
+              steps: [
+                {
+                  requestId: 'relay-request',
+                  items: [{ status: 'complete', txHashes: [{ txHash: '0xrelay', chainId: 10 }] }],
+                },
+              ],
+            },
+            abortController: new AbortController(),
+          })),
+        },
+      };
+      mockInstance.createDeposit.mockResolvedValue({ hash: '0xdeposit' });
+      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+        status: 'success',
+        logs: [depositReceivedLog(5n)],
+      });
 
-    const error = await createCashClient({
-      environment: 'staging',
-      relay: { client: relayClient as never },
-    })
-      .cashout(
+      const result = await createCashClient({
+        environment: 'staging',
+        relay: { client: relayClient as never },
+      }).cashout(
         {
           amount: 1_000_000n,
           source: { chainId: 10, currency: '0xsource' },
-          receive: { platform: 'venmo', currency: 'USD', payee: '@seller' },
+          receive: { platform, currency: 'USD', payee: { offchainId: 'seller' } },
         },
         { signer, sourceSigner },
-      )
-      .catch((cause) => cause);
+      );
 
-    expect(error).toMatchObject({
-      code: 'ACCESS_POLICY_CONFIGURATION_FAILED',
-      recovery: {
-        kind: 'configure-cashout-access-policy',
-        depositId: `${ESCROW}_5`,
+      expect(mockInstance.createDeposit).toHaveBeenCalledOnce();
+      expect(mockInstance.createDeposit.mock.calls[0]![0]).not.toHaveProperty(
+        'enableTrustedGroupBypass',
+      );
+      expect(mockInstance.publicClient.waitForTransactionReceipt).toHaveBeenCalledExactlyOnceWith({
+        hash: '0xdeposit',
+      });
+      expect(signer.sendTransaction).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        depositId: DEPOSIT_ID,
         source: {
-          amount: '4900000',
+          amount: 4_900_000n,
           requestId: 'relay-request',
           txHashes: ['0xrelay'],
-          transactions: {
-            origin: [{ hash: '0xrelay', chainId: 10 }],
-            destination: [],
-          },
+          transactions: { origin: [{ hash: '0xrelay', chainId: 10 }], destination: [] },
         },
-      },
-    });
-  });
+      });
+    },
+  );
 
   it('waits for the signer provider to observe a same-chain Relay nonce before depositing', async () => {
     const relayQuote = {
@@ -1444,7 +1287,6 @@ describe('cashout()', () => {
     expect(mockInstance.createDeposit).toHaveBeenCalledWith(
       expect.objectContaining({
         txOverrides: expect.not.objectContaining({ nonce: expect.anything() }),
-        enableTrustedGroupBypass: false,
       }),
     );
   });
@@ -2286,30 +2128,51 @@ describe('prepare()', () => {
     expect(result.register.hashedOnchainIds).toEqual(['0xpayeehash']);
   });
 
-  it('prepares an EOA-compatible restricted cash-out and marks the access follow-up', async () => {
-    mockInstance.prepareCreateDeposit.mockResolvedValue({
-      depositDetails: [{}],
-      prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
-    });
+  for (const environment of ['production', 'preproduction', 'staging'] as const) {
+    it.each(['venmo', 'paypal', 'mixed'])(
+      `${environment}: prepares only approval and deposit for %s`,
+      async (platform) => {
+        const venmo = {
+          platform: 'venmo',
+          currency: 'USD' as const,
+          payee: { offchainId: '@seller' },
+        };
+        const paypal = {
+          platform: 'paypal',
+          currency: 'USD' as const,
+          payee: { offchainId: 'seller@example.com' },
+        };
+        const receive =
+          platform === 'mixed'
+            ? ([venmo, paypal] as const)
+            : ([platform === 'venmo' ? venmo : paypal] as const);
+        const hashedOnchainIds = receive.map((payout) => `0x${payout.platform}`);
+        mockInstance.registerPayeeDetails.mockResolvedValue({
+          depositDetails: receive.map(() => ({})),
+          hashedOnchainIds,
+        });
+        mockInstance.prepareCreateDeposit.mockResolvedValue({
+          prepared: { to: ESCROW, data: '0xdeposit', value: 0n, chainId: 8453 },
+        });
 
-    const { txs, steps, register, accessPolicyRequired, accessPolicyPaymentMethods } =
-      await client().prepare({
-        amount: 5_000_000n,
-        receive: { platform: 'venmo', currency: 'USD', payee: { offchainId: '@a' } },
-      });
+        const result = await createCashClient({ environment }).prepare({
+          amount: 5_000_000n,
+          receive,
+        });
 
-    expect(txs).toHaveLength(2);
-    expect(steps.map((s) => s.kind)).toEqual(['approve', 'createDeposit']);
-    expect(txs[0]?.to.toLowerCase()).toBe('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'); // USDC approve
-    expect(txs[0]?.data.startsWith('0x095ea7b3')).toBe(true); // approve selector
-    expect(txs[1]).toMatchObject({ to: ESCROW, data: '0xdeposit' });
-    expect(register.hashedOnchainIds).toEqual(['0xpayeehash']);
-    expect(accessPolicyRequired).toBe(true);
-    expect(accessPolicyPaymentMethods).toEqual([VENMO_PAYMENT_METHOD]);
-    // No signing surface touched.
-    expect(mockInstance.createDeposit).not.toHaveBeenCalled();
-    expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
-  });
+        expect(Object.keys(result).sort()).toEqual(['register', 'steps', 'txs']);
+        expect(result.txs).toHaveLength(2);
+        expect(result.steps.map((step) => step.kind)).toEqual(['approve', 'createDeposit']);
+        expect(result.txs[0]?.to.toLowerCase()).toBe(BASE_USDC_ADDRESS);
+        expect(result.txs[0]?.data.startsWith('0x095ea7b3')).toBe(true);
+        expect(result.txs[1]).toMatchObject({ to: ESCROW, data: '0xdeposit' });
+        expect(result.register.hashedOnchainIds).toEqual(hashedOnchainIds);
+        expect(mockInstance.prepareCreateDeposit).toHaveBeenCalledOnce();
+        expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+        expect(mockInstance.ensureAllowance).not.toHaveBeenCalled();
+      },
+    );
+  }
 
   it('creates a prepared Zelle cashout with only the generic method', async () => {
     const payeeHashes = ['0xzelle'];
@@ -2341,8 +2204,6 @@ describe('prepare()', () => {
       }),
     );
     expect(result.register.hashedOnchainIds).toEqual(payeeHashes);
-    expect(result.accessPolicyRequired).toBe(false);
-    expect(result.accessPolicyPaymentMethods).toEqual([]);
   });
 
   it('rejects Relay source routing because prepare cannot execute the bridge pre-step', async () => {
@@ -2442,41 +2303,6 @@ describe('finalizePreparedCashout()', () => {
       }),
     );
   });
-});
-
-describe('prepareAccessPolicy()', () => {
-  it('prepares the method-scoped Peer Pay policy for an externally created cash-out', () => {
-    const prepared = client().prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
-
-    expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).toHaveBeenCalledWith({
-      escrow: ESCROW,
-      depositId: 5n,
-      paymentMethod: VENMO_PAYMENT_METHOD,
-      txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
-    });
-    expect(prepared).toEqual({
-      to: '0x3333333333333333333333333333333333333333',
-      data: '0xaccess',
-      value: 0n,
-      chainId: 8453,
-    });
-  });
-
-  it.each(['production', 'preproduction'] as const)(
-    'delegates the fixed Peer Pay merchant policy to the SDK for %s',
-    (environment) => {
-      createCashClient({ environment }).prepareAccessPolicy(DEPOSIT_ID, VENMO_PAYMENT_METHOD);
-
-      expect(mockInstance.accessPolicy.prepareConfigurePeerPayMerchantDeposit).toHaveBeenCalledWith(
-        {
-          escrow: ESCROW,
-          depositId: 5n,
-          paymentMethod: VENMO_PAYMENT_METHOD,
-          txOverrides: { referrer: [CASH_ATTRIBUTION_CODE] },
-        },
-      );
-    },
-  );
 });
 
 describe('withdraw()', () => {
