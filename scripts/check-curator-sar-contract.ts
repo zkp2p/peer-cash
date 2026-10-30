@@ -31,7 +31,9 @@ type JsonSchema = {
 const args = process.argv.slice(2);
 const sourceFlag = args.indexOf('--curator-source');
 const curatorSource = sourceFlag >= 0 ? args[sourceFlag + 1] : undefined;
-const curatorUrl = args.find((arg, index) => !arg.startsWith('--') && index !== sourceFlag + 1);
+const curatorUrl = args.find(
+  (arg, index) => !arg.startsWith('--') && (sourceFlag < 0 || index !== sourceFlag + 1),
+);
 const origin = new URL(curatorUrl ?? 'https://api-preprod.zkp2p.xyz').origin;
 
 const failures: string[] = [];

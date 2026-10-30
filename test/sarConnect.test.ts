@@ -383,6 +383,17 @@ describe('SAR connect: status, wait, cancel', () => {
     });
   });
 
+  it('returns connecting, not connected, when timeoutMs ends before account status confirms', async () => {
+    const link = await prepared();
+    const { client } = curator(
+      envelope(context(link, { status: 'connected', payeeIdHash })),
+      envelope({ status: 'inactive' }),
+    );
+    await expect(client.wait(link, { pollIntervalMs: 50, timeoutMs: 10 })).resolves.toEqual({
+      status: 'connecting',
+    });
+  });
+
   it('throws the last retryable error when timeoutMs ends a failing wait', async () => {
     const link = await prepared();
     const { client } = curator(new Response('', { status: 503 }));

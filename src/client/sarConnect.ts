@@ -619,7 +619,8 @@ export function createSarConnectClient(options: SarConnectOptions): SarConnectCl
         }
         if (Date.now() + pollIntervalMs >= deadline) {
           if (lastError) throw lastError;
-          return latest;
+          // Never hand back `connected` that account status has not confirmed.
+          return latest.status === 'connected' ? { status: 'connecting' } : latest;
         }
         await sleep(pollIntervalMs, signal);
       }
