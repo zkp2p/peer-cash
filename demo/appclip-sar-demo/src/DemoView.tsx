@@ -77,7 +77,7 @@ export function DemoView({ model }: { model: DemoModel }) {
         : status === 'connecting'
           ? 'Connecting…'
           : linkActive
-            ? 'Waiting for your iPhone'
+            ? 'Waiting for your phone'
             : sar.available
               ? 'Already connected'
               : 'Not connected';
@@ -86,7 +86,7 @@ export function DemoView({ model }: { model: DemoModel }) {
     <main className="shell">
       <header className="masthead">
         <img className="logo" src="/peer-logo-colour.svg" alt="Peer" width={92} height={32} />
-        <span className="masthead-tag">iPhone App Clip</span>
+        <span className="masthead-tag">App Clip and Android</span>
       </header>
 
       <section className="card" aria-labelledby="form-title">
@@ -146,7 +146,7 @@ export function DemoView({ model }: { model: DemoModel }) {
           <p id={payeeHintId} className="hint">
             {formLocked
               ? 'Locked while a link is active. Cancel the link to change it.'
-              : `The ${railTitle} account you will sign in to on your iPhone.`}
+              : `The ${railTitle} account you will sign in to on your phone.`}
           </p>
         </div>
 
@@ -179,7 +179,7 @@ export function DemoView({ model }: { model: DemoModel }) {
           <div className="connect-head">
             <h2 id="connect-title" className="label">
               <span className="step" aria-hidden="true">3</span>
-              Confirm on iPhone
+              Confirm on your phone
             </h2>
             <span
               className={`status is-${tone}`}
@@ -239,15 +239,15 @@ export function DemoView({ model }: { model: DemoModel }) {
                 disabled={sar.busy}
                 aria-busy={sar.busy || undefined}
               >
-                {sar.busy ? 'Creating link…' : link ? 'Create a new link' : 'Connect on iPhone'}
+                {sar.busy ? 'Creating link…' : link ? 'Create a new link' : 'Connect on your phone'}
               </button>
 
               {sar.error ? <p className="alert" role="alert">{sar.error}</p> : null}
               {sar.accountStatusError ? <p className="alert" role="alert">{sar.accountStatusError}</p> : null}
 
               <ol className="how">
-                <li>Scan the code, or open the link on this iPhone.</li>
-                <li>Sign in to {railTitle} inside the Peer App Clip.</li>
+                <li>Scan the code, or open the link on this phone.</li>
+                <li>Sign in to {railTitle} in the Peer App Clip on iPhone, or the Peer app on Android.</li>
                 <li>Come back here. The status updates on its own.</li>
               </ol>
             </div>
@@ -261,13 +261,13 @@ export function DemoView({ model }: { model: DemoModel }) {
                   fgColor="#000000"
                   level="M"
                   marginSize={2}
-                  title="Scan with your iPhone camera to open the Peer App Clip"
+                  title="Scan with your iPhone or Android camera to open Peer"
                 />
               </div>
               <div className="link-body">
                 <p className="link-copy">
-                  Scan with your iPhone camera, or open the link on this iPhone. Sign in to {railTitle} in
-                  the App Clip and this page will update.
+                  Scan with your iPhone or Android camera, or open the link on this phone. Sign in to{' '}
+                  {railTitle} in Peer and this page will update. Android needs the Peer app installed.
                 </p>
                 <div className="expiry">
                   <div
@@ -293,6 +293,15 @@ export function DemoView({ model }: { model: DemoModel }) {
                   rel="noopener noreferrer"
                 >
                   Open on iPhone
+                </a>
+                <a
+                  className="btn btn-secondary"
+                  data-testid="sar-open-android"
+                  href={link.appUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open on Android
                 </a>
                 <div className="actions-row">
                   <button type="button" className="btn btn-quiet" onClick={sar.refresh} disabled={sar.busy}>

@@ -101,6 +101,7 @@
     "test:watch": "vitest",
     "audit": "bun audit --production",
     "pack:check": "bun scripts/check-packed-package.ts",
+    "check:curator-sar": "bun scripts/check-curator-sar-contract.ts",
     "verify:production-crosschain-relay": "bun scripts/verify-production-crosschain-relay.ts",
     "verify:production-maker": "bun scripts/verify-production-maker.ts",
     "prepack": "bun run build",

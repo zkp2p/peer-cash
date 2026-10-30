@@ -132,13 +132,15 @@ const rootExport: typeof createCashClient = createCashClient;
 const rootType = null as CashClient | null;
 const prepareNativeLink = (cash: CashClient) =>
   cash.prepareVenmoGmailConnect('@handle', { returnUrl: 'partner-app://venmo-linked' });
+const prepareSarLink = (cash: CashClient) =>
+  cash.prepareSarConnect({ platform: 'paypal', payeeHandle: 'seller', paypalEmail: 'seller@example.com', returnUrl: 'https://partner.example/connected' });
 const reactExport: typeof useCashout = useCashout;
 const reactType = null as UseCashoutOptions | null;
 const customName: CashToolName = 'merchant_custom_tool';
 const builtInName: BuiltInCashToolName = 'cash_fill_stats';
 const mutableRegistry: CashToolDefinition[] = cashTools;
 
-void [rootExport, rootType, prepareNativeLink, reactExport, reactType, customName, builtInName, mutableRegistry];
+void [rootExport, rootType, prepareNativeLink, prepareSarLink, reactExport, reactType, customName, builtInName, mutableRegistry];
 `;
   writeFileSync(join(temporaryRoot, 'consumer-modern.ts'), consumerSource);
   writeFileSync(join(classicRoot, 'consumer-classic.ts'), consumerSource);
@@ -150,7 +152,7 @@ import { cashToolManifest, cashTools } from '@zkp2p/cash/tools';
 
 const client = createCashClient({ environment: 'staging' });
 const nearIntents = createNearIntentsClient({ fetch: async () => new Response('[]') });
-if (typeof client.cashout !== 'function' || typeof client.fillStats !== 'function' || typeof client.quoteNearIntentsSource !== 'function' || typeof nearIntents.quoteToBaseUsdc !== 'function' || usdc('1') !== 1_000_000n) throw new Error('root ESM failed');
+if (typeof client.cashout !== 'function' || typeof client.prepareSarConnect !== 'function' || typeof client.fillStats !== 'function' || typeof client.quoteNearIntentsSource !== 'function' || typeof nearIntents.quoteToBaseUsdc !== 'function' || usdc('1') !== 1_000_000n) throw new Error('root ESM failed');
 if (typeof useCashout !== 'function') throw new Error('react ESM failed');
 if (cashToolManifest.version !== ${JSON.stringify(packedPackage.version)} || cashTools.length !== 14) throw new Error('tools ESM failed');
 `,

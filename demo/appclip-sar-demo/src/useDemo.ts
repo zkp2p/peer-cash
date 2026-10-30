@@ -29,7 +29,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function useDemo() {
-  const [rail, setRail] = useState<SarPlatform>('upi');
+  const [rail, setRail] = useState<SarPlatform>('cashapp');
   const [payee, setPayee] = useState('');
   const [paypalEmail, setPaypalEmail] = useState('');
   const [link, setLink] = useState<SarLink | null>(null);

@@ -152,6 +152,9 @@ arbitrary protocol operations.
 
 | Verb                                                           | What it does                                                                                                                    |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `prepareSarConnect(input, auth?)`                              | Create a Cash App or PayPal account connection: App Clip URL for iPhone, `/connect` URL for Android                             |
+| `getSarConnectStatus(link)` / `waitForSarConnect(link)`        | Read or poll (3s) that exact connection; `connected` only after Curator account status confirms it                              |
+| `cancelSarConnect(link)` / `isSarConnected(account)`           | Cancel a pending link; read whether an account has an active seller credential                                                  |
 | `prepareXMoneyConnect(payee, { returnUrl }?)`                  | Register an X username and prepare its hosted receipt-inbox link                                                                |
 | `openXMoneyConnect(identity)`                                  | Browser popup/tab; call directly from a click with the prepared identity                                                        |
 | `isXMoneyConnected(payeeDetails)`                              | Read whether an active Gmail, Outlook or iCloud receipt credential exists                                                       |
@@ -194,6 +197,59 @@ Order reads fail closed against the same active catalog. If any method on an
 indexed deposit is unsupported, `orders()` excludes the whole deposit and
 `order()` returns `ORDER_NOT_FOUND`; Peer Cash never partially reclassifies a
 mixed historical deposit.
+
+## Optional Cash App and PayPal account connection
+
+This is the connection Peer Payouts uses. The seller connects a Cash App or
+PayPal account in the Peer App Clip on iPhone, or in the installed Peer app on
+Android. Curator verifies the account and stores the seller credential. A
+connection never moves funds or starts a cash-out, and `cashout()` never
+requires one.
+
+```ts
+const link = await cash.prepareSarConnect({
+  platform: 'cashapp', // or 'paypal' with paypalEmail (and optional identityActionType)
+  payeeHandle: '$alice',
+  returnUrl: 'https://checkout.example.com/connected',
+});
+// Persist the link (preparedSarConnectToJson), then show it:
+const href = sarConnectUrlFor(link, detectSarConnectDevice());
+const result = await cash.waitForSarConnect(link); // connected | cancelled | expired
+```
+
+- `prepareSarConnect(input)` calls Curator's wallet-free
+  `POST /v2/sar/connections/checkout`. Pass
+  `{ privyAccessToken, callerAddress }` as the second argument for the
+  wallet-owned `POST /v2/sar/connections`, which associates the connection with
+  that seller's Peer maker profile.
+- `link.url` is the App Clip URL exactly as Curator returned it. Use it in
+  iPhone Safari and in desktop QR codes. `link.appUrl` carries the same request
+  on `/connect`, which opens the installed Peer app on Android and in other iOS
+  browsers. `sarConnectUrlFor(link, detectSarConnectDevice())` picks between
+  them.
+- `getSarConnectStatus(link)` reads the session with the request id as a
+  Bearer token. It returns `expired` on 401/410 and throws
+  `SarConnectError('mismatch')` when the session's state, environment, account
+  or return URL differ from the link. `waitForSarConnect(link)` polls every 3s
+  and returns `connected` only after `isSarConnected(account)` confirms the
+  credential with Curator's account status. `cancelSarConnect(link)` cancels a
+  pending link but never undoes a submitted credential.
+- Cash App takes a cashtag: one leading `$` and surrounding spaces are removed,
+  it is lowercased, and it must be 1-20 letters or digits. Cash App is USD
+  only. PayPal takes the PayPal username (one leading `@` removed, then
+  lowercase letters, digits, `.`, `_` or `-`) and requires `paypalEmail`. Set
+  `identityActionType: 'register_business_paypal'` for a Business account;
+  Personal is the default. These rules mirror Curator's
+  `sarConnectionAccount.ts`; `bun run check:curator-sar` compares them with a
+  live Curator.
+- Each integrator's `returnUrl` origin must be on the Curator environment's
+  `SAR_CONNECT_RETURN_ORIGINS` and CORS lists. Otherwise create fails with
+  `SarConnectError('invalid_return_url')`. Ask Peer to approve each origin per
+  environment.
+- `requestId` is a 15-minute capability. Keep it out of logs and analytics.
+  Treat `sarState` and `sarStatus` on the callback as hints, and re-read status.
+  Prepared links and results have `preparedSarConnectToJson/FromJson` and
+  `sarConnectResultToJson/FromJson` codecs. See `examples/sar-connect.ts`.
 
 ## Optional X Money receipt linking
 
@@ -629,6 +685,7 @@ is the default source and the only destination asset for cashout orders.
 
 Runnable first-party examples in [`examples/`](examples):
 
+- [`sar-connect.ts`](examples/sar-connect.ts) - connect a Cash App or PayPal account through the Peer App Clip or Android app.
 - [`node-cashout.ts`](examples/node-cashout.ts) - server-side cash-out with a private-key signer, plus order tracking.
 - [`upi-staging-cashout.ts`](examples/upi-staging-cashout.ts) - UPI/INR cash-out to any valid UPI ID on staging or preproduction.
 - [`agent-tool-use.ts`](examples/agent-tool-use.ts) - wiring the verbs into an agent tool-use loop with host-side signing.

@@ -30,6 +30,8 @@ import type {
   NearIntentsStatusInput,
 } from '../client/nearIntents';
 import { CashError, type CashErrorRecovery, type CashErrorShape } from '../client/errors';
+import type { Hash } from 'viem';
+import type { PreparedSarConnect, SarConnectResult } from '../client/sarConnect';
 import type {
   PreparedVenmoGmailConnect,
   PreparedXMoneyConnect,
@@ -42,6 +44,10 @@ import type {
 import {
   preparedVenmoGmailConnectJsonSchema,
   preparedXMoneyConnectJsonSchema,
+  preparedSarConnectJsonSchema,
+  sarConnectResultJsonSchema,
+  type PreparedSarConnectJson,
+  type SarConnectResultJson,
   xMoneyConnectResultJsonSchema,
   type PreparedXMoneyConnectJson,
   type XMoneyConnectResultJson,
@@ -760,4 +766,21 @@ export function xMoneyConnectResultToJson(value: XMoneyConnectResult): XMoneyCon
 export function xMoneyConnectResultFromJson(json: unknown): XMoneyConnectResult {
   const parsed = xMoneyConnectResultJsonSchema.parse(json);
   return { payeeDetails: parsed.payeeDetails as XMoneyConnectResult['payeeDetails'] };
+}
+
+export function preparedSarConnectToJson(value: PreparedSarConnect): PreparedSarConnectJson {
+  return preparedSarConnectJsonSchema.parse(value);
+}
+export function preparedSarConnectFromJson(json: unknown): PreparedSarConnect {
+  return preparedSarConnectJsonSchema.parse(json);
+}
+export function sarConnectResultToJson(value: SarConnectResult): SarConnectResultJson {
+  return sarConnectResultJsonSchema.parse(value);
+}
+export function sarConnectResultFromJson(json: unknown): SarConnectResult {
+  const parsed = sarConnectResultJsonSchema.parse(json);
+  return {
+    status: parsed.status,
+    ...(parsed.payeeIdHash ? { payeeIdHash: parsed.payeeIdHash as Hash } : {}),
+  };
 }
