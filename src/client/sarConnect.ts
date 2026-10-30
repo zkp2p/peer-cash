@@ -143,7 +143,11 @@ export interface SarConnectWaitOptions {
   signal?: AbortSignal;
   /** Default 3000, matching Peer Payouts. */
   pollIntervalMs?: number;
-  /** Stop early and return the latest `pending` / `connecting` status. Defaults to the link's own expiry. */
+  /**
+   * Stop early: returns the latest `pending` / `connecting` status, or throws the
+   * last retryable error if every read since the previous success failed.
+   * Defaults to the link's own expiry.
+   */
   timeoutMs?: number;
 }
 
@@ -210,7 +214,8 @@ export function normalizeSarConnectAccount(account: SarConnectAccount): SarConne
   return parsed.data;
 }
 
-function assertReturnUrl(returnUrl: string): void {
+/** Validate `returnUrl` and return it in the form Curator stores and echoes (`new URL(...).href`). */
+function canonicalReturnUrl(returnUrl: string): string {
   let url: URL;
   try {
     url = new URL(returnUrl);
@@ -234,6 +239,7 @@ function assertReturnUrl(returnUrl: string): void {
       'returnUrl must be HTTPS without credentials, a fragment, sarState or sarStatus.',
     );
   }
+  return url.href;
 }
 
 /** Which link to show: Safari keeps the App Clip, other mobile browsers open the app, desktop shows a QR code. */
@@ -486,7 +492,7 @@ export function createSarConnectClient(options: SarConnectOptions): SarConnectCl
   return {
     async prepare(input, auth) {
       const account = normalizeSarConnectAccount(input);
-      assertReturnUrl(input.returnUrl);
+      const returnUrl = canonicalReturnUrl(input.returnUrl);
       const state = input.state ?? randomState();
       if (!SAR_CONNECT_STATE_PATTERN.test(state)) {
         throw new SarConnectError('invalid_account', 'state must be 16-128 URL-safe characters.');
@@ -502,7 +508,7 @@ export function createSarConnectClient(options: SarConnectOptions): SarConnectCl
       }
       const body = {
         ...account,
-        returnUrl: input.returnUrl,
+        returnUrl,
         state,
         currencies,
         ...(auth
@@ -527,6 +533,14 @@ export function createSarConnectClient(options: SarConnectOptions): SarConnectCl
           throw new SarConnectError('unauthorized', 'Curator rejected the Privy access token.', {
             status: 401,
           });
+        }
+        // On the Privy route, a 403 means callerAddress is not linked to that Privy user.
+        if (auth && cause instanceof SarConnectError && cause.status === 403) {
+          throw new SarConnectError(
+            'unauthorized',
+            'callerAddress is not a wallet linked to this Privy account.',
+            { status: 403 },
+          );
         }
         throw cause;
       }
@@ -557,7 +571,7 @@ export function createSarConnectClient(options: SarConnectOptions): SarConnectCl
         requestId,
         expiresAt,
         state,
-        returnUrl: input.returnUrl,
+        returnUrl,
         currencies,
         environment,
         url,
@@ -572,23 +586,41 @@ export function createSarConnectClient(options: SarConnectOptions): SarConnectCl
       const deadline =
         waitOptions.timeoutMs === undefined ? Infinity : Date.now() + waitOptions.timeoutMs;
       const { signal } = waitOptions;
+      let latest: SarConnectResult = { status: 'pending' };
+      let lastError: SarConnectError | undefined;
+      let unconfirmedReads = 0;
       for (;;) {
         if (signal?.aborted) throw abortError();
-        // `status` reports `expired` once the link's own expiry passes, which ends the loop.
-        const result = await status(link, signal ? { signal } : undefined);
-        if (result.status === 'connected') {
+        try {
+          // `status` reports `expired` once the link's own expiry passes, which ends the loop.
+          latest = await status(link, signal ? { signal } : undefined);
+          lastError = undefined;
+          if (latest.status === 'cancelled' || latest.status === 'expired') return latest;
           // Curator's own credential check decides; the session status alone is a hint.
-          for (let attempt = 0; attempt < CONFIRM_ATTEMPTS; attempt++) {
-            if (await isConnected(link, signal)) return result;
-            if (attempt < CONFIRM_ATTEMPTS - 1) await sleep(pollIntervalMs, signal);
+          if (latest.status === 'connected') {
+            if (await isConnected(link, signal)) return latest;
+            if (++unconfirmedReads >= CONFIRM_ATTEMPTS) {
+              throw new SarConnectError(
+                'unconfirmed',
+                'Curator reported the connection, but the account is not active yet. Check isSarConnected again shortly.',
+              );
+            }
           }
-          throw new SarConnectError(
-            'unconfirmed',
-            'Curator reported the connection, but the account is not active yet. Check isSarConnected again shortly.',
-          );
+        } catch (cause) {
+          // Keep waiting through blips, rate limits and 503s, as Peer Payouts does.
+          if (
+            !(cause instanceof SarConnectError) ||
+            !cause.retryable ||
+            cause.code === 'unconfirmed'
+          ) {
+            throw cause;
+          }
+          lastError = cause;
         }
-        if (result.status === 'cancelled' || result.status === 'expired') return result;
-        if (Date.now() + pollIntervalMs >= deadline) return result;
+        if (Date.now() + pollIntervalMs >= deadline) {
+          if (lastError) throw lastError;
+          return latest;
+        }
         await sleep(pollIntervalMs, signal);
       }
     },

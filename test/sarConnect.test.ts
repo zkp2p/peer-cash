@@ -194,6 +194,46 @@ describe('SAR connect: create', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it.each([
+    ['a bare origin', 'https://partner.example', 'https://partner.example/'],
+    ['an uppercase host', 'https://Partner.EXAMPLE/Connected', 'https://partner.example/Connected'],
+    [
+      'the default port',
+      'https://partner.example:443/done?x=1',
+      'https://partner.example/done?x=1',
+    ],
+  ])('sends and keeps %s as Curator stores it', async (_label, raw, canonical) => {
+    let stored = '';
+    const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        const sent = JSON.parse(String(init.body)) as { returnUrl: string; state: string };
+        stored = new URL(sent.returnUrl).toString(); // Curator's mint
+        return created();
+      }
+      return envelope({
+        environment: 'preproduction',
+        platform: 'cashapp',
+        payeeHandle: 'alice99',
+        returnUrl: stored,
+        state: link.state,
+        expiresAt: String(link.expiresAt),
+        status: 'pending',
+      });
+    });
+    const client = createSarConnectClient({ environment: 'preproduction', fetch });
+    const link = await client.prepare({ ...cashApp, returnUrl: raw });
+    expect(link.returnUrl).toBe(canonical);
+    expect(stored).toBe(canonical);
+    await expect(client.status(link)).resolves.toEqual({ status: 'pending' });
+  });
+
+  it('names an unlinked wallet on the Privy route', async () => {
+    const { client } = curator(new Response('', { status: 403 }));
+    await expect(
+      client.prepare(cashApp, { privyAccessToken: 'jwt', callerAddress: `0x${'2'.repeat(40)}` }),
+    ).rejects.toMatchObject({ code: 'unauthorized', status: 403 });
+  });
+
   it('names an unapproved return origin', async () => {
     const { client } = curator(
       Response.json(
@@ -309,16 +349,56 @@ describe('SAR connect: status, wait, cancel', () => {
 
   it('does not report connected until Curator account status is active', async () => {
     const link = await prepared();
+    const connected = () => envelope(context(link, { status: 'connected', payeeIdHash }));
     const { client } = curator(
-      envelope(context(link, { status: 'connected', payeeIdHash })),
+      connected(),
       envelope({ status: 'inactive' }),
+      connected(),
       envelope({ status: 'inactive' }),
+      connected(),
       envelope({ status: 'inactive' }),
     );
     await expect(client.wait(link, { pollIntervalMs: 1 })).rejects.toMatchObject({
       code: 'unconfirmed',
       retryable: true,
     });
+  });
+
+  it('keeps waiting through a 503, a rate limit and a network error', async () => {
+    const link = await prepared();
+    const { client } = curator(
+      new Response('Connection storage is unavailable', { status: 503 }),
+      new Response('Too many requests', { status: 429 }),
+      () => {
+        throw new TypeError('fetch failed');
+      },
+      envelope(context(link, { status: 'connected', payeeIdHash })),
+      new Response('', { status: 503 }),
+      envelope(context(link, { status: 'connected', payeeIdHash })),
+      envelope({ status: 'active' }),
+    );
+    await expect(client.wait(link, { pollIntervalMs: 1 })).resolves.toEqual({
+      status: 'connected',
+      payeeIdHash: payeeIdHash.toLowerCase(),
+    });
+  });
+
+  it('throws the last retryable error when timeoutMs ends a failing wait', async () => {
+    const link = await prepared();
+    const { client } = curator(new Response('', { status: 503 }));
+    await expect(client.wait(link, { pollIntervalMs: 50, timeoutMs: 10 })).rejects.toMatchObject({
+      code: 'request_failed',
+      status: 503,
+    });
+  });
+
+  it('rejects a mismatched session on the first poll', async () => {
+    const link = await prepared();
+    const { client, calls } = curator(envelope(context(link, { state: 'S'.repeat(32) })));
+    await expect(client.wait(link, { pollIntervalMs: 1 })).rejects.toMatchObject({
+      code: 'mismatch',
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it('stops waiting when the link expires', async () => {

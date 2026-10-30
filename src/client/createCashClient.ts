@@ -373,7 +373,10 @@ export interface CashClient {
     link: PreparedSarConnect,
     options?: { signal?: AbortSignal },
   ): Promise<SarConnectResult>;
-  /** Poll every 3s until connected (confirmed by account status), cancelled, expired or `timeoutMs`. */
+  /**
+   * Poll every 3s until connected (confirmed by account status), cancelled,
+   * expired or `timeoutMs`, waiting through retryable errors.
+   */
   waitForSarConnect(
     link: PreparedSarConnect,
     options?: SarConnectWaitOptions,
