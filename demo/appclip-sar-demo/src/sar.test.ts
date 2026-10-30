@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSarLink, readSarAccountStatus, readSarResult, restoreSarLink, saveSarLink } from './sar';
+import { connectLinks, createSarLink, readSarAccountStatus, readSarResult, restoreSarLink, saveSarLink } from './sar';
 
 const requestId = `p${'A'.repeat(42)}`;
 const apiBase = 'https://api.zkp2p.xyz';
 const returnUrl = 'https://demo.peer.xyz/';
+const clipUrl = (id: string) => `https://mobile.peer.xyz/clip/connect?request=${id}`;
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('wallet-free App Clip SAR handoff', () => {
   it('mints a UPI request without Privy or a client-selected wallet', async () => {
     const fetcher = vi.fn(async (url: string, init: RequestInit) => {
-      expect(url).toBe('https://api.zkp2p.xyz/v2/sar/connections/demo');
+      expect(url).toBe('https://api.zkp2p.xyz/v2/sar/connections/checkout');
       expect(init.method).toBe('POST');
       expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
       const body = JSON.parse(String(init.body));
@@ -20,12 +21,13 @@ describe('wallet-free App Clip SAR handoff', () => {
       expect(body).not.toHaveProperty('callerAddress');
       expect(body.state).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
       return Response.json({ success: true, responseObject: {
-        requestId, expiresAt: String(Date.now() + 600_000),
+        requestId, expiresAt: String(Date.now() + 600_000), url: clipUrl(requestId),
       } }, { status: 201 });
     });
     vi.stubGlobal('fetch', fetcher);
     const link = await createSarLink({ apiBase, platform: 'upi', payeeHandle: '7014748022@apl', returnUrl });
     expect(link.url).toBe(`https://mobile.peer.xyz/clip/connect?request=${requestId}`);
+    expect(link.appUrl).toBe(`https://mobile.peer.xyz/connect?request=${requestId}`);
     expect(link.url).not.toContain('7014748022');
     expect(fetcher).toHaveBeenCalledOnce();
   });
@@ -35,7 +37,7 @@ describe('wallet-free App Clip SAR handoff', () => {
     const preprodApi = 'https://api-preprod.zkp2p.xyz';
     const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
       if (init.method === 'POST') return Response.json({ success: true, responseObject: {
-        requestId: preprodId, expiresAt: String(Date.now() + 600_000),
+        requestId: preprodId, expiresAt: String(Date.now() + 600_000), url: clipUrl(preprodId),
       } }, { status: 201 });
       return Response.json({ success: true, responseObject: {
         environment: 'preproduction', platform: 'upi', payeeHandle: '7014748022@apl',
@@ -53,7 +55,7 @@ describe('wallet-free App Clip SAR handoff', () => {
 
   it('rejects a production link returned by preprod Curator', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, responseObject: {
-      requestId, expiresAt: String(Date.now() + 600_000),
+      requestId, expiresAt: String(Date.now() + 600_000), url: clipUrl(requestId),
     } }, { status: 201 })));
     await expect(createSarLink({
       apiBase: 'https://api-preprod.zkp2p.xyz', platform: 'upi', payeeHandle: '7014748022@apl', returnUrl,
@@ -67,7 +69,7 @@ describe('wallet-free App Clip SAR handoff', () => {
       });
       expect(init.headers).not.toHaveProperty('Authorization');
       return Response.json({ success: true, responseObject: {
-        requestId, expiresAt: String(Date.now() + 600_000),
+        requestId, expiresAt: String(Date.now() + 600_000), url: clipUrl(requestId),
       } }, { status: 201 });
     });
     vi.stubGlobal('fetch', fetcher);
@@ -94,7 +96,7 @@ describe('wallet-free App Clip SAR handoff', () => {
     await expect(readSarResult(apiBase, {
       requestId, platform: 'paypal', payeeHandle: 'rzl195', paypalEmail: 'seller@example.com',
       returnUrl, state: 'S'.repeat(36), expiresAt: Date.now() + 600_000,
-      url: `https://mobile.peer.xyz/clip/connect?request=${requestId}`,
+      ...connectLinks(clipUrl(requestId), requestId),
     })).rejects.toThrow('does not belong');
   });
 
@@ -117,7 +119,21 @@ describe('wallet-free App Clip SAR handoff', () => {
     await expect(readSarResult(apiBase, {
       requestId, platform: 'upi', payeeHandle: '7014748022@apl', returnUrl,
       state: 'S'.repeat(36), expiresAt: Date.now() + 600_000,
-      url: `https://mobile.peer.xyz/clip/connect?request=${requestId}`,
+      ...connectLinks(clipUrl(requestId), requestId),
     })).rejects.toThrow('does not belong');
+  });
+
+  it('rejects an invocation for another request', () => {
+    expect(() => connectLinks(clipUrl(`p${'B'.repeat(42)}`), requestId)).toThrow('invalid connection link');
+    expect(() => connectLinks('https://mobile.peer.xyz/elsewhere', requestId)).toThrow('invalid connection link');
+  });
+
+  it('explains a return origin Curator has not approved', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      success: false, message: 'Return URL is not an approved caller', responseObject: null,
+      statusCode: 400, errorCode: 'return_url_is_not_an_approved_caller',
+    }, { status: 400 })));
+    await expect(createSarLink({ apiBase, platform: 'cashapp', payeeHandle: 'alice', returnUrl }))
+      .rejects.toThrow('not approved');
   });
 });

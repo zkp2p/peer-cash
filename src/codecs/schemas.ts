@@ -705,3 +705,108 @@ export const preparedXMoneyConnectJsonSchema = xMoneyConnectResultJsonSchema.ext
 });
 export type XMoneyConnectResultJson = z.infer<typeof xMoneyConnectResultJsonSchema>;
 export type PreparedXMoneyConnectJson = z.infer<typeof preparedXMoneyConnectJsonSchema>;
+
+// App Clip seller connections. Account rules mirror Curator's
+// `src/api/v2/sarConnection/sarConnectionAccount.ts`; change both together and
+// run `scripts/check-curator-sar-contract.ts`.
+export const SAR_CONNECT_REQUEST_PATTERN = /^[pts][A-Za-z0-9_-]{42}$/;
+export const SAR_CONNECT_STATE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+export const SAR_CONNECT_CASHTAG_PATTERN = /^[a-z0-9]{1,20}$/;
+export const SAR_CONNECT_PAYPAL_USERNAME_PATTERN = /^[a-z0-9._-]+$/;
+const sarPayeeIdHashSchema = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+
+/** Curator's `normalizeSarPayeeHandle`: trim, drop one leading `$` (Cash App) or `@`, lowercase. */
+export function normalizeSarPayeeHandle(platform: 'cashapp' | 'paypal', value: string): string {
+  return value
+    .trim()
+    .replace(platform === 'cashapp' ? /^\$/ : /^@/, '')
+    .toLowerCase();
+}
+
+const sarHandleSchema = z.string().trim().min(1).max(128);
+export const sarConnectCurrenciesSchema = z
+  .array(z.string().regex(/^[A-Z]{3}$/))
+  .min(1)
+  .max(20)
+  .refine((values) => new Set(values).size === values.length, 'Duplicate connection currencies');
+export const sarConnectPaypalIdentityActionSchema = z.enum([
+  'register_paypal',
+  'register_business_paypal',
+]);
+const sarCashAppAccountSchema = z.object({
+  platform: z.literal('cashapp'),
+  payeeHandle: sarHandleSchema
+    .transform((value) => normalizeSarPayeeHandle('cashapp', value))
+    .pipe(z.string().regex(SAR_CONNECT_CASHTAG_PATTERN)),
+});
+const sarPaypalAccountSchema = z.object({
+  platform: z.literal('paypal'),
+  payeeHandle: sarHandleSchema
+    .transform((value) => normalizeSarPayeeHandle('paypal', value))
+    .pipe(z.string().regex(SAR_CONNECT_PAYPAL_USERNAME_PATTERN)),
+  paypalEmail: z
+    .string()
+    .trim()
+    .pipe(z.email().max(254))
+    .transform((value) => value.toLowerCase()),
+  identityActionType: sarConnectPaypalIdentityActionSchema.optional(),
+});
+/** Normalizes a seller-selected Cash App or PayPal account the way Curator does. */
+export const sarConnectAccountSchema = z.discriminatedUnion('platform', [
+  sarCashAppAccountSchema,
+  sarPaypalAccountSchema,
+]);
+
+const sarContextFields = {
+  environment: z.enum(['production', 'preproduction', 'staging']),
+  payeeHandle: z.string(),
+  returnUrl: z.string(),
+  state: z.string(),
+  expiresAt: nonNegativeBigintString,
+  status: z.enum(['pending', 'connecting', 'connected', 'cancelled']),
+  payeeIdHash: sarPayeeIdHashSchema.optional(),
+};
+/** Curator's public connection context (`GET`/`DELETE /v2/sar/connections`), compared field by field. */
+export const sarConnectContextSchema = z.discriminatedUnion('platform', [
+  z.object({ platform: z.literal('cashapp'), ...sarContextFields }),
+  z.object({ platform: z.literal('paypal'), paypalEmail: z.string(), ...sarContextFields }),
+  z.object({ platform: z.literal('upi'), ...sarContextFields }),
+]);
+export const sarConnectCreatedSchema = z.object({
+  requestId: z.string().regex(SAR_CONNECT_REQUEST_PATTERN),
+  expiresAt: nonNegativeBigintString,
+  url: z.url(),
+});
+export const sarConnectAccountStatusSchema = z.object({ status: z.enum(['active', 'inactive']) });
+export type SarConnectContextJson = z.infer<typeof sarConnectContextSchema>;
+
+const preparedSarConnectFields = {
+  requestId: z.string().regex(SAR_CONNECT_REQUEST_PATTERN),
+  expiresAt: z.number().int().positive(),
+  state: z.string().regex(SAR_CONNECT_STATE_PATTERN),
+  returnUrl: z.url(),
+  currencies: sarConnectCurrenciesSchema,
+  environment: z.enum(['production', 'preproduction', 'staging']),
+  url: z.url(),
+  appUrl: z.url(),
+};
+export const preparedSarConnectJsonSchema = z.discriminatedUnion('platform', [
+  z.object({
+    platform: z.literal('cashapp'),
+    payeeHandle: z.string().regex(SAR_CONNECT_CASHTAG_PATTERN),
+    ...preparedSarConnectFields,
+  }),
+  z.object({
+    platform: z.literal('paypal'),
+    payeeHandle: z.string().regex(SAR_CONNECT_PAYPAL_USERNAME_PATTERN),
+    paypalEmail: z.email().max(254),
+    identityActionType: sarConnectPaypalIdentityActionSchema.optional(),
+    ...preparedSarConnectFields,
+  }),
+]);
+export const sarConnectResultJsonSchema = z.object({
+  status: z.enum(['pending', 'connecting', 'connected', 'cancelled', 'expired']),
+  payeeIdHash: sarPayeeIdHashSchema.optional(),
+});
+export type PreparedSarConnectJson = z.infer<typeof preparedSarConnectJsonSchema>;
+export type SarConnectResultJson = z.infer<typeof sarConnectResultJsonSchema>;

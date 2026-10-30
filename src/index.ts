@@ -90,6 +90,31 @@ export type {
 } from './client/nearIntents';
 export type { CashFillEta, CashFillStats, CashPairFillStats } from './client/fillEta';
 
+// Cash App and PayPal seller connection through the Peer App Clip / app
+export {
+  createSarConnectClient,
+  detectSarConnectDevice,
+  normalizeSarConnectAccount,
+  sarConnectUrlFor,
+  SarConnectError,
+  SAR_CONNECT_CURATOR_URLS,
+} from './client/sarConnect';
+export type {
+  PayPalIdentityActionType,
+  PreparedSarConnect,
+  SarConnectAccount,
+  SarConnectClient,
+  SarConnectDevice,
+  SarConnectErrorCode,
+  SarConnectInput,
+  SarConnectOptions,
+  SarConnectPlatform,
+  SarConnectResult,
+  SarConnectStatus,
+  SarConnectWaitOptions,
+  SarConnectWalletAuth,
+} from './client/sarConnect';
+
 // Payee input normalization
 export { normalizeCashPayee } from './client/payee';
 export type { CashPayeeInput } from './client/payee';

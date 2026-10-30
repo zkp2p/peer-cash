@@ -9,7 +9,10 @@ export interface SarLink {
   returnUrl: string;
   state: string;
   expiresAt: number;
+  /** iPhone Safari and QR codes: the App Clip invocation exactly as Curator returned it. */
   url: string;
+  /** Android and other mobile browsers: the same request on `/connect`, which opens the installed Peer app. */
+  appUrl: string;
 }
 
 export interface SarResult {
@@ -46,6 +49,22 @@ function environmentFor(apiBase: string): { name: string; prefix: string } {
   throw new Error('Unsupported Curator environment.');
 }
 
+/** Curator's App Clip invocation for this request, and the same request on the app's `/connect` route. */
+export function connectLinks(url: unknown, requestId: string): Pick<SarLink, 'url' | 'appUrl'> {
+  if (typeof url !== 'string') throw new Error('Curator returned an invalid connection link.');
+  const invocation = new URL(url);
+  if (
+    invocation.protocol !== 'https:' ||
+    invocation.pathname !== '/clip/connect' ||
+    invocation.searchParams.get('request') !== requestId
+  ) {
+    throw new Error('Curator returned an invalid connection link.');
+  }
+  const app = new URL(invocation.href);
+  app.pathname = '/connect';
+  return { url: invocation.href, appUrl: app.href };
+}
+
 async function request(url: string, init: RequestInit): Promise<Record<string, unknown>> {
   const response = await fetch(url, {
     ...init,
@@ -55,6 +74,12 @@ async function request(url: string, init: RequestInit): Promise<Record<string, u
   });
   if (!response.ok) {
     if (response.status === 403) throw new Error('This account connection is unavailable right now.');
+    if (response.status === 400) {
+      const body = await response.json().catch(() => null) as { errorCode?: unknown } | null;
+      if (body?.errorCode === 'return_url_is_not_an_approved_caller') {
+        throw new Error('This site is not approved to connect accounts in this Curator environment.');
+      }
+    }
     if (response.status === 410) throw new Error('This link expired. Create a new one.');
     if (response.status === 409) throw new Error('This connection is still being processed. Check status.');
     if (response.status === 429) throw new Error('Too many links. Wait a minute and try again.');
@@ -100,9 +125,9 @@ export async function createSarLink(input: {
     throw new Error('The return address must be HTTPS.');
   }
   const state = crypto.randomUUID();
-  const demoEndpoint = new URL(endpoint(input.apiBase));
-  demoEndpoint.pathname += '/demo';
-  const result = await request(demoEndpoint.toString(), {
+  const checkoutEndpoint = new URL(endpoint(input.apiBase));
+  checkoutEndpoint.pathname += '/checkout';
+  const result = await request(checkoutEndpoint.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -134,7 +159,7 @@ export async function createSarLink(input: {
     returnUrl: input.returnUrl,
     state,
     expiresAt,
-    url: `https://mobile.peer.xyz/clip/connect?request=${result.requestId}`,
+    ...connectLinks(result.url, result.requestId),
   };
 }
 
@@ -221,7 +246,7 @@ export function restoreSarLink(apiBase: string, currentOrigin: string): SarLink 
       payeeHandle: link.payeeHandle,
       ...(link.platform === 'paypal' ? { paypalEmail: link.paypalEmail as string } : {}),
       expiresAt: link.expiresAt as number,
-      url: `https://mobile.peer.xyz/clip/connect?request=${link.requestId}`,
+      ...connectLinks(link.url, link.requestId),
     };
   } catch {
     clearSarLink();

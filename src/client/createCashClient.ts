@@ -94,6 +94,16 @@ import {
   type NearIntentsStatusInput,
 } from './nearIntents';
 import { createCashAttributionReader } from './attribution';
+import {
+  createSarConnectClient,
+  type PreparedSarConnect,
+  type SarConnectAccount,
+  type SarConnectInput,
+  type SarConnectOptions,
+  type SarConnectResult,
+  type SarConnectWaitOptions,
+  type SarConnectWalletAuth,
+} from './sarConnect';
 import { isCashPayoutSet } from './classify';
 
 const DEFAULT_RPC_URL = 'https://mainnet.base.org';
@@ -176,6 +186,8 @@ export interface CashClientOptions {
     appearance?: VenmoGmailAppearance;
     popup?: VenmoGmailPopupOptions;
   };
+  /** Cash App and PayPal App Clip connection transport. Uses `curatorUrl`. */
+  sarConnect?: Pick<SarConnectOptions, 'fetch' | 'timeoutMs'>;
   /** Optional ZKP2P API key. */
   apiKey?: string;
   /** Relay API configuration for source assets outside Base USDC. */
@@ -347,6 +359,32 @@ export interface OrdersOptions {
 }
 
 export interface CashClient {
+  /**
+   * Create a Cash App or PayPal connection link: wallet-free checkout by
+   * default, or wallet-owned with a Privy token. Returns the App Clip URL and
+   * the Android `/connect` URL. No deposit and no funds move.
+   */
+  prepareSarConnect(
+    input: SarConnectInput,
+    auth?: SarConnectWalletAuth,
+  ): Promise<PreparedSarConnect>;
+  /** Read this link's exact Curator session; `expired` after 401/410 or local expiry. */
+  getSarConnectStatus(
+    link: PreparedSarConnect,
+    options?: { signal?: AbortSignal },
+  ): Promise<SarConnectResult>;
+  /**
+   * Poll every 3s until connected (confirmed by account status), cancelled,
+   * expired or `timeoutMs`, waiting through retryable errors.
+   */
+  waitForSarConnect(
+    link: PreparedSarConnect,
+    options?: SarConnectWaitOptions,
+  ): Promise<SarConnectResult>;
+  /** Cancel a pending link. Never undoes a submitted credential. */
+  cancelSarConnect(link: PreparedSarConnect): Promise<SarConnectResult>;
+  /** True only when Curator reports an active, unexpired seller credential for the account. */
+  isSarConnected(account: Pick<SarConnectAccount, 'platform' | 'payeeHandle'>): Promise<boolean>;
   /** Register an X username and prepare the hosted receipt-inbox connection. */
   prepareXMoneyConnect(
     payee: string,
@@ -1075,7 +1113,21 @@ export function createCashClient(options: CashClientOptions): CashClient {
     );
   }
 
+  const sarConnect = createSarConnectClient({
+    ...options.sarConnect,
+    environment,
+    ...((options.curatorUrl ?? DEFAULT_CURATOR_URLS[environment])
+      ? { curatorUrl: options.curatorUrl ?? DEFAULT_CURATOR_URLS[environment] }
+      : {}),
+  });
+
   return {
+    prepareSarConnect: (input, auth) => sarConnect.prepare(input, auth),
+    getSarConnectStatus: (link, statusOptions) => sarConnect.status(link, statusOptions),
+    waitForSarConnect: (link, waitOptions) => sarConnect.wait(link, waitOptions),
+    cancelSarConnect: (link) => sarConnect.cancel(link),
+    isSarConnected: (account) => sarConnect.isConnected(account),
+
     async prepareVenmoGmailConnect(
       payee: string,
       connectOptions?: { returnUrl?: string },

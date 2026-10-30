@@ -12,6 +12,24 @@
 
 Key facts:
 
+- Optional Cash App and PayPal account connection (the Peer Payouts flow):
+  prepareSarConnect({ platform, payeeHandle, paypalEmail?, identityActionType?,
+  returnUrl }) creates a wallet-free Curator checkout link, or a wallet-owned
+  one with { privyAccessToken, callerAddress }. link.url is the App Clip URL for
+  iPhone Safari and desktop QR codes; link.appUrl is the same request on
+  /connect for the installed Peer app on Android.
+  sarConnectUrlFor(link, detectSarConnectDevice()) picks one.
+  getSarConnectStatus(link) returns pending | connecting | connected |
+  cancelled | expired. waitForSarConnect(link) polls every 3s and reports
+  connected only after isSarConnected(account) confirms Curator account status.
+  cancelSarConnect(link) cancels a pending link. Cash App is a lowercase
+  cashtag of 1-20 letters or digits and is USD only. PayPal requires
+  paypalEmail and supports register_paypal (Personal, the default) or
+  register_business_paypal. The returnUrl origin must be on Curator's
+  SAR_CONNECT_RETURN_ORIGINS and CORS lists. requestId is a 15-minute
+  capability; never log it. Errors use SarConnectError.code. Codecs:
+  preparedSarConnectToJson/FromJson, sarConnectResultToJson/FromJson.
+
 - Optional X Money receipt linking: prepareXMoneyConnect(handle, { returnUrl }?)
   returns { payeeDetails, payeeUsername, url }; call openXMoneyConnect(link)
   from a separate click, or open link.url in a native browser. Re-check
