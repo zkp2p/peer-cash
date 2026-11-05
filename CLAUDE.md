@@ -113,14 +113,38 @@ regression lives in `scripts/verify-staging.ts` and runs maker-side only.
    the `version` field in `package.json`. Pre-1.0 semver: minor for breaking
    surface changes, patch otherwise; release candidates use `-rc.N`. There are
    no git tags and no changelog file - history lives in the PR titles.
-2. Merge the release PR, then publish from a clean checkout of that commit:
-   `bun install --frozen-lockfile && bun run ci && npm publish`. `prepack`
-   rebuilds `dist/`; publishing is manual and maintainer-only (no CI publish
-   job). `npm view @zkp2p/cash maintainers` lists who can.
-3. The packed artifact ships exactly the package.json `files` allowlist:
+2. Merge to `main`, then dispatch `.github/workflows/publish-cash.yml` from
+   `main`: `gh workflow run publish-cash.yml --ref main -f version=X.Y.Z`.
+   The workflow requires an exact matching, unpublished package version and
+   runs `bun install --frozen-lockfile && bun run ci`. `PACK_DESTINATION` makes
+   the pack check retain its one verified tarball for the publish job.
+3. Stable versions default to `latest`; prereleases default to their first
+   identifier (`0.8.0-rc.0` → `rc`). Override with `-f dist_tag=next` (lowercase
+   letters, digits, hyphens; starts with a letter; cannot be a version/range).
+   A prerelease on `latest` requires both `-f dist_tag=latest` and
+   `-f allow_prerelease_latest=true`.
+4. Publishing uses npm trusted publishing (GitHub OIDC) in the `npm-publish`
+   environment on GitHub-hosted Ubuntu, Node 24, and npm 11.9.0, with public
+   provenance. There are no npm tokens. Local `npm publish` is rejected by
+   npm's require-2FA/disallow-tokens policy; use this workflow only.
+5. Check the workflow result and verify with
+   `npm view @zkp2p/cash@X.Y.Z version` and
+   `npm view @zkp2p/cash dist-tags.<tag>`. The job polls both for about 60 seconds.
+   If publication succeeded but verification failed, inspect these reads;
+   rerunning will reject an already-published version. OIDC cannot move an
+   existing version's tag: a human must use
+   `npm dist-tag add @zkp2p/cash@X.Y.Z latest` with passkey 2FA (including rc
+   promotion). Do not add a token-based recovery path.
+6. The packed artifact ships exactly the package.json `files` allowlist:
    `dist/`, `docs/`, `examples/`, `skills/`, `AGENTS.md`, `README.md`,
    `LICENSE`, `llms.txt`. `scripts/check-packed-package.ts` (part of
    `bun run ci`) fails if a required file is missing or a forbidden one
    (`test/`, `scripts/`, lockfiles, `.env*`) leaks in.
-4. An agent without publish rights stops at the merged release PR and hands
-   off to a maintainer.
+
+One-time setup after this PR merges: a human creates the GitHub environment
+`npm-publish` in `zkp2p/peer-cash`, restricts it to `main`, and configures the
+trusted publisher with
+`npm trust github @zkp2p/cash --file publish-cash.yml --repo zkp2p/peer-cash --env npm-publish --allow-publish`.
+The workflow filename and environment must match exactly; no npm secret is
+needed in GitHub. Agents hand off dispatch or npm administration unless the
+user explicitly authorizes those actions.

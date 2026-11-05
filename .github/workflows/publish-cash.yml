@@ -1,0 +1,174 @@
+name: Publish Cash
+
+run-name: Publish @zkp2p/cash@${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact SemVer committed in package.json on main
+        required: true
+        type: string
+      dist_tag:
+        description: 'Optional tag override (default: latest for stable, first prerelease identifier otherwise)'
+        default: ''
+        type: string
+      allow_prerelease_latest:
+        description: Explicitly allow publishing a prerelease to latest
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-zkp2p-cash
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Guard, verify, and pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      dist_tag: ${{ steps.guard.outputs.dist_tag }}
+    steps:
+      - name: Patch hosted action runtime
+        if: runner.environment == 'github-hosted' && runner.os == 'Linux'
+        uses: zkp2p/.github/actions/patch-node24@f9560a725dbcda32544968f34d52382d3af316e5
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.23.4
+          package-manager-cache: false
+
+      - name: Guard main, version, dist-tag, and unpublished version
+        id: guard
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUESTED_TAG: ${{ inputs.dist_tag }}
+          ALLOW_PRERELEASE_LATEST: ${{ inputs.allow_prerelease_latest }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+
+          if (process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Publish must run from main');
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const version = process.env.RELEASE_VERSION;
+          const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+          const match = semver.exec(version ?? '');
+          if (!match || pkg.name !== '@zkp2p/cash' || version !== pkg.version) {
+            throw new Error('Exact SemVer must match @zkp2p/cash package.json version');
+          }
+          const prerelease = match[4];
+          const tag = process.env.REQUESTED_TAG || (prerelease ? prerelease.split('.')[0] : 'latest');
+          // Keep tags unambiguous with npm version/range selectors.
+          if (tag.trim() !== tag || !/^[a-z][a-z0-9-]*$/.test(tag) || tag === 'x' || /^v\d/.test(tag)) {
+            throw new Error('Use a lowercase dist-tag starting with a letter, not a version/range');
+          }
+          if (prerelease && tag === 'latest' && process.env.ALLOW_PRERELEASE_LATEST !== 'true') {
+            throw new Error('Prerelease latest requires allow_prerelease_latest=true');
+          }
+
+          const result = spawnSync('npm', [
+            'view', `${pkg.name}@${version}`, 'version', '--json',
+            '--registry=https://registry.npmjs.org', '--fetch-retries=0', '--fetch-timeout=10000',
+          ], { encoding: 'utf8' });
+          if (result.error) throw result.error;
+          if (result.status === 0) {
+            if (result.stdout.trim()) throw new Error(`${pkg.name}@${version} already exists on npm`);
+          } else {
+            // npm reports an absent version as E404; outages/auth failures must fail closed.
+            const response = JSON.parse(result.stdout);
+            if (response.error?.code !== 'E404') {
+              throw new Error(`Could not establish that the version is unpublished: ${result.stderr}`);
+            }
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `dist_tag=${tag}\n`);
+          NODE
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install immutable dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run package checks and retain the verified tarball
+        env:
+          PACK_DESTINATION: ${{ runner.temp }}/cash-package
+        run: bun run ci
+
+      - name: Upload the exact verified tarball
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cash-package
+          path: ${{ runner.temp }}/cash-package/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    name: Publish verified Cash tarball
+    needs: verify
+    # npm trusted publishing requires a GitHub-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      DIST_TAG: ${{ needs.verify.outputs.dist_tag }}
+    steps:
+      - name: Patch hosted action runtime
+        if: runner.environment == 'github-hosted' && runner.os == 'Linux'
+        uses: zkp2p/.github/actions/patch-node24@f9560a725dbcda32544968f34d52382d3af316e5
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Use registry-only configuration and pin OIDC-capable npm
+        run: |
+          # Replace setup-node's token placeholder with unauthenticated registry config.
+          printf 'registry=https://registry.npmjs.org/\n' > "$NPM_CONFIG_USERCONFIG"
+          npm install --global npm@11.9.0
+          test "$(npm --version)" = "11.9.0"
+
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: cash-package
+          path: ${{ runner.temp }}/cash-package
+
+      - name: Publish the verified tarball through OIDC with provenance
+        run: |
+          npm publish "$RUNNER_TEMP/cash-package/zkp2p-cash-${RELEASE_VERSION}.tgz" \
+            --access public --tag "$DIST_TAG" --provenance --ignore-scripts
+
+      - name: Verify published version and dist-tag
+        env:
+          NPM_CONFIG_FETCH_RETRIES: '0'
+          NPM_CONFIG_FETCH_TIMEOUT: '5000'
+          NPM_CONFIG_PREFER_ONLINE: 'true'
+        run: |
+          deadline=$((SECONDS + 60))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            version=$(npm view "@zkp2p/cash@$RELEASE_VERSION" version --registry=https://registry.npmjs.org) &&
+              tag=$(npm view @zkp2p/cash "dist-tags.$DIST_TAG" --registry=https://registry.npmjs.org) &&
+              if [ "$version" = "$RELEASE_VERSION" ] && [ "$tag" = "$RELEASE_VERSION" ]; then
+                echo "Verified @zkp2p/cash@$RELEASE_VERSION on $DIST_TAG"
+                exit 0
+              fi
+            sleep 5
+          done
+          echo 'Registry version or dist-tag did not converge; inspect npm before retrying.' >&2
+          exit 1
