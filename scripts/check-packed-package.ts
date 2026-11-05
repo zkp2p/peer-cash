@@ -17,6 +17,7 @@ interface PackResult {
 }
 
 const cwd = process.cwd();
+const packDestination = process.env.PACK_DESTINATION;
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'peer-cash-pack-compat-'));
 const classicRoot = mkdtempSync(join(tmpdir(), 'peer-cash-classic-compat-'));
 let tarballPath: string | undefined;
@@ -38,13 +39,20 @@ function run(command: string, args: string[], workingDirectory = cwd) {
 }
 
 try {
-  const packOutput = run('npm', ['pack', '--json']);
+  // CI has already built dist/. Keep a requested release artifact for the
+  // publish job instead of rebuilding or repacking it after validation.
+  if (packDestination) mkdirSync(packDestination, { recursive: true });
+  const packOutput = run('npm', [
+    'pack',
+    '--json',
+    ...(packDestination ? ['--ignore-scripts', '--pack-destination', packDestination] : []),
+  ]);
   const json = packOutput.match(/(\[\s*\{[\s\S]*\}\s*\])\s*$/)?.[1];
   if (!json) throw new Error(`Could not parse npm pack output:\n${packOutput}`);
 
   const [packResult] = JSON.parse(json) as PackResult[];
   if (!packResult?.filename) throw new Error('npm pack did not return a tarball filename');
-  tarballPath = resolve(cwd, packResult.filename);
+  tarballPath = resolve(packDestination ?? cwd, packResult.filename);
 
   const packedPaths = packResult.files.map(({ path }) => path);
   const forbiddenPath = packedPaths.find(
@@ -237,5 +245,5 @@ declare module 'viem';
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
   rmSync(classicRoot, { recursive: true, force: true });
-  if (tarballPath) rmSync(tarballPath, { force: true });
+  if (tarballPath && !packDestination) rmSync(tarballPath, { force: true });
 }
