@@ -129,7 +129,7 @@ regression lives in `scripts/verify-staging.ts` and runs maker-side only.
    npm's require-2FA/disallow-tokens policy; use this workflow only.
 5. Check the workflow result and verify with
    `npm view @zkp2p/cash@X.Y.Z version` and
-   `npm view @zkp2p/cash dist-tags.<tag>`. The job polls both for about 60 seconds.
+   `npm view @zkp2p/cash dist-tags.<tag>`. The job polls both for up to 10 minutes.
    If publication succeeded but verification failed, inspect these reads;
    rerunning will reject an already-published version. OIDC cannot move an
    existing version's tag: a human must use

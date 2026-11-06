@@ -118,7 +118,7 @@ jobs:
     needs: verify
     # npm trusted publishing requires a GitHub-hosted runner.
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     environment: npm-publish
     permissions:
       contents: read
@@ -160,7 +160,7 @@ jobs:
           NPM_CONFIG_FETCH_TIMEOUT: '5000'
           NPM_CONFIG_PREFER_ONLINE: 'true'
         run: |
-          deadline=$((SECONDS + 60))
+          deadline=$((SECONDS + 600))
           while [ "$SECONDS" -lt "$deadline" ]; do
             version=$(npm view "@zkp2p/cash@$RELEASE_VERSION" version --registry=https://registry.npmjs.org) &&
               tag=$(npm view @zkp2p/cash "dist-tags.$DIST_TAG" --registry=https://registry.npmjs.org) &&
@@ -170,5 +170,5 @@ jobs:
               fi
             sleep 5
           done
-          echo 'Registry version or dist-tag did not converge; inspect npm before retrying.' >&2
+          echo 'Registry version or dist-tag did not converge within 10 minutes; inspect npm before retrying.' >&2
           exit 1
