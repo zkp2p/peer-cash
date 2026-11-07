@@ -11,13 +11,13 @@ jobs:
     steps:
       - name: Patch hosted action runtime
         if: runner.environment == 'github-hosted' && runner.os == 'Linux'
-        uses: zkp2p/.github/actions/patch-node24@f9560a725dbcda32544968f34d52382d3af316e5
+        uses: zkp2p/.github/actions/patch-node24@4ef0030bb0aca98a6c4a6378dbf48ad159ff25d4
 
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.23.4
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
