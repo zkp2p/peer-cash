@@ -108,7 +108,7 @@ Key facts:
   are Base-USDC-only; cash_source_quote/status do not execute Relay, and the
   cash_near_intents_* tools never sign or broadcast the origin transfer.
   @zkp2p/cash/tools ships a JSON-schema tool manifest. Receipt finalization
-  and policy preparation remain CashClient methods for the host adapter.
+  remains a CashClient method for the host adapter.
 - Errors are typed: { code, retryable, remediation, recovery? }. Completed
   Relay routes retain requestId, flat hashes, and origin/destination
   transactions. Retry Base-only after SOURCE_ROUTE_COMPLETED_CASHOUT_FAILED;
