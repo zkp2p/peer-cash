@@ -443,7 +443,8 @@ the deposit. Bank-specific capture routing is outside this maker-side SDK and
 never changes the on-chain payment method.
 
 `capabilities()` tells you which platforms need a verified identity for a new
-payee registration (`requiresIdentityAttestation` - Wise and PayPal today).
+payee registration (`requiresIdentityAttestation` - Wise, PayPal and Alipay
+today).
 The SDK accepts an `identityAttestation` in structured payee data but does not
 mint one. First-party Peer web obtains it through the Peer TEE browser
 extension. An already-registered Wise or PayPal handle can be reused with bare
