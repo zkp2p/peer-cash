@@ -69,6 +69,7 @@ import {
   createCashClient,
   CASH_ATTRIBUTION_CODE,
   CASH_REFERRAL_ATTRIBUTION_PREFIX,
+  toCashBrandAttributionCode,
   toCashReferralAttributionCode,
 } from '../src/client/createCashClient';
 import { isCashError, isUserRejectedError } from '../src/client/errors';
@@ -2657,6 +2658,124 @@ describe('ERC-8021 attribution', () => {
 
   it('exports the exact namespaced attribution formatter', () => {
     expect(toCashReferralAttributionCode('z9k2p1')).toBe('peer-ref-Z9K2P1');
+  });
+
+  it('stamps the brand after the referral marker and before analytics codes', async () => {
+    const cash = createCashClient({
+      environment: 'staging',
+      referralCode: 'ABC123',
+      brand: { label: 'Acme fee recipient', logoUrl: 'https://acme.example/logo.png' },
+      referrer: 'acme-app',
+    });
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await cash.cashout(
+      {
+        amount: 5_000_000n,
+        receive: { platform: 'chime', currency: 'USD', payee: { offchainId: '$a' } },
+      },
+      { signer },
+    );
+
+    const txOverrides = {
+      referrer: [
+        CASH_ATTRIBUTION_CODE,
+        'peer-ref-ABC123',
+        'peer-brand:Acme fee recipient|https://acme.example/logo.png',
+        'acme-app',
+      ],
+    };
+    // A batch is attributed only when every call carries the same codes.
+    expect(mockInstance.ensureAllowance).toHaveBeenCalledWith(
+      expect.objectContaining({ txOverrides }),
+    );
+    expect(mockInstance.createDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ txOverrides }),
+    );
+  });
+
+  it('exports the exact brand attribution formatter', () => {
+    expect(
+      toCashBrandAttributionCode({
+        label: "A&B Co. payouts - 2'",
+        logoUrl: 'https://cdn.example.com/a/logo.svg?v=2',
+      }),
+    ).toBe("peer-brand:A&B Co. payouts - 2'|https://cdn.example.com/a/logo.svg?v=2");
+  });
+
+  it.each([
+    '',
+    ' Acme',
+    'Acme ',
+    'Acme  payouts',
+    'Acme, Inc',
+    'Acme|payouts',
+    'Acme:payouts',
+    'Acmé',
+    'A'.repeat(33),
+  ])('rejects brand label %j before building the client', (label) => {
+    vi.mocked(Zkp2pClient).mockClear();
+    expect(() =>
+      createCashClient({
+        environment: 'staging',
+        brand: { label, logoUrl: 'https://acme.example/logo.png' },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_BRAND', retryable: false }));
+    expect(Zkp2pClient).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '',
+    'http://acme.example/logo.png',
+    'data:image/png;base64,AAAA',
+    '//acme.example/logo.png',
+    'https://',
+    'https://acme.example/a,b.png',
+    'https://acme.example/a|b.png',
+    'https://acme.example/a b.png',
+    'https://acmé.example/logo.png',
+    'https://user@acme.example/logo.png',
+    'https://user:pass@acme.example/logo.png',
+  ])('rejects brand logo URL %j before building the client', (logoUrl) => {
+    vi.mocked(Zkp2pClient).mockClear();
+    expect(() =>
+      createCashClient({ environment: 'staging', brand: { label: 'Acme', logoUrl } }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_BRAND', retryable: false }));
+    expect(Zkp2pClient).not.toHaveBeenCalled();
+  });
+
+  it('rejects a brand that pushes the attribution codes past the ERC-8021 length byte', () => {
+    const brand = { label: 'Acme', logoUrl: `https://acme.example/${'a'.repeat(160)}.png` };
+    // peer-cash + brand + builder code alone fit in 255 bytes.
+    expect(() => createCashClient({ environment: 'staging', brand })).not.toThrow();
+    expect(() =>
+      createCashClient({ environment: 'staging', brand, referrer: 'a'.repeat(40) }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_BRAND', retryable: false }));
+  });
+
+  it('encodes the longest accepted code list', () => {
+    const logoUrl = `https://acme.example/${'a'.repeat(196)}`;
+    const codes = [CASH_ATTRIBUTION_CODE, toCashBrandAttributionCode({ label: 'Acme', logoUrl })];
+    expect(() =>
+      createCashClient({ environment: 'staging', brand: { label: 'Acme', logoUrl } }),
+    ).not.toThrow();
+    expect(() => getAttributionDataSuffix(codes)).not.toThrow();
+    expect(() =>
+      createCashClient({
+        environment: 'staging',
+        brand: { label: 'Acme', logoUrl: `${logoUrl}a` },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_BRAND' }));
+    expect(() =>
+      getAttributionDataSuffix([
+        CASH_ATTRIBUTION_CODE,
+        toCashBrandAttributionCode({ label: 'Acme', logoUrl: `${logoUrl}a` }),
+      ]),
+    ).toThrow();
   });
 
   it('prepare() appends the attribution suffix to the manual approve calldata', async () => {

@@ -170,6 +170,14 @@ by the Peer service-fee budget) instead of applying the maker L1/L2 ladder for
 that deposit. Use one referral code per deposit. Renaming the displayed code
 later does not change the owner of an already-attributed open deposit.
 
+To show a label and logo on your deposits in Peer's order books, optionally
+add `brand: { label: 'Acme payouts', logoUrl: 'https://acme.example/logo.png' }`.
+The SDK emits `peer-brand:<label>|<logoUrl>` after the referral marker. The
+label is 1 to 32 letters, numbers, single spaces, or `. & ' -`; the logo is a
+hosted `https://` URL without commas, pipes, spaces, or credentials; all codes
+together must fit ERC-8021's 255 bytes. An invalid brand throws
+`INVALID_BRAND`. The brand is display only and does not verify the maker.
+
 Wise and PayPal require an identity attestation for a new payee registration.
 The SDK accepts the structured attestation but does not mint it; first-party
 Peer web obtains it through the Peer TEE browser extension. Do not disable these

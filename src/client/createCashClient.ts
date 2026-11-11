@@ -23,6 +23,7 @@ import {
 } from 'viem';
 import { base } from 'viem/chains';
 import {
+  BASE_BUILDER_CODE,
   Zkp2pClient,
   appendAttributionToCalldata,
   createCompositeDepositId,
@@ -112,19 +113,60 @@ const FILL_STATS_CACHE_MS = 15 * 60 * 1000;
 /**
  * ERC-8021 attribution code stamped on every transaction this package
  * produces (signed and prepare paths, including approves). The optional
- * namespaced `CashClientOptions.referralCode` marker and analytics-only
- * `referrer` codes follow it; the SDK appends the Base builder code last.
+ * namespaced `CashClientOptions.referralCode` marker, the optional
+ * `CashClientOptions.brand` code and analytics-only `referrer` codes follow
+ * it; the SDK appends the Base builder code last.
  */
 export const CASH_ATTRIBUTION_CODE = 'peer-cash';
 export const CASH_REFERRAL_ATTRIBUTION_PREFIX = 'peer-ref-';
+export const CASH_BRAND_ATTRIBUTION_PREFIX = 'peer-brand:';
 
 const PEER_REFERRAL_CODE_RE = /^[A-Z0-9]{6}$/;
+const BRAND_LABEL_MAX_LENGTH = 32;
+const BRAND_LABEL_RE = /^[A-Za-z0-9.&'-]+(?: [A-Za-z0-9.&'-]+)*$/;
+// A comma ends an ERC-8021 code; a pipe separates the label from the URL.
+const BRAND_LOGO_URL_RE = /^https:\/\/[\x21-\x2b\x2d-\x7b\x7d\x7e]+$/;
+/** ERC-8021 stores the byte length of the comma-joined codes in one byte. */
+const MAX_ATTRIBUTION_BYTES = 255;
 
 /** Convert a Peer referral code into its financially meaningful ERC-8021 marker. */
 export function toCashReferralAttributionCode(rawCode: string): string {
   const code = rawCode.trim().toUpperCase();
   if (!PEER_REFERRAL_CODE_RE.test(code)) throw errors.invalidReferralCode();
   return `${CASH_REFERRAL_ATTRIBUTION_PREFIX}${code}`;
+}
+
+function isBrandLogoUrl(value: string): boolean {
+  if (!BRAND_LOGO_URL_RE.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return url.username === '' && url.password === '';
+  } catch {
+    return false;
+  }
+}
+
+/** How a deposit names its integrator in Peer's order books. */
+export interface CashBrand {
+  /** Shown beside the logo, e.g. `Acme payouts`. */
+  label: string;
+  /** A hosted `https://` logo. Peer clients load it from this URL. */
+  logoUrl: string;
+}
+
+/** Convert a brand into the one ERC-8021 code Peer clients read from a deposit. */
+export function toCashBrandAttributionCode(brand: CashBrand): string {
+  if (brand.label.length > BRAND_LABEL_MAX_LENGTH || !BRAND_LABEL_RE.test(brand.label)) {
+    throw errors.invalidBrand(
+      `the label must be 1 to ${BRAND_LABEL_MAX_LENGTH} letters, numbers, single spaces, or . & ' -`,
+    );
+  }
+  if (!isBrandLogoUrl(brand.logoUrl)) {
+    throw errors.invalidBrand(
+      'the logo URL must be an https URL without commas, pipes, spaces, or credentials',
+    );
+  }
+  return `${CASH_BRAND_ATTRIBUTION_PREFIX}${brand.label}|${brand.logoUrl}`;
 }
 
 /**
@@ -201,8 +243,14 @@ export interface CashClientOptions {
    */
   referralCode?: string;
   /**
-   * Analytics-only ERC-8021 attribution code(s), appended after the Peer Cash
-   * and optional integration-referral markers (e.g. `'acme-app'`).
+   * The label and hosted logo Peer's order books show on your deposits. The
+   * SDK emits `peer-brand:<label>|<logoUrl>`. Display only: it does not verify
+   * who created the deposit.
+   */
+  brand?: CashBrand;
+  /**
+   * Analytics-only ERC-8021 attribution code(s), appended after the Peer Cash,
+   * optional integration-referral and optional brand markers (e.g. `'acme-app'`).
    */
   referrer?: string | string[];
 }
@@ -603,18 +651,30 @@ export function createCashClient(options: CashClientOptions): CashClient {
   });
 
   // ERC-8021: 'peer-cash' first, then the one financially meaningful referral
-  // marker, then analytics codes. The SDK appends the Base builder code last.
+  // marker, then the brand, then analytics codes. The indexer keeps a
+  // deposit's first five codes, so the brand precedes the analytics codes.
+  // The SDK appends the Base builder code last.
   const referrerCodes = [
     CASH_ATTRIBUTION_CODE,
     ...(options.referralCode === undefined
       ? []
       : [toCashReferralAttributionCode(options.referralCode)]),
+    ...(options.brand === undefined ? [] : [toCashBrandAttributionCode(options.brand)]),
     ...(options.referrer === undefined
       ? []
       : Array.isArray(options.referrer)
         ? options.referrer
         : [options.referrer]),
   ];
+  if (
+    options.brand !== undefined &&
+    new TextEncoder().encode([...referrerCodes, BASE_BUILDER_CODE].join(',')).length >
+      MAX_ATTRIBUTION_BYTES
+  ) {
+    throw errors.invalidBrand(
+      `the attribution codes exceed ${MAX_ATTRIBUTION_BYTES} bytes; use a shorter logo URL`,
+    );
+  }
   const attribution: TxOverrides = { referrer: referrerCodes };
 
   function buildSdkClient(walletClient: WalletClient): Zkp2pClient {

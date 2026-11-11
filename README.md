@@ -190,8 +190,8 @@ cashout. After externally executing a prepared `createDeposit`, pass its
 confirmed receipt to `finalizePreparedCashout()` to recover the same
 `CashoutResult` shape as `cashout()` without importing protocol ABIs. Every
 Peer Cash transaction, including approves, carries ERC-8021 attribution:
-`peer-cash` first, optional `peer-ref-XXXXXX` from `referralCode` next, and your
-analytics-only `referrer` code(s) after it.
+`peer-cash` first, optional `peer-ref-XXXXXX` from `referralCode` next, the
+optional `brand` code, and your analytics-only `referrer` code(s) after it.
 
 Order reads fail closed against the same active catalog. If any method on an
 indexed deposit is unsupported, `orders()` excludes the whole deposit and
@@ -641,6 +641,37 @@ code, open deposits carrying the old code still pay the same wallet. Include at
 most one `peer-ref-XXXXXX` marker; an unknown or conflicting marker receives no
 integration share. The existing `referrer` option remains available for
 analytics-only ERC-8021 codes such as `acme-app`.
+
+## Show your brand on your deposits
+
+Optionally pass a label and a hosted logo. Peer's order books show them on the
+deposits this client creates:
+
+```ts
+const cash = createCashClient({
+  environment: 'production',
+  brand: {
+    label: 'Acme payouts',
+    logoUrl: 'https://acme.example/logo.png',
+  },
+});
+```
+
+The SDK stamps one more ERC-8021 code on every transaction:
+`peer-brand:Acme payouts|https://acme.example/logo.png`. Nothing is registered
+and no API key is needed; the brand lives on the deposit, so an existing
+deposit keeps the brand it was created with.
+
+- `label`: 1 to 32 letters, numbers, single spaces, or `. & ' -`.
+- `logoUrl`: an `https://` URL without commas, pipes, spaces, or credentials.
+  Host a small square image; clients load it from this URL as given.
+- ERC-8021 caps all codes together at 255 bytes, so keep the URL short. An
+  invalid brand throws `INVALID_BRAND` from `createCashClient`.
+
+The brand is display only. Attribution codes are not authenticated, so a label
+does not verify who created a deposit. If you build transactions with
+`@zkp2p/sdk` directly, pass `toCashBrandAttributionCode(brand)` as one of your
+`referrer` codes.
 
 ## For agents
 

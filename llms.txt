@@ -177,6 +177,9 @@ Key facts:
 - Deposit integration referrals: pass the six-character Peer app code as
   `createCashClient({ referralCode })`; the SDK emits `peer-ref-XXXXXX` and no
   API key or referral-enrollment transaction is required.
+- Deposit brand: optionally pass `createCashClient({ brand: { label, logoUrl } })`
+  with a hosted `https://` logo; the SDK emits `peer-brand:<label>|<logoUrl>`
+  and Peer's order books show it on the deposit. Display only.
 - [Tools manifest](src/tools/index.ts): JSON-schema definitions of the verbs
 - [Codecs](src/codecs/): zod schemas + lossless JSON round-trips
 
