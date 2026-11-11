@@ -149,6 +149,10 @@ Key facts:
   Cash App is non-chargebackable and does not require dispute-protection stake.
   Any EOA works; Privy is not required. See docs/migration.md for the breaking
   removal of policy methods, fields, and error codes.
+- Order book brand labels come from ATTRIBUTION_BRANDS: add your referrer
+  code, name and a 64x64 PNG/SVG data-URI logo by pull request.
+  findAttributionBrand(attributionCodes) returns the first registered brand.
+  A label is attribution, not verification of the maker.
 - Preproduction uses https://api-preprod.zkp2p.xyz by default; staging uses
   https://api-staging.zkp2p.xyz. curatorUrl can override either.
 

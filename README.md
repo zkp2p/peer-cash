@@ -642,6 +642,27 @@ most one `peer-ref-XXXXXX` marker; an unknown or conflicting marker receives no
 integration share. The existing `referrer` option remains available for
 analytics-only ERC-8021 codes such as `acme-app`.
 
+## Show your brand on your deposits
+
+Peer's order book labels a deposit with the brand registered for one of its
+ERC-8021 codes. To add yours, open a pull request that appends an entry to
+`ATTRIBUTION_BRANDS` in `src/engine/attributionBrands.ts`:
+
+- `code`: the code you pass as `referrer` (printable ASCII, no space or comma);
+- `name`: the display name;
+- `logo`: a square 64x64 PNG or SVG as a `data:` URI, at most
+  `ATTRIBUTION_BRAND_LOGO_MAX_LENGTH` characters. Remote URLs are rejected;
+- `opensForFeeRecipients`: `true` when you open deposits for your fee
+  recipients, so clients read "<name> fee recipient";
+- `xMoneyPaymentNote`: the note a buyer types into an X Money payment, or
+  `null`.
+
+The registry test rejects duplicate or unsafe codes, empty names and
+non-inline or oversized logos. Clients read a deposit's brand with
+`findAttributionBrand(deposit.attributionCodes)`, which returns the first
+registered code in order or `undefined`. A brand label is attribution, not
+verification: any maker can stamp any code.
+
 ## For agents
 
 - `cashout`/`withdraw`/`topUp` have unsigned counterparts (`prepare`,

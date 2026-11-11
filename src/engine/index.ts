@@ -48,3 +48,10 @@ export type { DeriveCashOrderOptions, CashOrderData } from './orderState';
 
 export { resolveCashDepositId, parseCompositeDepositId } from './resolveDeposit';
 export type { ResolvedCashDeposit } from './resolveDeposit';
+
+export {
+  ATTRIBUTION_BRANDS,
+  ATTRIBUTION_BRAND_LOGO_MAX_LENGTH,
+  findAttributionBrand,
+} from './attributionBrands';
+export type { AttributionBrand } from './attributionBrands';

@@ -41,6 +41,11 @@ Every transaction (including approves) carries ERC-8021 attribution:
 `referralCode`, then any analytics-only `referrer` codes, then the Base builder
 code. The namespaced referral marker gives its Peer Privy wallet the direct
 deposit-level integration share instead of applying maker L1/L2.
+To label your deposits with your name and logo in Peer's order book, register
+your `referrer` code by pull request in `ATTRIBUTION_BRANDS`
+(`src/engine/attributionBrands.ts`, see the README); clients resolve it with
+`findAttributionBrand(attributionCodes)`. The label is attribution, not
+verification of the maker.
 
 **Platform caveats:**
 
