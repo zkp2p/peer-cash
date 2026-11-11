@@ -14,8 +14,11 @@ export {
   CASH_ATTRIBUTION_CODE,
   CASH_REFERRAL_ATTRIBUTION_PREFIX,
   toCashReferralAttributionCode,
+  CASH_BRAND_ATTRIBUTION_PREFIX,
+  toCashBrandAttributionCode,
 } from './client/createCashClient';
 export type {
+  CashBrand,
   CashClient,
   CashClientOptions,
   PreparedVenmoGmailConnect,

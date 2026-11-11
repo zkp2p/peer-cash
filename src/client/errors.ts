@@ -12,6 +12,7 @@ export type CashErrorCode =
   | 'INVALID_PAYOUT_CURRENCIES'
   | 'INVALID_PAYOUT_PLATFORMS'
   | 'INVALID_REFERRAL_CODE'
+  | 'INVALID_BRAND'
   | 'ACTIVE_INTENT_BLOCKS_WITHDRAWAL'
   | 'NOTHING_TO_WITHDRAW'
   | 'INSUFFICIENT_AVAILABLE_FUNDS'
@@ -191,6 +192,13 @@ export const errors = {
       message: `The Peer referral code must be exactly six letters or numbers.`,
       retryable: false,
       remediation: `Copy your six-character referral code from the Peer mobile or web app and pass it as referralCode.`,
+    }),
+  invalidBrand: (reason: string) =>
+    new CashError({
+      code: 'INVALID_BRAND',
+      message: `The brand is invalid: ${reason}.`,
+      retryable: false,
+      remediation: `Pass a label of up to 32 letters, numbers, single spaces, or . & ' - and a short https logo URL without commas, pipes, spaces, or credentials.`,
     }),
   activeIntentBlocksWithdrawal: (depositId: string) =>
     new CashError({

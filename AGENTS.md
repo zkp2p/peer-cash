@@ -38,14 +38,13 @@ can withdraw an unmatched deposit.
 
 Every transaction (including approves) carries ERC-8021 attribution:
 `peer-cash`, then optional `peer-ref-XXXXXX` from the six-character
-`referralCode`, then any analytics-only `referrer` codes, then the Base builder
-code. The namespaced referral marker gives its Peer Privy wallet the direct
-deposit-level integration share instead of applying maker L1/L2.
-To label your deposits with your name and logo in Peer's order book, register
-your `referrer` code by pull request in `ATTRIBUTION_BRANDS`
-(`src/engine/attributionBrands.ts`, see the README); clients resolve it with
-`findAttributionBrand(attributionCodes)`. The label is attribution, not
-verification of the maker.
+`referralCode`, then the optional `brand` code, then any analytics-only
+`referrer` codes, then the Base builder code. The namespaced referral marker
+gives its Peer Privy wallet the direct deposit-level integration share instead
+of applying maker L1/L2. `brand: { label, logoUrl }` emits
+`peer-brand:<label>|<logoUrl>`, which Peer's order books show on the deposit:
+display only, never proof of who created it. An invalid brand throws
+`INVALID_BRAND` when the client is created.
 
 **Platform caveats:**
 
