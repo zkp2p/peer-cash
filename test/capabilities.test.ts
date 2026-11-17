@@ -98,17 +98,18 @@ describe('buildCapabilities', () => {
     ]);
   });
 
-  it('flags Wise, PayPal, and Alipay as requiring an identity attestation', () => {
+  it('flags only Alipay as requiring an identity attestation', () => {
     const caps = buildCapabilities('production');
     for (const platform of caps.platforms) {
-      const expected = ['wise', 'paypal', 'alipay'].includes(platform.platform);
-      expect(platform.requiresIdentityAttestation).toBe(expected);
+      expect(platform.requiresIdentityAttestation).toBe(platform.platform === 'alipay');
     }
     // both must be present so the flag is observable
     expect(caps.platforms.some((p) => p.platform === 'wise')).toBe(true);
     expect(caps.platforms.some((p) => p.platform === 'paypal')).toBe(true);
     expect(caps.platforms.some((p) => p.platform === 'alipay')).toBe(true);
     expect(platformRequiresIdentityAttestation('ALIPAY')).toBe(true);
+    expect(platformRequiresIdentityAttestation('PayPal')).toBe(false);
+    expect(platformRequiresIdentityAttestation('wise')).toBe(false);
   });
 
   it('advertises Alipay/CNY as a signal-time oracle corridor', () => {

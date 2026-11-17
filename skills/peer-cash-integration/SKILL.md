@@ -178,12 +178,12 @@ hosted `https://` URL without commas, pipes, spaces, or credentials; all codes
 together must fit ERC-8021's 255 bytes. An invalid brand throws
 `INVALID_BRAND`. The brand is display only and does not verify the maker.
 
-Wise and PayPal require an identity attestation for a new payee registration.
+PayPal and Wise need no registration step: pass the PayPal.Me username or
+Wisetag. Alipay requires an identity attestation for a new payee registration.
 The SDK accepts the structured attestation but does not mint it; first-party
-Peer web obtains it through the Peer TEE browser extension. Do not disable these
-platforms outright: a previously registered handle can be reused with bare
-payee data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration is still
-needed.
+Peer web obtains it through the Peer TEE browser extension. Do not disable
+Alipay outright: a previously registered handle can be reused with bare payee
+data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration is still needed.
 
 UPI is available on production, preproduction, and staging clients without feature flags. Accept any locally valid
 UPI ID from any bank; do not add a seller bank-login, extension, identity

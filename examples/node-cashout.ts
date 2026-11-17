@@ -9,7 +9,7 @@
  * set CASH_KEEP_OPEN=1 for that behavior.
  *
  * The curator validates supported handles against the live platform, so the
- * payee must be a real account. A new Wise/PayPal/Alipay registration also needs the
+ * payee must be a real account. A new Alipay registration also needs the
  * identity attestation obtained by Peer web through the Peer TEE browser
  * extension; an existing registered handle can be reused. This private-key EOA
  * works directly with every supported platform;

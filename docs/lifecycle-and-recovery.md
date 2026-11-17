@@ -372,13 +372,15 @@ whole life. Two things to know for long-lived orders:
   a buyer's intent-signing time - a buyer then cannot take the deposit until
   the payee is re-registered. Format-only platforms (Zelle, Chime, …) are
   never re-checked.
-- **Wise and PayPal** require a signed identity attestation for a new payee
+- **Alipay** requires a signed identity attestation for a new payee
   registration. The SDK accepts the structured attestation but does not mint
   it; first-party Peer web obtains it through the Peer TEE browser extension.
   A previously registered handle can be reused with bare payee data. If the
   handle is new and no attestation is supplied, the SDK surfaces
-  `PAYEE_VERIFICATION_REQUIRED`; `capabilities()` flags these platforms with
+  `PAYEE_VERIFICATION_REQUIRED`; `capabilities()` flags it with
   `requiresIdentityAttestation: true`.
+- **PayPal and Wise** register a bare PayPal.Me username or Wisetag. The
+  curator checks that PayPal.Me or Wise resolves it.
 
 The client selects a curator with its environment. Preproduction defaults to
 `https://api-preprod.zkp2p.xyz`, staging defaults to
@@ -397,7 +399,7 @@ explicit override.
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Min/max is non-positive, inverted, or exceeds the deposit. Correct the range.                                                                |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | The currency set is empty or contains duplicates. Pass a non-empty unique set from `capabilities()`.                                         |
 | `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Wise/PayPal/Alipay payee needs an attestation from Peer web and its TEE browser extension; an existing registration can be reused.     |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Alipay payee needs an attestation from Peer web and its TEE browser extension; an existing registration can be reused.                 |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                        |

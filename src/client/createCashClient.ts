@@ -810,7 +810,7 @@ export function createCashClient(options: CashClientOptions): CashClient {
       return await prepareCashDepositParams(client, depositInput);
     } catch (err) {
       if (isCashError(err)) throw err;
-      // The curator rejects Wise/PayPal/Alipay payees that lack a signed attestation.
+      // The curator rejects a new Alipay payee that lacks a signed attestation.
       const message = err instanceof Error ? err.message : String(err);
       if (/identityAttestation is required|identity attestation/i.test(message)) {
         const platforms = depositInput.payouts.map((payout) => payout.processorName);

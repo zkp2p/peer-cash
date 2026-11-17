@@ -414,10 +414,10 @@ Cash-outs never configure a whitelist or group, for any payout rail or environme
 | Payout rail           | New payee registration                                                                         |
 | --------------------- | ---------------------------------------------------------------------------------------------- |
 | Venmo                 | Curator validates the live handle                                                              |
-| PayPal                | Requires a Peer TEE browser-extension identity attestation                                     |
+| PayPal                | Bare PayPal.Me username; Curator checks that PayPal.Me resolves it                             |
 | Cash App              | Curator validates the live handle; non-chargebackable and no dispute-protection stake required |
 | X Money (USD)         | Bare lowercase X username; X Money must be enabled on the receiving account                    |
-| Wise                  | Requires a Peer TEE browser-extension identity attestation                                     |
+| Wise                  | Bare Wisetag; Curator checks that Wise resolves it to a personal account                       |
 | UPI                   | Any valid UPI ID; no account connection or identity attestation                                |
 | Other supported rails | Follow the `payeeHint`; use `capabilities()` for currencies and format                         |
 
@@ -443,12 +443,12 @@ the deposit. Bank-specific capture routing is outside this maker-side SDK and
 never changes the on-chain payment method.
 
 `capabilities()` tells you which platforms need a verified identity for a new
-payee registration (`requiresIdentityAttestation` - Wise, PayPal and Alipay
-today).
+payee registration (`requiresIdentityAttestation` - Alipay today). PayPal and
+Wise need no registration step: pass the PayPal.Me username or Wisetag.
 The SDK accepts an `identityAttestation` in structured payee data but does not
 mint one. First-party Peer web obtains it through the Peer TEE browser
-extension. An already-registered Wise or PayPal handle can be reused with bare
-payee data. A new handle without its signed attestation fails during curator
+extension. An already-registered Alipay handle can be reused with bare payee
+data. A new handle without its signed attestation fails during curator
 registration with `PAYEE_VERIFICATION_REQUIRED`, before funds move on-chain.
 
 ## Source routing
