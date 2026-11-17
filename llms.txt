@@ -139,9 +139,10 @@ Key facts:
   `quoteNearIntentsSource()`, `submitNearIntentsDeposit()`, and
   `nearIntentsStatus()` support 1Click routes including non-EVM origins. A
   browser uses the same-origin proxy transport so the JWT stays server-side.
-- Wise, PayPal, and Alipay require attestation for a new payee registration. The SDK
-  accepts but does not mint it; first-party Peer web obtains it through the
-  Peer TEE browser extension. A previously registered bare handle can be reused.
+- Alipay requires attestation for a new payee registration. The SDK accepts but
+  does not mint it; first-party Peer web obtains it through the Peer TEE browser
+  extension. A previously registered bare handle can be reused. PayPal and Wise
+  register a bare PayPal.Me username or Wisetag with no registration step.
 - Cash-outs never configure a whitelist or group, including Venmo and PayPal.
   Signed cashout() returns after the deposit confirms; prepared hosts finalize
   the confirmed receipt and persist depositId. Venmo and PayPal retain the

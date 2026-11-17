@@ -23,9 +23,9 @@ const PAYEE_HINTS: Record<string, string> = {
   venmo: 'Venmo username, with or without the leading @ (e.g. @andrew-w)',
   cashapp: 'Cashtag, with or without the leading $ (e.g. $andrew)',
   revolut: 'Revtag (e.g. andrew1abc)',
-  wise: 'Wisetag or the email on the Wise account',
+  wise: 'Wisetag, with or without the leading @ (e.g. @andrewl)',
   zelle: 'Email address or US phone number enrolled with Zelle',
-  paypal: 'PayPal.Me handle or account email',
+  paypal: 'PayPal.Me username, with or without paypal.me/ (e.g. paypal.me/andrewl)',
   mercadopago: 'Mercado Pago alias or CVU',
   monzo: 'Monzo.me username',
   chime: 'ChimeSign (e.g. $andrew)',
@@ -41,8 +41,10 @@ const PAYEE_HINTS: Record<string, string> = {
  * attestation for a new handle. The SDK accepts but does not mint the
  * attestation; first-party Peer web obtains it through the Peer TEE browser
  * extension. An existing registered handle can be reused with bare payee data.
+ * PayPal.Me usernames and Wisetags register bare: the curator checks that
+ * PayPal.Me or Wise resolves them.
  */
-const IDENTITY_ATTESTATION_PLATFORMS = new Set(['wise', 'paypal', 'alipay']);
+const IDENTITY_ATTESTATION_PLATFORMS = new Set(['alipay']);
 
 export type CashCorridorPricing = { kind: 'oracle-at-intent-signal'; spreadBps: 0 };
 

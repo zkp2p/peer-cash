@@ -101,7 +101,7 @@ const state = {
 };
 
 // Platforms offered = catalog minus attestation-gated rails (their new
-// payees need the PeerAuth browser extension; Wise and PayPal today),
+// payees need the PeerAuth browser extension; Alipay today),
 // filtered to live pairs and failing open, like the Peer web express flow.
 let platforms = [];
 const refreshPlatforms = () => {
