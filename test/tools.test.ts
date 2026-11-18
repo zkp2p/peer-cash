@@ -42,6 +42,19 @@ describe('tools manifest', () => {
     ]);
   });
 
+  it('lets a cash-out leg carry an optional boolean isPublic', () => {
+    const cashout = cashTools.find((tool) => tool.name === 'cash_cashout')!;
+    const receive = (cashout.inputSchema['properties'] as Record<string, { oneOf: object[] }>)[
+      'receive'
+    ]!;
+    const leg = receive.oneOf[0] as {
+      properties: Record<string, { type?: string }>;
+      required: string[];
+    };
+    expect(leg.properties['isPublic']).toMatchObject({ type: 'boolean' });
+    expect(leg.required).not.toContain('isPublic');
+  });
+
   it('every tool has a JSON-schema object input', () => {
     for (const tool of cashTools) {
       expect(tool.description.length).toBeGreaterThan(40);

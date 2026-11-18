@@ -381,6 +381,14 @@ whole life. Two things to know for long-lived orders:
   `requiresIdentityAttestation: true`.
 - **PayPal and Wise** register a bare PayPal.Me username or Wisetag. The
   curator checks that PayPal.Me or Wise resolves it.
+- **Public payees.** A leg's optional `isPublic` goes to Curator with the
+  payee's registration and decides whether Curator's public maker read serves
+  the handle. Omitted, Curator keeps its default: a new X Money payee is
+  public, every other new payee private, and a registered payee keeps its
+  setting. `isPublic: false` works on every platform. `isPublic: true` works
+  only on X Money: elsewhere only the payee's signed-in Peer owner can publish
+  it, and Peer Cash sends no owner sign-in, so the cash-out fails with
+  `PAYEE_PUBLISH_UNSUPPORTED` before any payee is registered.
 
 The client selects a curator with its environment. Preproduction defaults to
 `https://api-preprod.zkp2p.xyz`, staging defaults to
@@ -400,6 +408,7 @@ explicit override.
 | `INVALID_PAYOUT_CURRENCIES`             | no        | The currency set is empty or contains duplicates. Pass a non-empty unique set from `capabilities()`.                                         |
 | `INVALID_PAYOUT_PLATFORMS`              | no        | The payout leg set is empty or repeats a platform. Pass one leg, or an array of legs using each platform at most once.                       |
 | `PAYEE_VERIFICATION_REQUIRED`           | no        | A new Alipay payee needs an attestation from Peer web and its TEE browser extension; an existing registration can be reused.                 |
+| `PAYEE_PUBLISH_UNSUPPORTED`             | no        | A leg set `isPublic: true` off X Money. Omit it or set `false`; only the payee's signed-in Peer owner can publish it.                        |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Curator rejected the handle or was unavailable. Check `payeeHint` and retry.                                                                 |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | `prepare()` accepts Base USDC only. Use signed source execution, or complete Relay first and then prepare the Base cashout.                  |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Relay output recipient differs from the cashout depositor. Use the depositor address.                                                        |
