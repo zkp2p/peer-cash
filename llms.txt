@@ -192,7 +192,7 @@ Cash adds no currency exceptions. Estimates read through the normal Base
 `transport` / `rpcUrl`; deposits float until each buyer signals an intent.
 UPI is available in production, preproduction, and staging without a feature flag.
 
-With `@zkp2p/sdk` 0.14.5-rc.2, Express Cash intentionally also offers
+Express Cash also offers
 Wise/INR, Wise/CNY, and Revolut/CNY because corridor support derives from
 oracle availability and each platform's currency catalog. The exact INR/CNY
 corridor set in production, preproduction, and staging is UPI/INR, Wise/INR,
