@@ -62,12 +62,12 @@ display only, never proof of who created it. An invalid brand throws
   normalized. Curator verifies X account existence, but not X Money enrollment.
   No identity attestation is required.
 
-- **Wise, PayPal, and Alipay** carry `requiresIdentityAttestation: true`. A new curator
+- **Alipay** carries `requiresIdentityAttestation: true`. A new curator
   registration needs a signed maker identity attestation this SDK cannot mint
   (first-party Peer web obtains it through the Peer TEE browser extension).
   An already-registered handle can be reused with bare payee data. A new handle
   without its attestation fails with `PAYEE_VERIFICATION_REQUIRED` before funds
-  move on-chain.
+  move on-chain. PayPal.Me usernames and Wisetags can be registered directly.
 - **Venmo, Revolut, Cash App, Monzo** validate the handle against the live
   platform at registration - the account must exist. The rest (Zelle, Chime,
   etc.) are format-checked only. Match handles to the `payeeHint`.
@@ -275,7 +275,7 @@ Every `CashError` carries `code`, `retryable`, `remediation`. Behavior:
 | `INVALID_INTENT_AMOUNT_RANGE`           | no        | Use a positive min, max at least min, and max no greater than amount               |
 | `INVALID_PAYOUT_CURRENCIES`             | no        | Pass one or more unique currencies listed for the platform                         |
 | `INVALID_PAYOUT_PLATFORMS`              | no        | Pass one leg or an array of legs, using each platform at most once                 |
-| `PAYEE_VERIFICATION_REQUIRED`           | no        | Use Peer web + TEE extension for new Wise/PayPal/Alipay; reuse registered handles  |
+| `PAYEE_VERIFICATION_REQUIRED`           | no        | Verify a new Alipay payee through Peer web or reuse its registered handle          |
 | `PAYEE_REGISTRATION_FAILED`             | yes       | Validate against `payeeHint`, then retry                                           |
 | `SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE`   | no        | Execute Relay with a signer first, then prepare a Base-USDC cashout                |
 | `SOURCE_RECIPIENT_MISMATCH`             | no        | Route Base USDC to the cashout depositor                                           |

@@ -20,7 +20,7 @@ a rational maker can offer. That is the fill incentive.
 
 ## INR/CNY oracle migration (breaking)
 
-With the SDK dependency pinned to `@zkp2p/sdk` 0.14.5, new Express Cash
+Starting with the migration to `@zkp2p/sdk` 0.14.5, new Express Cash
 UPI/INR and Alipay/CNY deposits float with the Base oracle plus
 `MARKET_SPREAD_BPS` (zero), exactly like every other supported currency.
 They no longer fix a creation-time snapshot. Each buyer's intent signal binds
@@ -50,19 +50,7 @@ This is a hard API cutover, with no deprecated aliases:
   Refresh persisted estimates and capabilities when upgrading. Historical
   order payout codecs retain fixed-rate evidence for recovery.
 
-For `zkp2p-clients` consumers (verified at `origin/main` commit `004abbc`),
-`clients/web/src/components/PeerCash/usePeerCashExpressFlow.ts:278-288` passes
-both `creationRateTransport` and `upiCreationRateTransport` through conditional
-object spreads. TypeScript will **not** flag these leftover options after the
-SDK bump; they will be silently ignored. Remove both spreads, their obsolete
-imports, and the Polygon RPC proxy plumbing (`rpcProxyPolygonUrl` in
-`clients/web/src/helpers/rpcProxy.ts`, its helper tests, and the Express test
-mock). Keep shared Ethereum proxy plumbing that other features still use.
-Remove `clients/web/src/components/PeerCash/peerCashCreationRate.test.ts`: it
-sets both removed options and expects `binding: 'deposit-creation'`, so it will
-fail after the bump. Replace that obsolete test with Base oracle transport
-coverage asserting `binding: 'intent-signal'`. Do not rely on the compiler to
-complete this migration.
+Remove obsolete creation-rate options from configuration spreads as well as explicit option literals. Replace creation-time snapshot assertions with signal-time pricing checks.
 
 INR/USD and CNY/USD are ZKP2P-operated, 8-decimal AggregatorV3-compatible
 Base feeds consumed by the existing Chainlink adapter with `invert: true`.
@@ -70,18 +58,6 @@ Oracle availability comes from the SDK catalog; there are no special INR/CNY
 support branches or Ethereum/Polygon rate readers. A failing estimate returns
 the same oracle errors as other currencies; stale estimates are display-flagged,
 and the on-chain adapter enforces `maxStaleness` at signal.
-
-The published SDK rc.1 → rc.2 diff also adds Microsoft OAuth seller-credential
-uploads (including PKCE `codeVerifier`) and shares the Google upload path's
-implementation. Cash's hosted Venmo Gmail connector is unchanged. The contracts
-pin moves from 0.4.2 to 0.4.3-rc.1, adding FxRateStore/feed ABIs and addresses
-and provider metadata to the oracle catalog. Existing payment-method catalog
-content, escrow/guardian addresses, and active dispute-stack selections are
-unchanged. Indexer schema remains 0.22.0. The prepared stable SDK 0.14.5
-pins stable contracts 0.4.3.
-
-Release history remains in PR titles per the contributor guide; this change
-does not bump the Cash package version or publish a release.
 
 ## Source routing
 
