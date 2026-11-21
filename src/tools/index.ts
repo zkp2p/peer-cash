@@ -83,6 +83,11 @@ const receiveLeg = {
         },
       ],
     },
+    isPublic: {
+      type: 'boolean',
+      description:
+        "Whether Curator's public maker read may serve the payee's handle. Omit for Curator's default (X Money public, every other platform private). true is accepted only on xmoney; false keeps the payee private",
+    },
   },
   required: ['platform', 'payee'],
   oneOf: [{ required: ['currency'] }, { required: ['currencies'] }],

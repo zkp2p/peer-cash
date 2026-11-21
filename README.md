@@ -78,6 +78,10 @@ const widestReach = await cash.cashout(
   { signer },
 );
 
+// X Money payees are public on Curator's public maker read unless the leg
+// sets isPublic: false. isPublic: true is accepted only on X Money.
+// receive: { platform: 'xmoney', currency: 'USD', payee: '@you', isPublic: false }
+
 // Alipay/CNY uses the same signal-time oracle path. New Alipay payees need
 // the identity attestation prepared by first-party Peer web.
 const alipayEstimate = await cash.estimate({

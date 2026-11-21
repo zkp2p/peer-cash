@@ -15,7 +15,14 @@ export type DepositEntity = IndexerDeposit;
 
 export type CuratorPayeeDataInput = NonNullable<
   Parameters<Zkp2pClient['registerPayeeDetails']>[0]['payeeData']
->[number];
+>[number] & {
+  /**
+   * Whether Curator's public maker read serves this payee's handle. Sent to
+   * Curator only by an `@zkp2p/sdk` release after 0.15.0-rc.13; older
+   * releases drop it.
+   */
+  isPublic?: boolean;
+};
 
 export type CreateDepositParamsArg = Parameters<Zkp2pClient['createDeposit']>[0];
 
