@@ -4,6 +4,12 @@
 > contribute to the SDK itself (layout, ground rules, CI, releasing), start at
 > [CLAUDE.md](https://github.com/zkp2p/peer-cash/blob/main/CLAUDE.md).
 
+**New integrations start with `@zkp2p/sdk`** (`createPeer()` and
+`peer.sell()`, pinned to `0.16.0-rc.1`; see the README). Use this manual for
+existing `@zkp2p/cash` installs or for features only Cash has: Relay and NEAR
+Intents source routing, App Clip account connection, receipt-linking helpers,
+codecs, React hooks and the agent tool manifest.
+
 You are integrating Peer Cash: an offramp that routes Relay-supported EVM
 assets or NEAR Intents 1Click external deposits into Base USDC, then converts
 Base USDC to fiat (Venmo, Revolut, Wise, Alipay, Zelle, ...) at a zero-spread
