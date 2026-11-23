@@ -37,7 +37,13 @@ import {
   type VenmoGmailAppearance,
   type VenmoGmailPopupOptions,
 } from '@zkp2p/sdk';
-import type { CurrencyType, PreparedTransaction, RuntimeEnv, TxOverrides } from '../sdk-types';
+import type {
+  CuratorPayeeDataInput,
+  CurrencyType,
+  PreparedTransaction,
+  RuntimeEnv,
+  TxOverrides,
+} from '../sdk-types';
 import { BASE_CHAIN_ID, BASE_USDC_ADDRESS, CASH_ORDER_STATUSES } from '../engine/constants';
 import { isMarketRateSupported, prepareCashDepositParams } from '../engine/marketRate';
 import { deriveCashOrder, isFillLive, type DeriveCashOrderOptions } from '../engine/orderState';
@@ -263,6 +269,16 @@ export interface CashLeg {
   currency: CurrencyType;
   /** Raw handle or prepared curator data (needed for identity attestations). */
   payee: CashPayeeInput;
+  /**
+   * Whether Curator's public maker read may serve the payee's handle, sent
+   * with the payee's registration. Omitted, Curator applies its default to a
+   * new payee (public on X Money, private elsewhere) and leaves a registered
+   * payee unchanged. `true` is accepted only on X Money: elsewhere only the
+   * payee's signed-in Peer owner can publish a payee, and Peer Cash sends no
+   * owner sign-in, so it fails with `PAYEE_PUBLISH_UNSUPPORTED` before
+   * anything is registered.
+   */
+  isPublic?: boolean;
   currencies?: never;
 }
 
@@ -273,6 +289,8 @@ export interface CashMultiCurrencyLeg {
   currencies: readonly [CurrencyType, ...CurrencyType[]];
   /** Raw handle or prepared curator data shared by every offered currency. */
   payee: CashPayeeInput;
+  /** As {@link CashLeg.isPublic}. */
+  isPublic?: boolean;
   currency?: never;
 }
 
@@ -780,10 +798,22 @@ export function createCashClient(options: CashClientOptions): CashClient {
         ...(currencies.length === 1
           ? { currency: currencies[0]! }
           : { currencies: currencies as [CurrencyType, ...CurrencyType[]] }),
-        payeeData: normalizeCashPayee(leg.platform, leg.payee),
+        payeeData: withVisibility(leg, normalizeCashPayee(leg.platform, leg.payee)),
       };
     });
     return { payouts };
+  }
+
+  /** The leg's `isPublic`, or one already on prepared curator data, sent only when set. */
+  function withVisibility(
+    leg: CashReceiveLeg,
+    payeeData: CuratorPayeeDataInput,
+  ): CuratorPayeeDataInput {
+    const isPublic = leg.isPublic ?? payeeData.isPublic;
+    if (isPublic === true && leg.platform !== 'xmoney') {
+      throw errors.payeePublishUnsupported(leg.platform);
+    }
+    return isPublic === undefined ? payeeData : { ...payeeData, isPublic };
   }
 
   function validateDepositInput(

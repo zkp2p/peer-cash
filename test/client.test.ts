@@ -761,6 +761,81 @@ describe('cashout()', () => {
     expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['xmoney', '@Peer_Intern', { offchainId: 'peer_intern', isPublic: true }, true],
+    ['xmoney', '@Peer_Intern', { offchainId: 'peer_intern', isPublic: false }, false],
+    ['venmo', '@seller', { offchainId: 'seller', isPublic: false }, false],
+  ] as const)(
+    'sends a %s payee isPublic to registration only when the leg sets it (%#)',
+    async (platform, payee, payeeData, isPublic) => {
+      mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+      mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+        status: 'success',
+        logs: [depositReceivedLog(5n)],
+      });
+
+      await client().cashout(
+        { amount: 5_000_000n, receive: { platform, currency: 'USD', payee, isPublic } },
+        { signer },
+      );
+
+      expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+        processorNames: [platform],
+        payeeData: [payeeData],
+      });
+    },
+  );
+
+  it('keeps isPublic set on prepared curator payee data', async () => {
+    mockInstance.createDeposit.mockResolvedValue({ hash: '0xhash' });
+    mockInstance.publicClient.waitForTransactionReceipt.mockResolvedValue({
+      status: 'success',
+      logs: [depositReceivedLog(5n)],
+    });
+
+    await client().cashout(
+      {
+        amount: 5_000_000n,
+        receive: {
+          platform: 'revolut',
+          currency: 'USD',
+          payee: { offchainId: 'revtag', isPublic: false },
+        },
+      },
+      { signer },
+    );
+
+    expect(mockInstance.registerPayeeDetails).toHaveBeenCalledWith({
+      processorNames: ['revolut'],
+      payeeData: [{ offchainId: 'revtag', isPublic: false }],
+    });
+  });
+
+  it.each([
+    ['on the leg', { payee: '@seller', isPublic: true }],
+    ['on prepared payee data', { payee: { offchainId: 'seller', isPublic: true } }],
+  ] as const)(
+    'refuses to publish a Venmo payee %s before registering any payee or touching the wallet',
+    async (_case, venmo) => {
+      await expect(
+        client().cashout(
+          {
+            amount: 5_000_000n,
+            receive: [
+              { platform: 'xmoney', currency: 'USD', payee: '@creator' },
+              { platform: 'venmo', currency: 'USD', ...venmo },
+            ],
+          },
+          { signer },
+        ),
+      ).rejects.toMatchObject({ code: 'PAYEE_PUBLISH_UNSUPPORTED', retryable: false });
+      // Not even the X Money leg is registered, and nothing reaches the chain.
+      expect(mockInstance.registerPayeeDetails).not.toHaveBeenCalled();
+      expect(mockInstance.createDeposit).not.toHaveBeenCalled();
+      expect(signer.getChainId).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects an empty payout leg array before wallet access', async () => {
     await expect(
       client().cashout({ amount: 5_000_000n, receive: [] as never }, { signer }),

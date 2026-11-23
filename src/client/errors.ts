@@ -25,6 +25,7 @@ export type CashErrorCode =
   | 'ORDER_NOT_FOUND'
   | 'PAYEE_REGISTRATION_FAILED'
   | 'PAYEE_VERIFICATION_REQUIRED'
+  | 'PAYEE_PUBLISH_UNSUPPORTED'
   | 'SOURCE_ROUTE_UNSUPPORTED_IN_PREPARE'
   | 'SOURCE_RECIPIENT_MISMATCH'
   | 'SOURCE_CAPABILITIES_FAILED'
@@ -285,6 +286,13 @@ export const errors = {
       },
       { cause },
     ),
+  payeePublishUnsupported: (platform: string) =>
+    new CashError({
+      code: 'PAYEE_PUBLISH_UNSUPPORTED',
+      message: `Peer Cash cannot make a ${platform} payee public.`,
+      retryable: false,
+      remediation: `Omit isPublic or set it to false. Only an X Money payee can be made public from Peer Cash; on ${platform} only the payee's signed-in Peer owner can publish it.`,
+    }),
   payeeVerificationRequired: (platform: string, cause?: unknown) =>
     new CashError(
       {

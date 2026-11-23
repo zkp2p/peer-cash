@@ -185,6 +185,11 @@ Peer web obtains it through the Peer TEE browser extension. Do not disable
 Alipay outright: a previously registered handle can be reused with bare payee
 data. Handle `PAYEE_VERIFICATION_REQUIRED` when registration is still needed.
 
+An X Money payee is public on Curator's public maker read unless its leg sets
+`isPublic: false`. Ask before publishing; pass `isPublic: false` when the user
+did not choose to be shown. `isPublic: true` works only on X Money; elsewhere
+it fails with `PAYEE_PUBLISH_UNSUPPORTED` before anything is registered.
+
 UPI is available on production, preproduction, and staging clients without feature flags. Accept any locally valid
 UPI ID from any bank; do not add a seller bank-login, extension, identity
 attestation, or pre-registration step. Buyers pay and verify through Amazon Pay using standard UPI; UPI Lite and

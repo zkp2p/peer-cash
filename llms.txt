@@ -98,6 +98,10 @@ Key facts:
   '@YourHandle' become 'yourhandle'; structured offchainId values must already
   be normalized. The receiving account must have X Money enabled; registration
   verifies X account existence, but not X Money enrollment. No identity attestation is required.
+- A leg's optional `isPublic` sets whether Curator's public maker read serves
+  the payee's handle. Omitted: X Money public, every other platform private.
+  `false` works everywhere; `true` only on xmoney, otherwise the cash-out
+  fails with PAYEE_PUBLISH_UNSUPPORTED before any payee is registered.
 - UPI/INR is available without feature flags. For example, use
   `createCashClient({ environment: 'preproduction' })`.
   Any valid UPI ID from any bank can receive without a seller login,
