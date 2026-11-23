@@ -14,6 +14,61 @@ No hosted widget, no provider custody, no quote engine to maintain.
 
 **[npm](https://www.npmjs.com/package/@zkp2p/cash)** · **[Lifecycle and recovery](docs/lifecycle-and-recovery.md)** · **[Partner integrations](docs/partner-integrations.md)** · **[Agent integration manual](AGENTS.md)**
 
+## New integrations: start with `@zkp2p/sdk`
+
+New cash-out integrations should start with
+[`@zkp2p/sdk`](https://www.npmjs.com/package/@zkp2p/sdk): `createPeer()` and
+`peer.sell()`. In a side-by-side staging run, `peer.sell` matched Cash 0.8.2
+for Base USDC sales: the same zero-spread oracle pricing, the same `peer-cash`
+attribution, and byte-identical `createDeposit` calldata. They first ship in
+`0.16.0-rc.1` on the `rc` dist-tag. `latest` is still `0.15.x`,
+so pin the exact version.
+
+```sh
+npm install @zkp2p/sdk@0.16.0-rc.1 viem
+```
+
+```ts
+import { createPeer, usdc } from '@zkp2p/sdk';
+
+const peer = createPeer({ environment: 'production' });
+const sale = await peer.sell(
+  { amount: usdc('25'), receive: { platform: 'venmo', currency: 'USD', payee: '@alice' } },
+  { signer }, // any viem WalletClient on Base
+);
+for await (const order of peer.sell.watch(sale.depositId)) console.log(order.state);
+```
+
+The Cash verbs map one to one:
+
+- `createCashClient(options)` becomes `createPeer(options)`, and you use `peer.sell`.
+- `cash.cashout(input, { signer })` becomes `peer.sell(input, { signer })`.
+- `prepare` becomes `peer.sell.prepare`, and `finalizePreparedCashout` becomes `peer.sell.finalizePrepared`.
+- `capabilities`, `estimate`, `fillStats`, `order`, `orders`, `watch`, `buyer`, `withdraw`, `prepareWithdraw`, `topUp` and `prepareTopUp` keep their names under `peer.sell`.
+- `CashError` / `isCashError` become `PeerError` / `isPeerError`.
+- Most types and constants swap `Cash` / `Cashout` for `Sell`, for example `CashOrder` to `SellOrder` and `MIN_CASHOUT_AMOUNT` to `MIN_SELL_AMOUNT`.
+
+Intended differences:
+
+- A payee that does not exist on its platform fails with `PAYEE_NOT_FOUND` (not retryable). Cash returns `PAYEE_REGISTRATION_FAILED` (retryable).
+- `capabilities()` has no `source` or `destination`.
+- The `INVALID_DEPOSIT_ID` message says "Peer sell deposit id".
+
+`@zkp2p/cash` stays published and supported for existing installs. Keep it
+if you need something only Cash has:
+
+- Relay and NEAR Intents source routing (`quoteSource`, `executeSourceQuote`,
+  `relayStatus`, NEAR Intents quotes and status, `cashout({ source })`,
+  `capabilities({ includeRelaySources })`).
+- App Clip Cash App and PayPal account connection (`prepareSarConnect` and
+  related helpers).
+- Venmo and X Money receipt-linking helpers (`prepareVenmoGmailConnect`,
+  `isVenmoGmailConnected`, `prepareXMoneyConnect`, `isXMoneyConnected`). The
+  SDK exports only the URL and popup primitives.
+- Zod schemas and JSON codecs (`*ToJson` / `*FromJson`).
+- React hooks (`@zkp2p/cash/react`).
+- The agent tool manifest (`@zkp2p/cash/tools`).
+
 ## Install
 
 ```sh
@@ -139,10 +194,10 @@ See [the INR/CNY migration notes](docs/lifecycle-and-recovery.md#inrcny-oracle-m
 
 Peer Cash and the general ZKP2P SDK serve different integration depths:
 
-| Package       | Use it when                                       | Boundary                                                                                                                                                                                  |
-| ------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@zkp2p/cash` | Cash-out is the product                           | Offramp only. The user is always the maker, the destination is Base USDC, pricing is zero-spread Base oracles at intent signal, and the SDK owns the resumable order lifecycle.           |
-| `@zkp2p/sdk`  | You are composing directly with the Peer protocol | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
+| Package       | Use it when                                        | Boundary                                                                                                                                                                                  |
+| ------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@zkp2p/cash` | You already use it, or need a Cash-only feature    | Offramp only. The user is always the maker, the destination is Base USDC, pricing is zero-spread Base oracles at intent signal, and the SDK owns the resumable order lifecycle.           |
+| `@zkp2p/sdk`  | New cash-outs (`peer.sell`) or direct protocol use | General maker and taker operations, deposits, intents, proofs, quotes, vaults, rate managers, referrals, hooks, and API helpers. Your application owns the workflow and protocol choices. |
 
 Peer Cash is a narrow facade over `@zkp2p/sdk`, not a replacement for it. It
 cannot express custom spreads, buyer-side proof flows, vaults, disputes, or

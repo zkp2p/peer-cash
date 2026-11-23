@@ -12,6 +12,11 @@
 
 Key facts:
 
+- New integrations start with @zkp2p/sdk 0.16.0-rc.1 (pin exactly; dist-tag
+  rc): createPeer({ environment }).sell(input, { signer }) and peer.sell.*.
+  @zkp2p/cash stays supported for existing installs and for Cash-only features:
+  Relay and NEAR Intents source routing, App Clip account connection,
+  receipt-linking helpers, codecs, React hooks and @zkp2p/cash/tools.
 - Optional Cash App and PayPal account connection (the Peer Payouts flow):
   prepareSarConnect({ platform, payeeHandle, paypalEmail?, identityActionType?,
   returnUrl }) creates a wallet-free Curator checkout link, or a wallet-owned
