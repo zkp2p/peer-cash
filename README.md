@@ -20,12 +20,11 @@ New cash-out integrations should start with
 [`@zkp2p/sdk`](https://www.npmjs.com/package/@zkp2p/sdk): `createPeer()` and
 `peer.sell()`. In a side-by-side staging run, `peer.sell` matched Cash 0.8.2
 for Base USDC sales: the same zero-spread oracle pricing, the same `peer-cash`
-attribution, and byte-identical `createDeposit` calldata. They first ship in
-`0.16.0-rc.1` on the `rc` dist-tag. `latest` is still `0.15.x`,
-so pin the exact version.
+attribution, and byte-identical `createDeposit` calldata. They ship in the
+stable `0.16.0` release on `latest`; pin the exact version.
 
 ```sh
-npm install @zkp2p/sdk@0.16.0-rc.1 viem
+npm install @zkp2p/sdk@0.16.0 viem
 ```
 
 ```ts

@@ -12,8 +12,8 @@
 
 Key facts:
 
-- New integrations start with @zkp2p/sdk 0.16.0-rc.1 (pin exactly; dist-tag
-  rc): createPeer({ environment }).sell(input, { signer }) and peer.sell.*.
+- New integrations start with @zkp2p/sdk 0.16.0 (pin exactly):
+  createPeer({ environment }).sell(input, { signer }) and peer.sell.*.
   @zkp2p/cash stays supported for existing installs and for Cash-only features:
   Relay and NEAR Intents source routing, App Clip account connection,
   receipt-linking helpers, codecs, React hooks and @zkp2p/cash/tools.
